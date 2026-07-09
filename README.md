@@ -1,4 +1,4 @@
-# Pantheon MPV
+# Pantheon MVP
 
 Status: external executable candidate — not adopted by Pantheon Next.
 
@@ -20,7 +20,7 @@ The human decides.
 ## Current repository status
 
 ```text
-repo: ifanjuang/pantheon-mpv
+repo: ifanjuang/pantheon-mvp
 status: initialized / awaiting external MVP vertical code
 adoption: not adopted
 activation: not activated
