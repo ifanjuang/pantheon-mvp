@@ -107,7 +107,8 @@ def contract_digest(contract: TaskContract) -> str:
 
 
 def _document_id(dossier: str, source_ref: str) -> str:
-    return f"doc-{_sha256(f'{dossier}\0{source_ref}')[:24]}"
+    identity = dossier + "\0" + source_ref
+    return f"doc-{_sha256(identity)[:24]}"
 
 
 def _extraction_id(ingestion_id: str, document_id: str) -> str:
