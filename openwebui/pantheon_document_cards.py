@@ -143,6 +143,7 @@ class Tools:
                 f"<p class='muted'>ID : {_escape(card.get('document_id'))}</p>"
                 "</article>"
             )
+        items_html = "".join(items) or '<p class="muted">Aucun document.</p>'
         content = (
             "<section class='panel'>"
             "<div class='eyebrow'>Projet</div>"
@@ -150,7 +151,7 @@ class Tools:
             f"<p class='muted'>{len(cards)} document(s) indexé(s)</p>"
             "</section>"
             "<section class='grid'>"
-            f"{''.join(items) or '<p class=\"muted\">Aucun document.</p>'}"
+            f"{items_html}"
             "</section>"
         )
         context = {
