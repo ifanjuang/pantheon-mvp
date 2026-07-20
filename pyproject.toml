@@ -35,7 +35,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["mvp_vertical"]
+packages = ["mvp_vertical", "openwebui"]
 
 # Ship the vendored governance schema + decision vocabulary as package data so
 # the gate and load_contract resolve them from an installed wheel, not only from
