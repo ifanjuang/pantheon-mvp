@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY mvp_vertical ./mvp_vertical
+COPY openwebui ./openwebui
 
 RUN python -m pip install --no-cache-dir ".[cockpit]" \
     && useradd --create-home --uid 10001 pantheon
