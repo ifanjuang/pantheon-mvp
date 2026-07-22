@@ -20,6 +20,7 @@ from . import (
     effect_preview,
     knowledge,
     knowledge_update,
+    resource_profiles,
     store,
     work_issue_read,
     work_issues,
@@ -155,6 +156,21 @@ def create_cockpit_app(
             "scope_match": "exact_case_ref",
             "work_issues": projections,
         }
+
+    @app.get("/v1/projects/{parent_project_id}/resource-profiles")
+    def project_resource_profiles(
+        parent_project_id: str,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        """Expose observed file composition and Knowledge-linked web addresses."""
+        try:
+            return with_connection(
+                lambda conn: resource_profiles.list_project_resource_profiles(
+                    conn, parent_project_id
+                )
+            )
+        except resource_profiles.ResourceProfileError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/v1/projects/{parent_project_id}/effects/preview")
     def preview_project_effects(
