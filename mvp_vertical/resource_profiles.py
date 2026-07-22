@@ -175,6 +175,15 @@ def extract_linked_sites(markdown: str) -> list[dict]:
     return sites
 
 
+def _knowledge_site_profiles(rows: list[dict]) -> list[dict]:
+    profiles: list[dict] = []
+    for row in rows:
+        sites = extract_linked_sites(row.get("markdown") or "")
+        if sites:
+            profiles.append({"knowledge_id": row["knowledge_id"], "sites": sites})
+    return profiles
+
+
 def list_project_resource_profiles(
     conn: psycopg.Connection,
     parent_project_id: str,
@@ -226,14 +235,7 @@ def list_project_resource_profiles(
             }
             for row in documents
         ],
-        "knowledge_sites": [
-            {
-                "knowledge_id": row["knowledge_id"],
-                "sites": extract_linked_sites(row.get("markdown") or ""),
-            }
-            for row in knowledge_rows
-            if extract_linked_sites(row.get("markdown") or "")
-        ],
+        "knowledge_sites": _knowledge_site_profiles(knowledge_rows),
         "crawl_capability": {
             "status": "documented_not_implemented",
             "candidate_modes": [
