@@ -5,7 +5,8 @@ Status: implemented external UI and bounded write candidate — not adopted, not
 This directory contains the first cards-first cockpit shell served at `/cockpit/`.
 It composes the existing bounded Document, Knowledge and Work Issue projections.
 It does not add a card database, approval engine, workflow engine, runtime,
-provider router, external action path or memory promotion path.
+provider router, crawler, vectorization service, external action path or memory
+promotion path.
 
 ```text
 Pantheon Next governs.
@@ -28,12 +29,13 @@ responsibility indicators
 reviewable detail view
 ```
 
-The visual projection is derived from three independent inputs:
+The visual projection is derived from independent inputs:
 
 ```text
 object kind
 + current owner-defined status
 + recent event where the underlying projection exposes one
++ optional observed resource profile
 ```
 
 A card is not the underlying object and never owns its status.
@@ -53,10 +55,6 @@ returns the existing governed aggregate, including comments, Hermes runs and
 append-only events. It does not infer project membership, broaden scope, mutate
 status or grant Hermes database authority.
 
-Resource Profiles remain observational. They describe file composition and
-Knowledge-linked addresses without crawling, indexing, installing or activating
-anything.
-
 Recent visual effects are derived from owner data:
 
 - Document: recent extraction completion;
@@ -65,6 +63,109 @@ Recent visual effects are derived from owner data:
 
 These effects orient attention only. They are not truth, approval, execution or
 memory statuses.
+
+## File format and observed composition
+
+Document cards may show a compact format badge and resource indicators without
+changing their base anatomy. The read-only profile derives, where available:
+
+```text
+extension
+media type
+format family
+text observed
+images observed
+tables observed
+composition candidate
+```
+
+Format families currently include:
+
+```text
+PDF
+image
+text
+word-processing document
+spreadsheet
+presentation
+archive
+other
+```
+
+Composition candidates currently include:
+
+```text
+text only
+structured text / tables
+text and images
+image with extracted text
+images only
+unknown
+```
+
+The profile is calculated from the current extraction JSON and derived Markdown.
+It is explicitly non-exhaustive. Therefore:
+
+```text
+image indicator != complete visual inspection
+text extracted != source verified
+format recognized != content approved
+```
+
+No new document status or authority is inferred from these indicators.
+
+## Knowledge-linked site addresses
+
+A Knowledge card may expose several web addresses already present in its Markdown.
+The profile deduplicates addresses and may classify common hosts for orientation,
+including legal references, safety references, geodata, public data, official
+public sites and general web sources.
+
+The current retrieval profile is always:
+
+```text
+mode: address_only
+crawl_status: not_authorized
+vector_status: not_indexed
+structure_indexed: false
+```
+
+The cockpit performs no URL request while loading or displaying a card. A link is
+not a fetched source, an indexed source or Evidence.
+
+Possible future coverage modes are documented but not implemented:
+
+```text
+address_only
+structure_only
+selected_pages
+full_content
+```
+
+The intended responsibility split is:
+
+```text
+Pantheon governs host/path scope, coverage mode, activation, update and rollback.
+Hermes may execute an explicitly authorized crawl or indexing handoff.
+The cockpit and OpenWebUI display addresses, coverage and health.
+The human approves consequential scope and activation.
+```
+
+Forbidden by this candidate:
+
+- following undeclared links;
+- default full-site crawling;
+- hidden authentication or session reuse;
+- treating sitemap discovery or runtime success as approval;
+- treating a vector index as Evidence or canonical Knowledge;
+- silently widening from structure-only to content indexing;
+- automatically refreshing or deleting indexed content without a governed update
+  and rollback path.
+
+A future `structure_only` binding should index only a reviewed site map or bounded
+navigation graph — for example canonical URLs, titles, headings and parent/child
+relations — so retrieval can locate candidate pages before any separately scoped
+content fetch.
 
 ## Deterministic rapprochement preview
 
@@ -136,9 +237,10 @@ The preview route:
 - requires the server-side update signing authority;
 - verifies exact project ownership and optimistic version;
 - preserves the current Knowledge review status;
-- preserves and signs the exact Markdown bytes;
 - calculates a unified Markdown diff;
-- signs project, target, version, before/after digests, actor and expiry;
+- ignores terminal whitespace-only differences when deciding whether a change is
+  material, while preserving the exact confirmed Markdown for a material write;
+- signs project, target, version, exact before/after digests, actor and expiry;
 - persists nothing.
 
 The apply route requires the same immutable effect, a valid signature, the exact
@@ -178,6 +280,8 @@ Not implemented in this lot:
 - owner-specific `CREATE`, `SUPERSEDE` or `CONFLICT` application;
 - Document or Work Issue application from effect proposals;
 - Knowledge review-status changes through this UPDATE gate;
+- web crawling or web-content vectorization;
+- persisted per-site crawl policies, manifests, refresh schedules or rollback;
 - Decision and Gate projection;
 - Rite Review cards;
 - Agora;
@@ -194,6 +298,7 @@ tokens
 foundations
 layout
 components
+resource indicators
 variants
 effect preview module
 Knowledge update module
@@ -202,9 +307,11 @@ accessibility
 ```
 
 HTML anatomy remains stable. The main renderer owns persisted-object cards;
-`effects.js` owns proposal-only rapprochement and eligibility routing;
-`knowledge_updates.js` owns only the signed Knowledge UPDATE interaction. Colors
-and motion remain controlled by CSS variables and variants.
+`resources.js` enriches those projections with read-only format/composition and
+linked-site indicators; `effects.js` owns proposal-only rapprochement and
+eligibility routing; `knowledge_updates.js` owns only the signed Knowledge
+`UPDATE` interaction. Colors and motion remain controlled by CSS variables and
+variants.
 
 ## Motion boundary
 
