@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import Callable, Literal
 
+import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -30,6 +31,7 @@ from . import (
 from .cockpit_api import create_app
 
 COCKPIT = Path(__file__).resolve().parent / "cockpit"
+_DEFAULT_INITIALIZER = object()
 
 
 class EffectPreviewBody(BaseModel):
@@ -72,11 +74,18 @@ class SiteNavigationProfilePreviewBody(BaseModel):
 
 
 def connect_cockpit():
-    """Open the shared store and ensure the existing Work Issue slice exists."""
+    """Open a runtime connection without replaying schema DDL per request."""
+    return psycopg.connect(store.dsn_from_env())
+
+
+def initialize_cockpit_schema() -> None:
+    """Initialize the bounded store once at service startup, outside request handling."""
     conn = store.connect()
-    conn.execute(work_issues.MIGRATION.read_text(encoding="utf-8"))
-    conn.commit()
-    return conn
+    try:
+        conn.execute(work_issues.MIGRATION.read_text(encoding="utf-8"))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _bearer_token(authorization: str | None) -> str:
@@ -88,6 +97,7 @@ def _bearer_token(authorization: str | None) -> str:
 def create_cockpit_app(
     *,
     connect_fn: Callable = connect_cockpit,
+    initialize_fn: Callable[[], None] | None | object = _DEFAULT_INITIALIZER,
     document_root: str | Path | None = None,
     api_key: str | None = None,
     editor_api_key: str | None = None,
@@ -109,6 +119,11 @@ def create_cockpit_app(
         if update_signing_secret is not None
         else os.getenv("MVP_UPDATE_SIGNING_SECRET", "")
     )
+
+    if initialize_fn is _DEFAULT_INITIALIZER:
+        initialize_fn = initialize_cockpit_schema if connect_fn is connect_cockpit else None
+    if initialize_fn is not None:
+        app.add_event_handler("startup", initialize_fn)
 
     def require_read_key(authorization: str | None = Header(default=None)) -> None:
         supplied = _bearer_token(authorization)
