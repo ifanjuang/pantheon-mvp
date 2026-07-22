@@ -1,6 +1,6 @@
 # Cards-first Cockpit Candidate
 
-Status: implemented external UI candidate — not adopted, not activated, not production-authorized.
+Status: implemented external UI and bounded write candidate — not adopted, not activated, not production-authorized.
 
 This directory contains the first cards-first cockpit shell served at `/cockpit/`.
 It composes the existing bounded Document, Knowledge and Work Issue projections.
@@ -10,7 +10,7 @@ provider router, external action path or memory promotion path.
 ```text
 Pantheon Next governs.
 Hermes executes explicit bounded handoffs.
-The cockpit exposes projections.
+The cockpit exposes projections and narrow owner actions.
 The human decides.
 ```
 
@@ -45,6 +45,7 @@ A card is not the underlying object and never owns its status.
 - Work Issue cards from `GET /v1/projects/{parent_project_id}/work-issues`.
 - One local Questionnaire card used to test structured clarification UX.
 - Proposal-only Effect cards from `POST /v1/projects/{parent_project_id}/effects/preview`.
+- One owner-specific Knowledge `UPDATE` gate with signed diff and explicit human confirmation.
 
 The Work Issue route performs one exact `case_ref == parent_project_id` match. It
 returns the existing governed aggregate, including comments, Hermes runs and
@@ -88,30 +89,66 @@ SUPERSEDE
 CONFLICT
 ```
 
-The preview is deliberately incomplete as an execution path:
+The generic preview remains deliberately incomplete as an execution path:
 
 - no proposal persistence;
 - no card or owner-object mutation;
-- no apply endpoint;
+- no generic apply endpoint;
 - no semantic model call;
 - no automatic choice when multiple candidates are close;
 - no inference outside the exact project scope.
 
-Lexical similarity is orientation, not evidence or truth. A later owner-specific
-write path and authenticated human confirmation remain required.
+Lexical similarity is orientation, not evidence or truth.
 
-The Questionnaire card is session-local. It does not submit, persist or apply
-any effect. After the local summary, its answers may prefill the Rapprochement
-form, but the preview still requires an explicit user action.
+## First owner-specific Knowledge UPDATE
+
+Only a candidate `UPDATE` whose exact target is an existing Knowledge item may
+enter the first write gate. The gate uses two separate routes:
+
+```text
+POST /v1/projects/{project}/knowledge/{knowledge}/updates/preview
+POST /v1/projects/{project}/knowledge/{knowledge}/updates/apply
+```
+
+The preview route:
+
+- requires the editor credential;
+- requires `X-Pantheon-Human-Actor`;
+- verifies exact project ownership and optimistic version;
+- preserves the current Knowledge review status;
+- calculates a unified Markdown diff;
+- signs project, target, version, before/after digests, actor and expiry;
+- persists nothing.
+
+The apply route requires the same immutable effect, a valid unexpired signature,
+the exact phrase `CONFIRMER UPDATE`, an idempotency key and the same declared
+human actor. It delegates the final write to `knowledge.revise_knowledge`, which
+owns the transaction, version increment, append-only event and immutable replay.
+
+```text
+UPDATE applied != Knowledge reviewed
+Knowledge revised != Evidence
+runtime success != proof
+```
+
+Identity assurance is currently **partial**: the declared actor is bound to the
+shared editor credential. Individual SSO identity is not implemented and must not
+be inferred from this gate.
+
+The Questionnaire card remains session-local. It does not submit, persist or
+apply any effect. Its answers may prefill Rapprochement only after an explicit
+user action.
 
 Not implemented in this lot:
 
 - Situation persistence;
-- owner-specific application of `CREATE`, `UPDATE`, `SUPERSEDE` or `CONFLICT`;
+- owner-specific `CREATE`, `SUPERSEDE` or `CONFLICT` application;
+- Document or Work Issue application from effect proposals;
+- Knowledge review-status changes through this UPDATE gate;
 - Decision and Gate projection;
 - Rite Review cards;
 - Agora;
-- authenticated human identity;
+- individually authenticated human identity / SSO;
 - card-event acknowledgement;
 - Hermes handoff from cockpit interactions.
 
@@ -126,13 +163,15 @@ layout
 components
 variants
 effect preview module
+Knowledge update module
 motion
 accessibility
 ```
 
 HTML anatomy remains stable. The main renderer owns persisted-object cards;
-`effects.js` owns only the proposal-only rapprochement scene and questionnaire
-handoff. Colors and motion remain controlled by CSS variables and variants.
+`effects.js` owns proposal-only rapprochement and eligibility routing;
+`knowledge_updates.js` owns only the signed Knowledge UPDATE interaction. Colors
+and motion remain controlled by CSS variables and variants.
 
 ## Motion boundary
 
