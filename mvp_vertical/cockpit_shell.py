@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hmac
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -88,6 +89,19 @@ def initialize_cockpit_schema() -> None:
         conn.close()
 
 
+def _install_initializer(app: FastAPI, initializer: Callable[[], None]) -> None:
+    """Compose one fail-closed initializer with FastAPI's current lifespan API."""
+    original_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        initializer()
+        async with original_lifespan(application) as state:
+            yield state
+
+    app.router.lifespan_context = lifespan
+
+
 def _bearer_token(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         return ""
@@ -123,7 +137,7 @@ def create_cockpit_app(
     if initialize_fn is _DEFAULT_INITIALIZER:
         initialize_fn = initialize_cockpit_schema if connect_fn is connect_cockpit else None
     if initialize_fn is not None:
-        app.add_event_handler("startup", initialize_fn)
+        _install_initializer(app, initialize_fn)
 
     def require_read_key(authorization: str | None = Header(default=None)) -> None:
         supplied = _bearer_token(authorization)
