@@ -64,13 +64,13 @@ class ProjectObject:
 def _normalize(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value or "")
     without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return re.sub(r"\s+", " ", without_marks.lower()).strip()
+    return re.sub(r"[^a-z0-9]+", " ", without_marks.lower()).strip()
 
 
 def _tokens(value: str) -> set[str]:
     return {
         token
-        for token in re.findall(r"[a-z0-9][a-z0-9_-]+", _normalize(value))
+        for token in re.findall(r"[a-z0-9]+", _normalize(value))
         if len(token) >= 3 and token not in _STOPWORDS
     }
 
@@ -92,20 +92,28 @@ def _information_digest(information: str) -> str:
     return f"sha256:{hashlib.sha256(information.encode('utf-8')).hexdigest()}"
 
 
-def _effect_from_text(information: str, hint: EffectKind | None, has_target: bool) -> tuple[EffectKind, str]:
+def _effect_from_text(
+    information: str,
+    hint: EffectKind | None,
+    has_target: bool,
+) -> tuple[EffectKind, str]:
     if hint is not None:
         return hint, "explicit_hint"
+    if not has_target:
+        return "CREATE", "no_matching_object"
     normalized = _normalize(information)
-    for effect in ("CONFLICT", "SUPERSEDE", "UPDATE", "CREATE"):
+    for effect in ("CONFLICT", "SUPERSEDE", "UPDATE"):
         for cue in _CUES[effect]:
             if cue in normalized:
-                if effect == "CREATE" and has_target:
-                    continue
                 return effect, f"deterministic_cue:{cue}"
-    return ("UPDATE", "matched_object_default") if has_target else ("CREATE", "no_matching_object")
+    return "UPDATE", "matched_object_default"
 
 
-def _object_score(information: str, obj: ProjectObject, explicit_refs: set[str]) -> tuple[float, list[str]]:
+def _object_score(
+    information: str,
+    obj: ProjectObject,
+    explicit_refs: set[str],
+) -> tuple[float, list[str]]:
     normalized_refs = {_normalize(ref) for ref in obj.explicit_refs if ref}
     if normalized_refs & explicit_refs:
         return 1.0, ["Référence d’objet explicitement fournie."]
