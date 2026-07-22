@@ -49,6 +49,46 @@ def test_composed_shell_keeps_existing_api_boundary() -> None:
     ).status_code == 401
 
 
+def test_health_reports_effective_service_posture() -> None:
+    read_client = TestClient(
+        create_cockpit_app(connect_fn=_Connection, api_key="read-key")
+    )
+    read_health = read_client.get("/health").json()
+    assert read_health["mode"] == "read_only"
+    assert read_health["preview_effect"] == "none"
+    assert read_health["write_surface"] == "disabled"
+    assert read_health["signed_knowledge_update_gate"] == "not_configured"
+
+    editor_client = TestClient(
+        create_cockpit_app(
+            connect_fn=_Connection,
+            editor_api_key="editor-key",
+            update_signing_secret="signing-secret",
+        )
+    )
+    editor_health = editor_client.get("/health").json()
+    assert editor_health["mode"] == "bounded_read_write"
+    assert editor_health["preview_effect"] == "none"
+    assert editor_health["write_surface"] == "bounded_document_knowledge_writes"
+    assert editor_health["signed_knowledge_update_gate"] == "configured"
+
+
+def test_schema_initializer_runs_once_at_service_startup() -> None:
+    calls: list[str] = []
+    app = create_cockpit_app(
+        connect_fn=_Connection,
+        initialize_fn=lambda: calls.append("initialized"),
+        api_key="read-key",
+    )
+
+    with TestClient(app) as client:
+        assert calls == ["initialized"]
+        assert client.get("/health").status_code == 200
+        assert client.get("/health").status_code == 200
+
+    assert calls == ["initialized"]
+
+
 def test_work_issue_route_is_read_only_and_exact_case_scoped(monkeypatch) -> None:
     observed = {}
 
