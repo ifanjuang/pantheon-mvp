@@ -100,7 +100,7 @@ def test_apply_verifies_exact_preview_and_delegates_transactional_write(monkeypa
     assert result["knowledge"]["version"] == 4
     assert observed == {
         "knowledge_id": "knowledge.coverage",
-        "markdown": PROPOSED.strip(),
+        "markdown": PROPOSED,
         "expected_version": 3,
         "actor": "ifan.juang",
         "actor_kind": "human",
