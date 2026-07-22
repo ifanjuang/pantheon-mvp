@@ -22,8 +22,14 @@ jobs:
         run: pytest -q --tb=short tests/test_cockpit_assets.py tests/test_cockpit_shell.py
       - name: Proposal-only effect contracts
         run: pytest -q --tb=short tests/test_effect_guard.py tests/test_effect_preview.py
-      - name: Knowledge UPDATE unit contracts
-        run: pytest -q --tb=short tests/test_knowledge_update.py
+      - name: Knowledge UPDATE signed diff contract
+        run: pytest -q --tb=short tests/test_knowledge_update.py::test_preview_returns_signed_diff_without_writing
+      - name: Knowledge UPDATE transactional delegation contract
+        run: pytest -q --tb=short tests/test_knowledge_update.py::test_apply_verifies_exact_preview_and_delegates_transactional_write
+      - name: Knowledge UPDATE rejection contracts
+        run: pytest -q --tb=short tests/test_knowledge_update.py::test_apply_rejects_expiry_tampering_scope_and_stale_markdown
+      - name: Knowledge UPDATE input validation contracts
+        run: pytest -q --tb=short tests/test_knowledge_update.py::test_preview_refuses_noop_stale_version_and_status_change
       - name: Knowledge UPDATE idempotency contract
         run: pytest -q --tb=short tests/test_knowledge_update_idempotency.py
       - name: Knowledge UPDATE API contracts
