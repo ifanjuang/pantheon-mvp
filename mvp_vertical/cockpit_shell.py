@@ -21,6 +21,7 @@ from . import (
     knowledge,
     knowledge_update,
     resource_profiles,
+    site_manifest_preview,
     store,
     work_issue_read,
     work_issues,
@@ -51,6 +52,17 @@ class KnowledgeUpdateApplyBody(KnowledgeUpdatePreviewBody):
     confirmation_expires_at: int = Field(ge=1)
     confirmation_phrase: str = Field(min_length=1, max_length=100)
     idempotency_key: str = Field(min_length=8, max_length=200)
+
+
+class StructureSiteScopeBody(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
+    path_prefixes: list[str] = Field(default_factory=list, max_length=8)
+    max_depth: int = Field(default=2, ge=0, le=5)
+
+
+class StructureManifestPreviewBody(BaseModel):
+    mode: Literal["structure_only"] = "structure_only"
+    sites: list[StructureSiteScopeBody] = Field(min_length=1, max_length=10)
 
 
 def connect_cockpit():
@@ -185,6 +197,34 @@ def create_cockpit_app(
                 )
             )
         except resource_profiles.ResourceProfileError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/v1/projects/{parent_project_id}/knowledge/{knowledge_id}/site-manifests/preview"
+    )
+    def preview_site_manifest(
+        parent_project_id: str,
+        knowledge_id: str,
+        body: StructureManifestPreviewBody,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        """Preview one exact Knowledge-linked structure perimeter without fetching it."""
+        try:
+            return with_connection(
+                lambda conn: site_manifest_preview.preview_structure_manifest(
+                    conn,
+                    parent_project_id=parent_project_id,
+                    knowledge_id=knowledge_id,
+                    mode=body.mode,
+                    sites=[site.model_dump() for site in body.sites],
+                )
+            )
+        except knowledge.KnowledgeNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (
+            site_manifest_preview.SiteManifestPreviewError,
+            knowledge.KnowledgeError,
+        ) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/v1/projects/{parent_project_id}/effects/preview")
