@@ -56,6 +56,13 @@ def _validate_scope(card: dict, *, parent_project_id: str, knowledge_id: str) ->
         raise KnowledgeUpdateError("Knowledge does not belong to the exact opened project")
 
 
+def _validate_preserved_review_status(card: dict, review_status: str | None) -> None:
+    if review_status is not None and review_status != card.get("review_status"):
+        raise KnowledgeUpdateError(
+            "review status changes require a separate governed decision path"
+        )
+
+
 def _effect_payload(
     *,
     parent_project_id: str,
@@ -110,14 +117,14 @@ def preview_knowledge_update(
 
     card = knowledge.get_knowledge_card(conn, knowledge_id)
     _validate_scope(card, parent_project_id=parent_project_id, knowledge_id=knowledge_id)
+    _validate_preserved_review_status(card, review_status)
     if card.get("version") != expected_version:
         raise knowledge.StaleKnowledgeWrite(
             f"stale Knowledge version: expected {expected_version}, current {card.get('version')}"
         )
 
     current_markdown = knowledge.get_knowledge_markdown(conn, knowledge_id)
-    next_status = review_status or card.get("review_status")
-    if proposed_markdown == current_markdown and next_status == card.get("review_status"):
+    if proposed_markdown == current_markdown:
         raise KnowledgeUpdateError("the proposed UPDATE has no material change")
 
     base_digest = _digest(current_markdown)
@@ -154,7 +161,7 @@ def preview_knowledge_update(
             "title": card.get("title"),
             "current_version": expected_version,
             "current_review_status": card.get("review_status"),
-            "proposed_review_status": next_status,
+            "proposed_review_status": card.get("review_status"),
         },
         "diff": diff,
         "base_markdown_digest": base_digest,
@@ -174,6 +181,7 @@ def preview_knowledge_update(
         ),
         "limits": [
             "The preview is not persisted.",
+            "The Knowledge review status is preserved by this first UPDATE path.",
             "The declared actor is bound to the shared editor credential, not an individual SSO identity.",
             "Knowledge remains editorial content, not Evidence, governed memory or doctrine.",
         ],
@@ -229,6 +237,7 @@ def apply_knowledge_update(
 
     card = knowledge.get_knowledge_card(conn, knowledge_id)
     _validate_scope(card, parent_project_id=parent_project_id, knowledge_id=knowledge_id)
+    _validate_preserved_review_status(card, review_status)
     if card.get("version") != expected_version:
         raise knowledge.StaleKnowledgeWrite(
             f"stale Knowledge version: expected {expected_version}, current {card.get('version')}"
@@ -245,7 +254,7 @@ def apply_knowledge_update(
         actor=actor,
         actor_kind="human",
         idempotency_key=idempotency_key,
-        review_status=review_status,
+        review_status=None,
     )
     return {
         "status": "applied",
