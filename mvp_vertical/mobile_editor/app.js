@@ -31,11 +31,50 @@ function headers(extra = {}) {
 }
 
 function key(id) { return `pantheon-knowledge:${id}`; }
+function legacyDraftKey(id) { return `pantheon-knowledge:legacy-revision:${id}`; }
 function queueKey() { return "pantheon-knowledge:queue"; }
 function queue() { return JSON.parse(localStorage.getItem(queueKey()) || "[]"); }
 function setQueue(value) { localStorage.setItem(queueKey(), JSON.stringify(value)); }
 function message(text) { $("message").textContent = text; }
 function setNetwork() { $("network").textContent = navigator.onLine ? "en ligne" : "hors ligne"; }
+
+function recoveredLegacyDraft(knowledgeId) {
+  return JSON.parse(localStorage.getItem(legacyDraftKey(knowledgeId)) || "null");
+}
+
+function migrateLegacyRevisions() {
+  const remaining = [];
+  let recovered = 0;
+  for (const operation of queue()) {
+    if (operation?.type !== "revision") {
+      remaining.push(operation);
+      continue;
+    }
+    const knowledgeId = String(operation.knowledge_id || "").trim();
+    const markdown = operation.body?.markdown;
+    if (!knowledgeId || typeof markdown !== "string") {
+      remaining.push({ ...operation, conflict: "ancienne révision incomplète ; récupération manuelle requise" });
+      continue;
+    }
+    try {
+      localStorage.setItem(
+        legacyDraftKey(knowledgeId),
+        JSON.stringify({
+          markdown,
+          expectedVersion: operation.body?.expected_version,
+          actor: operation.body?.actor,
+          legacyIdempotencyKey: operation.body?.idempotency_key,
+          recoveredAt: new Date().toISOString(),
+        }),
+      );
+      recovered += 1;
+    } catch (error) {
+      remaining.push({ ...operation, conflict: `récupération locale impossible : ${error.message}` });
+    }
+  }
+  setQueue(remaining);
+  return recovered;
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -70,17 +109,20 @@ async function loadProject() {
   state.actor = $("actor").value.trim();
   if (state.actor) sessionStorage.setItem("pantheon-human-actor", state.actor);
   if (!state.project) return message("Indiquez le projet.");
+  const recovered = migrateLegacyRevisions();
   try {
     const response = await api(`../v1/projects/${encodeURIComponent(state.project)}/knowledge`);
     state.items = (await response.json()).knowledge;
     localStorage.setItem(`pantheon-project:${state.project}`, JSON.stringify(state.items));
     renderItems();
-    message(`${state.items.length} sujet(s) chargé(s).`);
+    message(recovered
+      ? `${state.items.length} sujet(s) chargé(s). ${recovered} ancienne(s) révision(s) récupérée(s) comme brouillon local.`
+      : `${state.items.length} sujet(s) chargé(s).`);
     await syncQueue();
   } catch (error) {
     state.items = JSON.parse(localStorage.getItem(`pantheon-project:${state.project}`) || "[]");
     renderItems();
-    message(`Mode hors ligne : ${error.message}`);
+    message(`Mode hors ligne : ${error.message}${recovered ? ` · ${recovered} ancienne(s) révision(s) récupérée(s).` : ""}`);
   }
 }
 
@@ -90,26 +132,39 @@ async function openItem(item) {
   renderItems();
   let markdown;
   let loadedRemote = false;
+  const recovered = recoveredLegacyDraft(item.knowledge_id);
   try {
-    markdown = await (await api(`../v1/knowledge/${encodeURIComponent(item.knowledge_id)}/markdown`)).text();
+    const remoteMarkdown = await (await api(`../v1/knowledge/${encodeURIComponent(item.knowledge_id)}/markdown`)).text();
     loadedRemote = true;
-    localStorage.setItem(key(item.knowledge_id), JSON.stringify({ item, markdown, baseMarkdown: markdown }));
+    state.baseMarkdown = remoteMarkdown;
+    markdown = recovered?.markdown ?? remoteMarkdown;
+    localStorage.setItem(
+      key(item.knowledge_id),
+      JSON.stringify({ item, markdown, baseMarkdown: remoteMarkdown }),
+    );
   } catch {
     const cached = JSON.parse(localStorage.getItem(key(item.knowledge_id)) || "null");
-    if (!cached) return message("Ce sujet n’est pas encore disponible hors ligne.");
-    markdown = cached.markdown;
-    item = cached.item;
-    state.current = item;
-    state.baseMarkdown = cached.baseMarkdown || markdown;
+    if (!cached && !recovered) return message("Ce sujet n’est pas encore disponible hors ligne.");
+    if (cached) {
+      item = cached.item;
+      state.current = item;
+      state.baseMarkdown = cached.baseMarkdown || cached.markdown;
+      markdown = recovered?.markdown ?? cached.markdown;
+    } else {
+      state.baseMarkdown = recovered.markdown;
+      markdown = recovered.markdown;
+    }
   }
-  if (loadedRemote) state.baseMarkdown = markdown;
+  if (loadedRemote && !recovered) state.baseMarkdown = markdown;
   $("title").textContent = item.title;
   $("status").textContent = `${item.family} · version ${item.version} · ${item.review_status}`;
   $("markdown").value = markdown;
   $("markdown").disabled = false;
   $("save").disabled = false;
   document.querySelectorAll("[data-action]").forEach(button => { button.disabled = false; });
-  message("Le brouillon reste local jusqu’à un UPDATE confirmé.");
+  message(recovered
+    ? "Une ancienne révision hors ligne a été récupérée. Prévisualisez puis confirmez son UPDATE signé ; elle ne sera pas écrasée par le serveur."
+    : "Le brouillon reste local jusqu’à un UPDATE confirmé.");
 }
 
 function storeDraft() {
@@ -227,6 +282,7 @@ async function applyPendingUpdate() {
     state.current = updated;
     state.baseMarkdown = pending.candidateMarkdown;
     state.items = state.items.map(item => item.knowledge_id === updated.knowledge_id ? updated : item);
+    localStorage.removeItem(legacyDraftKey(updated.knowledge_id));
     localStorage.setItem(
       key(updated.knowledge_id),
       JSON.stringify({
@@ -278,15 +334,14 @@ async function requestEdit(kind) {
 }
 
 async function syncQueue() {
-  if (!navigator.onLine || !state.token) return;
+  const recovered = migrateLegacyRevisions();
+  if (!navigator.onLine || !state.token) {
+    if (recovered) message(`${recovered} ancienne(s) révision(s) récupérée(s) comme brouillon local.`);
+    return;
+  }
   const pending = queue();
   const remaining = [];
-  let retiredRevisions = 0;
   for (const operation of pending) {
-    if (operation.type === "revision") {
-      retiredRevisions += 1;
-      continue;
-    }
     try {
       const path = `../v1/knowledge/${encodeURIComponent(operation.knowledge_id)}/edit-requests`;
       await api(path, { method: "POST", body: JSON.stringify(operation.body) });
@@ -296,7 +351,7 @@ async function syncQueue() {
   }
   setQueue(remaining);
   const details = [];
-  if (retiredRevisions) details.push(`${retiredRevisions} ancienne(s) révision(s) automatique(s) retirée(s) ; les brouillons locaux restent disponibles`);
+  if (recovered) details.push(`${recovered} ancienne(s) révision(s) récupérée(s) comme brouillon local`);
   if (remaining.length) details.push(`${remaining.length} demande(s) Hermes en attente ou en conflit`);
   message(details.length ? `${details.join(". ")}.` : "Synchronisation des demandes Hermes terminée.");
 }
@@ -339,5 +394,7 @@ document.querySelectorAll("[data-action]").forEach(button => {
 window.addEventListener("online", () => { setNetwork(); syncQueue(); });
 window.addEventListener("offline", setNetwork);
 $("actor").value = sessionStorage.getItem("pantheon-human-actor") || "";
+const recoveredAtStartup = migrateLegacyRevisions();
 setNetwork();
+if (recoveredAtStartup) message(`${recoveredAtStartup} ancienne(s) révision(s) récupérée(s) comme brouillon local.`);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
