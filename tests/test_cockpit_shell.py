@@ -21,10 +21,12 @@ def test_cards_first_cockpit_shell_is_available() -> None:
     assert "Pantheon Cockpit" in response.text
     assert "Le cockpit affiche des projections" in response.text
     assert 'data-scene="work"' in response.text
-    assert 'data-scene="effects"' in response.text
+    assert 'src="effects.js"' in response.text
 
     assert client.get("/cockpit/app.js").status_code == 200
+    assert client.get("/cockpit/effects.js").status_code == 200
     assert client.get("/cockpit/styles/index.css").status_code == 200
+    assert client.get("/cockpit/styles/effects.css").status_code == 200
     assert client.get("/editor/").status_code == 200
 
 
