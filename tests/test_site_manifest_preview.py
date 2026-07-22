@@ -113,6 +113,19 @@ def test_preview_refuses_unlinked_scope_private_targets_and_wrong_project(monkey
         )
 
 
+def test_preview_refuses_bracketed_ipv6_loopback_after_canonicalization(monkeypatch) -> None:
+    _patch_knowledge(monkeypatch, markdown="https://[::1]/admin")
+
+    with pytest.raises(site_manifest_preview.SiteManifestPreviewError, match="private"):
+        site_manifest_preview.preview_structure_manifest(
+            _Connection(),
+            parent_project_id="project-a",
+            knowledge_id="knowledge.regulations",
+            mode="structure_only",
+            sites=[{"url": "https://[::1]/admin", "path_prefixes": ["/"]}],
+        )
+
+
 def test_preview_refuses_credentials_before_url_canonicalization(monkeypatch) -> None:
     _patch_knowledge(monkeypatch, markdown="https://user:secret@sitesecurite.fr/erp")
     with pytest.raises(site_manifest_preview.SiteManifestPreviewError, match="credential-bearing"):
