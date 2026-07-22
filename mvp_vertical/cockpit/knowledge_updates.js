@@ -183,6 +183,7 @@
   }
 
   function renderSignedPreview({ previewArea, preview, project, token, actor, card, proposed, candidateMarkdown }) {
+    const updateIdempotencyKey = idempotencyKey();
     const diff = document.createElement("pre");
     diff.className = "knowledge-diff";
     diff.textContent = preview.diff || "Aucune différence textuelle affichable.";
@@ -229,7 +230,7 @@
               confirmation_token: preview.confirmation.token,
               confirmation_expires_at: preview.confirmation.expires_at,
               confirmation_phrase: phrase.value,
-              idempotency_key: idempotencyKey(),
+              idempotency_key: updateIdempotencyKey,
             },
           },
         );
@@ -254,5 +255,10 @@
 
   document.addEventListener("pantheon:knowledge-update-request", event => {
     openKnowledgeUpdate(event.detail || {});
+  });
+
+  document.addEventListener("pantheon:knowledge-updated", () => {
+    const load = byId("load");
+    if (load && !load.disabled) load.click();
   });
 })();
