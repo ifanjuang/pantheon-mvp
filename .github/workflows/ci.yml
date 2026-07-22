@@ -25,13 +25,7 @@ jobs:
       - name: Knowledge UPDATE signed diff contract
         run: pytest -q --tb=short tests/test_knowledge_update.py::test_preview_returns_signed_diff_without_writing
       - name: Knowledge UPDATE transactional delegation contract
-        run: pytest -vv --tb=long tests/test_knowledge_update.py::test_apply_verifies_exact_preview_and_delegates_transactional_write > knowledge-update-traceback.txt 2>&1
-      - name: Upload Knowledge UPDATE traceback
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: knowledge-update-traceback
-          path: knowledge-update-traceback.txt
+        run: pytest -q --tb=short tests/test_knowledge_update.py::test_apply_verifies_exact_preview_and_delegates_transactional_write
       - name: Knowledge UPDATE rejection contracts
         run: pytest -q --tb=short tests/test_knowledge_update.py::test_apply_rejects_expiry_tampering_scope_and_stale_markdown
       - name: Knowledge UPDATE input validation contracts
