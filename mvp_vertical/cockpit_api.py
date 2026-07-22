@@ -234,10 +234,13 @@ def create_app(
         body: ReviseKnowledgeBody,
         _authorized: None = Depends(require_editor_key),
     ) -> dict:
-        return knowledge_write(
-            lambda conn: knowledge.revise_knowledge(
-                conn, knowledge_id=knowledge_id, **body.model_dump()
-            )
+        """Retired direct write; use the project-scoped signed UPDATE gate."""
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "direct Knowledge revision is retired; use the project-scoped "
+                "signed update preview/apply routes"
+            ),
         )
 
     @app.post("/v1/knowledge/{knowledge_id}/edit-requests", status_code=202)
