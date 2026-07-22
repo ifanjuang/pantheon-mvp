@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = [
     ROOT / "mvp_vertical" / "cockpit" / "app.js",
     ROOT / "mvp_vertical" / "cockpit" / "effects.js",
+    ROOT / "mvp_vertical" / "cockpit" / "knowledge_updates.js",
 ]
 
 
