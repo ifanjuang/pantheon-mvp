@@ -9,15 +9,23 @@ from __future__ import annotations
 import hmac
 import os
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
-from . import store, work_issue_read, work_issues
+from . import effect_preview, store, work_issue_read, work_issues
 from .cockpit_api import create_app
 
 COCKPIT = Path(__file__).resolve().parent / "cockpit"
+
+
+class EffectPreviewBody(BaseModel):
+    information: str = Field(min_length=3, max_length=4000)
+    explicit_object_refs: list[str] = Field(default_factory=list, max_length=10)
+    effect_hint: Literal["CREATE", "UPDATE", "SUPERSEDE", "CONFLICT"] | None = None
+    max_proposals: int = Field(default=5, ge=1, le=10)
 
 
 def connect_cockpit():
@@ -92,6 +100,27 @@ def create_cockpit_app(
             "scope_match": "exact_case_ref",
             "work_issues": projections,
         }
+
+    @app.post("/v1/projects/{parent_project_id}/effects/preview")
+    def preview_project_effects(
+        parent_project_id: str,
+        body: EffectPreviewBody,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        """Propose deterministic effects without persisting or applying them."""
+        try:
+            return with_connection(
+                lambda conn: effect_preview.preview_project_effects(
+                    conn,
+                    parent_project_id=parent_project_id,
+                    information=body.information,
+                    explicit_object_refs=body.explicit_object_refs,
+                    effect_hint=body.effect_hint,
+                    max_proposals=body.max_proposals,
+                )
+            )
+        except effect_preview.EffectPreviewError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if COCKPIT.is_dir():
         app.mount("/cockpit", StaticFiles(directory=COCKPIT, html=True), name="cockpit")
