@@ -6,5 +6,6 @@
 @import url("card.css") layer(components);
 @import url("variants.css") layer(variants);
 @import url("effects.css");
+@import url("knowledge_updates.css");
 @import url("motion.css") layer(motion);
 @import url("accessibility.css") layer(accessibility);
