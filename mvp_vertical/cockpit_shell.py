@@ -185,8 +185,8 @@ def create_cockpit_app(
         parent_project_id: str,
         knowledge_id: str,
         body: KnowledgeUpdatePreviewBody,
-        actor: str = Depends(require_human_actor),
         _authorized: None = Depends(require_editor_key),
+        actor: str = Depends(require_human_actor),
     ) -> dict:
         """Return a signed diff for one exact Knowledge UPDATE."""
         return knowledge_update_write(
@@ -207,8 +207,8 @@ def create_cockpit_app(
         parent_project_id: str,
         knowledge_id: str,
         body: KnowledgeUpdateApplyBody,
-        actor: str = Depends(require_human_actor),
         _authorized: None = Depends(require_editor_key),
+        actor: str = Depends(require_human_actor),
     ) -> dict:
         """Apply only the exact signed and explicitly confirmed Knowledge UPDATE."""
         return knowledge_update_write(
