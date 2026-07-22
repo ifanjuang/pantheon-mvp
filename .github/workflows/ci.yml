@@ -22,13 +22,14 @@ jobs:
         run: pytest -q --tb=short tests/test_cockpit_assets.py tests/test_cockpit_shell.py
       - name: Proposal-only effect contracts
         run: pytest -q --tb=short tests/test_effect_guard.py tests/test_effect_preview.py
-      - name: Signed Knowledge UPDATE contracts
-        run: >-
-          pytest -q --tb=short
-          tests/test_knowledge_update.py
-          tests/test_knowledge_update_idempotency.py
-          tests/test_knowledge_update_routes.py
-          tests/test_legacy_knowledge_revision_retired.py
+      - name: Knowledge UPDATE unit contracts
+        run: pytest -q --tb=short tests/test_knowledge_update.py
+      - name: Knowledge UPDATE idempotency contract
+        run: pytest -q --tb=short tests/test_knowledge_update_idempotency.py
+      - name: Knowledge UPDATE API contracts
+        run: pytest -q --tb=short tests/test_knowledge_update_routes.py
+      - name: Retired legacy write contract
+        run: pytest -q --tb=short tests/test_legacy_knowledge_revision_retired.py
       - name: Resource profile contracts
         run: pytest -q --tb=short tests/test_resource_profiles.py
 
