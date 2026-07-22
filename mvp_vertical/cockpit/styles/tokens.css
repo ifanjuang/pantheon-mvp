@@ -18,6 +18,8 @@
     --accent-document-b: #f4e4ff;
     --accent-knowledge-a: #e1f7e8;
     --accent-knowledge-b: #fff0be;
+    --accent-work-a: #dce7ff;
+    --accent-work-b: #dff3ea;
     --accent-question-a: #ffe3cc;
     --accent-question-b: #f6dfff;
     --accent-neutral-a: #f1f0eb;
@@ -25,6 +27,8 @@
 
     --status-ready: #287652;
     --status-review: #a76800;
+    --status-progress: #315d9c;
+    --status-waiting: #9b6500;
     --status-conflict: #a53535;
     --status-superseded: #6f7280;
     --status-failed: #8a2633;
