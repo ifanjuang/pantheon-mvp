@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import effect_preview, store, work_issue_read, work_issues
+from . import effect_guard, effect_preview, store, work_issue_read, work_issues
 from .cockpit_api import create_app
 
 COCKPIT = Path(__file__).resolve().parent / "cockpit"
@@ -109,7 +109,7 @@ def create_cockpit_app(
     ) -> dict:
         """Propose deterministic effects without persisting or applying them."""
         try:
-            return with_connection(
+            preview = with_connection(
                 lambda conn: effect_preview.preview_project_effects(
                     conn,
                     parent_project_id=parent_project_id,
@@ -119,6 +119,7 @@ def create_cockpit_app(
                     max_proposals=body.max_proposals,
                 )
             )
+            return effect_guard.enforce_preview(preview)
         except effect_preview.EffectPreviewError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
