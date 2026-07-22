@@ -238,13 +238,12 @@ def apply_knowledge_update(
     card = knowledge.get_knowledge_card(conn, knowledge_id)
     _validate_scope(card, parent_project_id=parent_project_id, knowledge_id=knowledge_id)
     _validate_preserved_review_status(card, review_status)
-    if card.get("version") != expected_version:
-        raise knowledge.StaleKnowledgeWrite(
-            f"stale Knowledge version: expected {expected_version}, current {card.get('version')}"
-        )
-    current_markdown = knowledge.get_knowledge_markdown(conn, knowledge_id)
-    if _digest(current_markdown) != base_markdown_digest:
-        raise knowledge.StaleKnowledgeWrite("Knowledge Markdown changed after the signed preview")
+    if card.get("version") == expected_version:
+        current_markdown = knowledge.get_knowledge_markdown(conn, knowledge_id)
+        if _digest(current_markdown) != base_markdown_digest:
+            raise knowledge.StaleKnowledgeWrite(
+                "Knowledge Markdown changed after the signed preview"
+            )
 
     snapshot = knowledge.revise_knowledge(
         conn,
