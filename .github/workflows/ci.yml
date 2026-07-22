@@ -22,6 +22,12 @@ jobs:
         run: pytest -q --tb=short tests/test_cockpit_assets.py tests/test_cockpit_shell.py
       - name: Proposal-only effect contracts
         run: pytest -q --tb=short tests/test_effect_guard.py tests/test_effect_preview.py
+      - name: Resource profile and site manifest contracts
+        run: >-
+          pytest -q --tb=short
+          tests/test_resource_profiles.py
+          tests/test_site_manifest_preview.py
+          tests/test_site_manifest_routes.py
       - name: Knowledge UPDATE signed diff contract
         run: pytest -q --tb=short tests/test_knowledge_update.py::test_preview_returns_signed_diff_without_writing
       - name: Knowledge UPDATE transactional delegation contract
@@ -36,8 +42,6 @@ jobs:
         run: pytest -q --tb=short tests/test_knowledge_update_routes.py
       - name: Retired legacy write contract
         run: pytest -q --tb=short tests/test_legacy_knowledge_revision_retired.py
-      - name: Resource profile contracts
-        run: pytest -q --tb=short tests/test_resource_profiles.py
 
   tests:
     needs: contract-tests
