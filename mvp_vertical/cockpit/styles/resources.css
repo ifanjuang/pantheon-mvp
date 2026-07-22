@@ -1,0 +1,39 @@
+@layer components {
+  .format-chip {
+    display: inline-flex;
+    min-height: 1.55rem;
+    align-items: center;
+    border: 1px solid rgb(21 22 24 / 16%);
+    border-radius: 999px;
+    padding: .2rem .45rem;
+    background: rgb(255 255 255 / 48%);
+    color: var(--ink-650);
+    font-size: .58rem;
+    font-weight: 950;
+    letter-spacing: .08em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .responsibility-icon {
+    position: relative;
+  }
+
+  .indicator-count {
+    position: absolute;
+    top: -.3rem;
+    right: -.35rem;
+    display: grid;
+    min-width: 1rem;
+    height: 1rem;
+    place-items: center;
+    border: 1px solid rgb(21 22 24 / 22%);
+    border-radius: 999px;
+    padding-inline: .2rem;
+    background: var(--white);
+    color: var(--ink-950);
+    font-size: .52rem;
+    font-weight: 950;
+    line-height: 1;
+  }
+}
