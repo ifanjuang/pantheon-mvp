@@ -25,7 +25,11 @@ def _digest(value: object) -> str:
 
 
 def _canonical_selected_url(value: str) -> str:
-    matches = resource_profiles.extract_linked_sites(value.strip())
+    raw = value.strip()
+    parsed = urlsplit(raw)
+    if parsed.username or parsed.password:
+        raise SiteManifestPreviewError("credential-bearing URLs are forbidden")
+    matches = resource_profiles.extract_linked_sites(raw)
     if len(matches) != 1:
         raise SiteManifestPreviewError("each selected site must contain one valid HTTP(S) URL")
     return matches[0]["url"]
@@ -115,8 +119,6 @@ def preview_structure_manifest(
             )
 
         parsed = urlsplit(selected_url)
-        if parsed.username or parsed.password:
-            raise SiteManifestPreviewError("credential-bearing URLs are forbidden")
         host = parsed.hostname or ""
         _assert_public_host(host)
         if parsed.scheme == "http":
