@@ -15,6 +15,7 @@ SCRIPTS = [
     ROOT / "mvp_vertical" / "cockpit" / "resources.js",
     ROOT / "mvp_vertical" / "cockpit" / "effects.js",
     ROOT / "mvp_vertical" / "cockpit" / "knowledge_updates.js",
+    ROOT / "mvp_vertical" / "cockpit" / "demo.js",
     ROOT / "mvp_vertical" / "mobile_editor" / "app.js",
     ROOT / "mvp_vertical" / "mobile_editor" / "sw.js",
 ]
@@ -34,6 +35,32 @@ def test_cockpit_javascript_parses(script: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_static_demo_reuses_canonical_cockpit_assets_and_refuses_writes() -> None:
+    html = (ROOT / "mvp_vertical" / "cockpit" / "demo.html").read_text(
+        encoding="utf-8"
+    )
+    javascript = (ROOT / "mvp_vertical" / "cockpit" / "demo.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert '<link rel="stylesheet" href="styles/index.css">' in html
+    assert html.index('src="demo.js"') < html.index('src="app.js"')
+    for canonical_script in (
+        "app.js",
+        "resources.js",
+        "effects.js",
+        "knowledge_updates.js",
+    ):
+        assert f'src="{canonical_script}"' in html
+
+    assert "DÉMO STATIQUE · DONNÉES SYNTHÉTIQUES" in html
+    assert 'url.pathname.startsWith("/v1/")' in javascript
+    assert "window.fetch = async" in javascript
+    assert "/updates\\/(preview|apply)" in javascript
+    assert "les mises à jour Knowledge sont désactivées" in javascript
+    assert "toute mutation non explicitement simulée est refusée" in javascript
 
 
 def test_mobile_editor_exposes_and_clears_device_local_data() -> None:
