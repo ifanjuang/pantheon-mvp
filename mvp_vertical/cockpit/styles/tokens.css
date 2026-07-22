@@ -22,6 +22,8 @@
     --accent-work-b: #dff3ea;
     --accent-question-a: #ffe3cc;
     --accent-question-b: #f6dfff;
+    --accent-effect-a: #e5e1ff;
+    --accent-effect-b: #f7ddec;
     --accent-neutral-a: #f1f0eb;
     --accent-neutral-b: #e6edf5;
 
@@ -29,6 +31,7 @@
     --status-review: #a76800;
     --status-progress: #315d9c;
     --status-waiting: #9b6500;
+    --status-proposal: #6648a8;
     --status-conflict: #a53535;
     --status-superseded: #6f7280;
     --status-failed: #8a2633;
