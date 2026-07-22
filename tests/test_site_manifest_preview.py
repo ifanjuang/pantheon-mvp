@@ -113,6 +113,24 @@ def test_preview_refuses_unlinked_scope_private_targets_and_wrong_project(monkey
         )
 
 
+def test_preview_refuses_credentials_before_url_canonicalization(monkeypatch) -> None:
+    _patch_knowledge(monkeypatch, markdown="https://user:secret@sitesecurite.fr/erp")
+    with pytest.raises(site_manifest_preview.SiteManifestPreviewError, match="credential-bearing"):
+        site_manifest_preview.preview_structure_manifest(
+            _Connection(),
+            parent_project_id="project-a",
+            knowledge_id="knowledge.regulations",
+            mode="structure_only",
+            sites=[
+                {
+                    "url": "https://user:secret@sitesecurite.fr/erp",
+                    "path_prefixes": ["/erp"],
+                    "max_depth": 1,
+                }
+            ],
+        )
+
+
 def test_preview_makes_scope_expansion_and_transport_risks_visible(monkeypatch) -> None:
     _patch_knowledge(monkeypatch, markdown="http://sitesecurite.fr/erp/articles/42")
     preview = site_manifest_preview.preview_structure_manifest(
