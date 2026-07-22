@@ -74,6 +74,7 @@ def create_cockpit_app(
     api_key: str | None = None,
     editor_api_key: str | None = None,
     hermes_api_key: str | None = None,
+    update_signing_secret: str | None = None,
     public_url: str | None = None,
 ) -> FastAPI:
     """Compose the existing bounded API with the cards-first static shell."""
@@ -84,6 +85,11 @@ def create_cockpit_app(
         editor_api_key=editor_api_key,
         hermes_api_key=hermes_api_key,
         public_url=public_url,
+    )
+    app.state.update_signing_secret = (
+        update_signing_secret
+        if update_signing_secret is not None
+        else os.getenv("MVP_UPDATE_SIGNING_SECRET", "")
     )
 
     def require_read_key(authorization: str | None = Header(default=None)) -> None:
@@ -100,6 +106,15 @@ def create_cockpit_app(
             raise HTTPException(status_code=503, detail="editor API key is not configured")
         if not hmac.compare_digest(_bearer_token(authorization), expected):
             raise HTTPException(status_code=401, detail="invalid editor API key")
+
+    def require_update_signing_secret() -> str:
+        secret = app.state.update_signing_secret
+        if not secret:
+            raise HTTPException(
+                status_code=503,
+                detail="Knowledge update signing authority is not configured",
+            )
+        return secret
 
     def require_human_actor(
         x_pantheon_human_actor: str | None = Header(
@@ -202,6 +217,7 @@ def create_cockpit_app(
         knowledge_id: str,
         body: KnowledgeUpdatePreviewBody,
         _authorized: None = Depends(require_editor_key),
+        signing_secret: str = Depends(require_update_signing_secret),
         actor: str = Depends(require_human_actor),
     ) -> dict:
         """Return a signed diff for one exact Knowledge UPDATE."""
@@ -211,7 +227,7 @@ def create_cockpit_app(
                 parent_project_id=parent_project_id,
                 knowledge_id=knowledge_id,
                 actor=actor,
-                signing_secret=app.state.editor_api_key,
+                signing_secret=signing_secret,
                 **body.model_dump(),
             )
         )
@@ -224,6 +240,7 @@ def create_cockpit_app(
         knowledge_id: str,
         body: KnowledgeUpdateApplyBody,
         _authorized: None = Depends(require_editor_key),
+        signing_secret: str = Depends(require_update_signing_secret),
         actor: str = Depends(require_human_actor),
     ) -> dict:
         """Apply only the exact signed and explicitly confirmed Knowledge UPDATE."""
@@ -233,7 +250,7 @@ def create_cockpit_app(
                 parent_project_id=parent_project_id,
                 knowledge_id=knowledge_id,
                 actor=actor,
-                signing_secret=app.state.editor_api_key,
+                signing_secret=signing_secret,
                 **body.model_dump(),
             )
         )
