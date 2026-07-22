@@ -32,6 +32,6 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e ".[test]"
-      - run: pytest -v
+      - run: pytest -q --tb=short
         env:
           MVP_PG_DSN: postgresql://mvp:mvp@localhost:5433/mvp
