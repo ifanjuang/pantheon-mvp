@@ -17,7 +17,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 
-_URL_RE = re.compile(r"https?://[^\s<>{}\[\]\"'`]+", re.IGNORECASE)
+_URL_RE = re.compile(r"https?://[^\s<>{}\"'`]+", re.IGNORECASE)
 _IMAGE_TERMS = {"image", "picture", "figure", "illustration", "graphic"}
 _TABLE_TERMS = {"table"}
 _TEXT_TERMS = {
@@ -123,8 +123,16 @@ def document_content_profile(
     }
 
 
+def _trim_trailing_delimiters(value: str) -> str:
+    candidate = value.rstrip(".,;:!?")
+    for opening, closing in (("(", ")"), ("[", "]"), ("{", "}")):
+        while candidate.endswith(closing) and candidate.count(closing) > candidate.count(opening):
+            candidate = candidate[:-1]
+    return candidate
+
+
 def _canonical_url(value: str) -> str | None:
-    candidate = value.rstrip(".,;:!?)]}")
+    candidate = _trim_trailing_delimiters(value)
     parsed = urlsplit(candidate)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
         return None
