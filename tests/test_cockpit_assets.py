@@ -34,3 +34,20 @@ def test_cockpit_javascript_parses(script: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_mobile_editor_exposes_and_clears_device_local_data() -> None:
+    html = (ROOT / "mvp_vertical" / "mobile_editor" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    javascript = (ROOT / "mvp_vertical" / "mobile_editor" / "app.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'id="clear-local"' in html
+    assert "sans chiffrement applicatif" in html
+    assert '"pantheon-knowledge:"' in javascript
+    assert '"pantheon-project:"' in javascript
+    assert "localStorage.removeItem" in javascript
+    assert 'sessionStorage.removeItem("pantheon-human-actor")' in javascript
+    assert '$("clear-local").onclick = clearLocalData' in javascript
