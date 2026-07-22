@@ -157,3 +157,17 @@ The current review status is preserved. Applying an update does not review the K
 ## Maintenance boundary
 
 `app.js` owns the common card renderer. `resources.js` enriches cards with file and linked-site profiles. Backend modules own proposal-only manifest and navigation-profile contracts. No hidden browser or install action is attached to card rendering.
+
+## Validation
+
+Validated on head `9c7c3aac04bf01aca31703e1f7e1919b6c4de3eb`:
+
+- static cockpit and API shell contracts;
+- proposal-only effect contracts;
+- Resource Profile and structure-manifest contracts;
+- site navigation archetype and binding-candidate contracts;
+- exact-project, exact-Knowledge and linked-URL route boundaries;
+- signed Knowledge UPDATE contracts;
+- complete PostgreSQL/pgvector test suite.
+
+Both GitHub Actions jobs passed.
