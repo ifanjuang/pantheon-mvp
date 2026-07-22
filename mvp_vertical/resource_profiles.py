@@ -129,9 +129,14 @@ def _canonical_url(value: str) -> str | None:
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
         return None
     host = parsed.hostname.lower().rstrip(".")
-    port = f":{parsed.port}" if parsed.port else ""
+    try:
+        port_value = parsed.port
+    except ValueError:
+        return None
+    authority_host = f"[{host}]" if ":" in host else host
+    port = f":{port_value}" if port_value is not None else ""
     path = parsed.path or "/"
-    return urlunsplit((parsed.scheme.lower(), host + port, path, parsed.query, ""))
+    return urlunsplit((parsed.scheme.lower(), authority_host + port, path, parsed.query, ""))
 
 
 def _site_kind(host: str) -> str:
