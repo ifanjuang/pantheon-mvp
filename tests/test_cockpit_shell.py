@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from mvp_vertical import effect_preview, work_issue_read
+from mvp_vertical import effect_preview, resource_profiles, work_issue_read
 from mvp_vertical.cockpit_shell import create_cockpit_app
 
 
@@ -21,13 +21,16 @@ def test_cards_first_cockpit_shell_is_available() -> None:
     assert "Pantheon Cockpit" in response.text
     assert "Le cockpit affiche des projections" in response.text
     assert 'data-scene="work"' in response.text
+    assert 'src="resources.js"' in response.text
     assert 'src="effects.js"' in response.text
     assert 'src="knowledge_updates.js"' in response.text
 
     assert client.get("/cockpit/app.js").status_code == 200
+    assert client.get("/cockpit/resources.js").status_code == 200
     assert client.get("/cockpit/effects.js").status_code == 200
     assert client.get("/cockpit/knowledge_updates.js").status_code == 200
     assert client.get("/cockpit/styles/index.css").status_code == 200
+    assert client.get("/cockpit/styles/resources.css").status_code == 200
     assert client.get("/cockpit/styles/effects.css").status_code == 200
     assert client.get("/cockpit/styles/knowledge_updates.css").status_code == 200
     assert client.get("/editor/").status_code == 200
@@ -39,6 +42,7 @@ def test_composed_shell_keeps_existing_api_boundary() -> None:
     assert client.get("/health").status_code == 200
     assert client.get("/v1/projects/project-a/documents").status_code == 401
     assert client.get("/v1/projects/project-a/work-issues").status_code == 401
+    assert client.get("/v1/projects/project-a/resource-profiles").status_code == 401
     assert client.post(
         "/v1/projects/project-a/effects/preview",
         json={"information": "Préciser le choix de couverture."},
@@ -86,6 +90,53 @@ def test_work_issue_route_is_read_only_and_exact_case_scoped(monkeypatch) -> Non
         "include_terminal": False,
         "limit": 25,
     }
+
+
+def test_resource_profile_route_is_read_only_and_exact_project_scoped(monkeypatch) -> None:
+    observed = {}
+
+    def list_profiles(_conn, parent_project_id):
+        observed["parent_project_id"] = parent_project_id
+        return {
+            "parent_project_id": parent_project_id,
+            "scope_match": "exact_parent_project_id",
+            "documents": [],
+            "knowledge_sites": [
+                {
+                    "knowledge_id": "knowledge.rules",
+                    "sites": [
+                        {
+                            "url": "https://www.legifrance.gouv.fr/",
+                            "host": "www.legifrance.gouv.fr",
+                            "site_kind": "legal_reference",
+                            "retrieval_profile": {
+                                "mode": "address_only",
+                                "crawl_status": "not_authorized",
+                                "vector_status": "not_indexed",
+                                "structure_indexed": False,
+                            },
+                        }
+                    ],
+                }
+            ],
+            "crawl_capability": {
+                "status": "documented_not_implemented",
+                "default_mode": "address_only",
+                "requires_human_scope_approval": True,
+            },
+        }
+
+    monkeypatch.setattr(resource_profiles, "list_project_resource_profiles", list_profiles)
+    client = TestClient(create_cockpit_app(connect_fn=_Connection, api_key="read-key"))
+    response = client.get(
+        "/v1/projects/project-a/resource-profiles",
+        headers={"Authorization": "Bearer read-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["scope_match"] == "exact_parent_project_id"
+    assert response.json()["knowledge_sites"][0]["sites"][0]["retrieval_profile"]["mode"] == "address_only"
+    assert observed == {"parent_project_id": "project-a"}
 
 
 def test_effect_preview_route_is_authenticated_and_proposal_only(monkeypatch) -> None:
