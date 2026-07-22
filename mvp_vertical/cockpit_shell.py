@@ -1,7 +1,7 @@
 """Cards-first cockpit composition over the bounded project APIs.
 
-The shell exposes projections only. It does not own object status, approval,
-execution, evidence, memory promotion or external action.
+The shell exposes projections and narrowly governed owner writes. It does not own
+object status, approval, execution, evidence, memory promotion or external action.
 """
 
 from __future__ import annotations
@@ -15,7 +15,15 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import effect_guard, effect_preview, store, work_issue_read, work_issues
+from . import (
+    effect_guard,
+    effect_preview,
+    knowledge,
+    knowledge_update,
+    store,
+    work_issue_read,
+    work_issues,
+)
 from .cockpit_api import create_app
 
 COCKPIT = Path(__file__).resolve().parent / "cockpit"
@@ -26,6 +34,22 @@ class EffectPreviewBody(BaseModel):
     explicit_object_refs: list[str] = Field(default_factory=list, max_length=10)
     effect_hint: Literal["CREATE", "UPDATE", "SUPERSEDE", "CONFLICT"] | None = None
     max_proposals: int = Field(default=5, ge=1, le=10)
+
+
+class KnowledgeUpdatePreviewBody(BaseModel):
+    proposed_markdown: str = Field(min_length=1, max_length=500_000)
+    expected_version: int = Field(ge=1)
+    review_status: Literal[
+        "generated_unreviewed", "needs_review", "reviewed", "superseded"
+    ] | None = None
+
+
+class KnowledgeUpdateApplyBody(KnowledgeUpdatePreviewBody):
+    base_markdown_digest: str = Field(min_length=8, max_length=100)
+    confirmation_token: str = Field(min_length=32, max_length=200)
+    confirmation_expires_at: int = Field(ge=1)
+    confirmation_phrase: str = Field(min_length=1, max_length=100)
+    idempotency_key: str = Field(min_length=8, max_length=200)
 
 
 def connect_cockpit():
@@ -69,12 +93,43 @@ def create_cockpit_app(
         if not any(hmac.compare_digest(supplied, key) for key in expected):
             raise HTTPException(status_code=401, detail="invalid read API key")
 
+    def require_editor_key(authorization: str | None = Header(default=None)) -> None:
+        expected = app.state.editor_api_key
+        if not expected:
+            raise HTTPException(status_code=503, detail="editor API key is not configured")
+        if not hmac.compare_digest(_bearer_token(authorization), expected):
+            raise HTTPException(status_code=401, detail="invalid editor API key")
+
+    def require_human_actor(
+        x_pantheon_human_actor: str | None = Header(
+            default=None, alias="X-Pantheon-Human-Actor"
+        ),
+    ) -> str:
+        if not x_pantheon_human_actor or not x_pantheon_human_actor.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="X-Pantheon-Human-Actor is required for a consequential Knowledge write",
+            )
+        return x_pantheon_human_actor.strip()
+
     def with_connection(operation):
         conn = app.state.connect_fn()
         try:
             return operation(conn)
         finally:
             conn.close()
+
+    def knowledge_update_write(operation):
+        try:
+            return with_connection(operation)
+        except knowledge.KnowledgeNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except knowledge_update.KnowledgeUpdateExpired as exc:
+            raise HTTPException(status_code=410, detail=str(exc)) from exc
+        except (knowledge.StaleKnowledgeWrite, knowledge.IdempotencyConflict) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (knowledge_update.KnowledgeUpdateError, knowledge.KnowledgeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/v1/projects/{parent_project_id}/work-issues")
     def project_work_issues(
@@ -122,6 +177,50 @@ def create_cockpit_app(
             return effect_guard.enforce_preview(preview)
         except effect_preview.EffectPreviewError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/v1/projects/{parent_project_id}/knowledge/{knowledge_id}/updates/preview"
+    )
+    def preview_knowledge_update(
+        parent_project_id: str,
+        knowledge_id: str,
+        body: KnowledgeUpdatePreviewBody,
+        actor: str = Depends(require_human_actor),
+        _authorized: None = Depends(require_editor_key),
+    ) -> dict:
+        """Return a signed diff for one exact Knowledge UPDATE."""
+        return knowledge_update_write(
+            lambda conn: knowledge_update.preview_knowledge_update(
+                conn,
+                parent_project_id=parent_project_id,
+                knowledge_id=knowledge_id,
+                actor=actor,
+                signing_secret=app.state.editor_api_key,
+                **body.model_dump(),
+            )
+        )
+
+    @app.post(
+        "/v1/projects/{parent_project_id}/knowledge/{knowledge_id}/updates/apply"
+    )
+    def apply_knowledge_update(
+        parent_project_id: str,
+        knowledge_id: str,
+        body: KnowledgeUpdateApplyBody,
+        actor: str = Depends(require_human_actor),
+        _authorized: None = Depends(require_editor_key),
+    ) -> dict:
+        """Apply only the exact signed and explicitly confirmed Knowledge UPDATE."""
+        return knowledge_update_write(
+            lambda conn: knowledge_update.apply_knowledge_update(
+                conn,
+                parent_project_id=parent_project_id,
+                knowledge_id=knowledge_id,
+                actor=actor,
+                signing_secret=app.state.editor_api_key,
+                **body.model_dump(),
+            )
+        )
 
     if COCKPIT.is_dir():
         app.mount("/cockpit", StaticFiles(directory=COCKPIT, html=True), name="cockpit")
