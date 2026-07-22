@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#151618">
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="stylesheet" href="styles/index.css">
+  <title>Pantheon Cockpit — Démo statique</title>
+</head>
+<body data-demo="true">
+  <header class="app-header">
+    <a class="brand" href="./demo.html" aria-label="Pantheon Cockpit — démonstration statique">
+      <span class="brand-mark" aria-hidden="true">P</span>
+      <span><small>PANTHEON</small><strong>COCKPIT</strong></span>
+    </a>
+    <output id="network" class="network-pill" aria-live="polite">démo statique</output>
+  </header>
+
+  <main class="app-shell">
+    <section class="connection-panel" aria-labelledby="demo-title">
+      <div>
+        <p class="eyebrow">DÉMO STATIQUE · DONNÉES SYNTHÉTIQUES</p>
+        <h1 id="demo-title">Le vrai renderer du cockpit MVP, sans backend</h1>
+        <p class="supporting-copy">Cette page charge directement les fichiers CSS et JavaScript canoniques de <code>mvp_vertical/cockpit/</code>. L’adaptateur de démonstration ne contacte aucun service, ne persiste rien et refuse toute mise à jour Knowledge.</p>
+      </div>
+      <a class="primary-action" href="https://github.com/ifanjuang/pantheon-mvp/tree/main/mvp_vertical/cockpit">Voir les sources canoniques</a>
+    </section>
+
+    <section class="connection-panel" aria-labelledby="connection-title">
+      <div>
+        <p class="eyebrow">ESPACE PROJET SYNTHÉTIQUE</p>
+        <h2 id="connection-title">Dossier de démonstration</h2>
+        <p class="supporting-copy">La carte reste une projection. Une donnée synthétique n’est ni une source professionnelle, ni une preuve, ni une mémoire gouvernée.</p>
+      </div>
+      <label>
+        <span>Projet</span>
+        <input id="project" autocomplete="off" value="demo-architecture" readonly>
+      </label>
+      <label>
+        <span>Clé d’accès</span>
+        <input id="token" type="password" autocomplete="off" value="demo-read-only" readonly>
+      </label>
+      <button id="load" class="primary-action" type="button">Recharger la démo</button>
+    </section>
+
+    <nav class="scene-rail" aria-label="Vues du cockpit">
+      <button class="scene-tab is-active" data-scene="now" type="button">Maintenant</button>
+      <button class="scene-tab" data-scene="work" type="button">Travail</button>
+      <button class="scene-tab" data-scene="documents" type="button">Documents</button>
+      <button class="scene-tab" data-scene="knowledge" type="button">Knowledge</button>
+      <button class="scene-tab" data-scene="questionnaire" type="button">Questionnaire</button>
+    </nav>
+
+    <section class="scene-heading" aria-live="polite">
+      <div>
+        <p id="scene-eyebrow" class="eyebrow">MAINTENANT</p>
+        <h2 id="scene-title">Cartes à examiner</h2>
+      </div>
+      <p id="scene-status" class="scene-status">Chargement des données synthétiques…</p>
+    </section>
+
+    <section id="deck" class="card-deck" aria-label="Pile de cartes"></section>
+  </main>
+
+  <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title">
+    <form method="dialog" class="detail-shell">
+      <header class="detail-header">
+        <div id="detail-kind" class="type-lockup"></div>
+        <button class="icon-button" value="close" aria-label="Fermer">×</button>
+      </header>
+      <div id="detail-content" class="detail-content"></div>
+    </form>
+  </dialog>
+
+  <template id="empty-template">
+    <article class="empty-state">
+      <p class="eyebrow">AUCUNE CARTE</p>
+      <h3>Rien à afficher dans cette vue.</h3>
+      <p>Le cockpit n’invente pas d’objet absent.</p>
+    </article>
+  </template>
+
+  <script src="demo.js" defer></script>
+  <script src="app.js" defer></script>
+  <script src="resources.js" defer></script>
+  <script src="effects.js" defer></script>
+  <script src="knowledge_updates.js" defer></script>
+</body>
+</html>
