@@ -6,10 +6,12 @@ const state = {
   scene: "now",
   documents: [],
   knowledge: [],
+  workIssues: [],
 };
 
 const sceneCopy = {
   now: ["MAINTENANT", "Cartes à examiner"],
+  work: ["TRAVAIL", "Sujets suivis et retours Hermes"],
   documents: ["DOCUMENTS", "Sources et représentations dérivées"],
   knowledge: ["KNOWLEDGE", "Connaissances éditoriales à revoir"],
   questionnaire: ["QUESTIONNAIRE", "Préciser une demande"],
@@ -25,11 +27,25 @@ const statusLabels = {
   superseded: "Remplacé",
   conflict: "Conflit",
   draft: "Brouillon local",
+  open: "Ouvert",
+  in_progress: "En cours",
+  waiting: "En attente",
+  review: "Revue humaine",
+  done: "Clôturé",
+  cancelled: "Annulé",
+};
+
+const eventLabels = {
+  created: "Nouveau",
+  updated: "Mis à jour",
+  status_changed: "Statut modifié",
+  processed: "Analysé",
 };
 
 const iconPaths = {
   document: '<path d="M6 2.75h8l4 4V21.25H6z"/><path d="M14 2.75v4h4M9 12h6M9 16h6"/>',
   knowledge: '<path d="M4 5.5c2.7-.9 5.3-.5 8 1.1v14c-2.7-1.6-5.3-2-8-1.1z"/><path d="M20 5.5c-2.7-.9-5.3-.5-8 1.1v14c2.7-1.6 5.3-2 8-1.1z"/>',
+  work: '<path d="M4.5 7.5h15v12h-15z"/><path d="M8.5 7.5V5.2h7v2.3M4.5 12h15M10 12v2h4v-2"/>',
   questionnaire: '<path d="M5 4.5h14v15H5z"/><path d="m8 9 1.2 1.2L11.5 8M13 9h3M8 14h3M13 14h3"/>',
   source: '<path d="M9.5 14.5 14.5 9.5"/><path d="M7.2 16.8 5.8 18.2a3.5 3.5 0 0 1-5-5l3.4-3.4a3.5 3.5 0 0 1 5 0" transform="translate(3 0)"/><path d="m16.8 7.2 1.4-1.4a3.5 3.5 0 0 1 5 5l-3.4 3.4a3.5 3.5 0 0 1-5 0" transform="translate(-3 0)"/>',
   review: '<path d="M12 3.5a8.5 8.5 0 1 0 8.5 8.5"/><path d="m8.5 12 2.3 2.3L18.5 6.6"/>',
@@ -37,6 +53,8 @@ const iconPaths = {
   memory: '<ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/>',
   history: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2M4.5 5.5 2.5 5.3l.2-2"/>',
   decision: '<path d="M12 3v13M7 7h10M5 20h14"/><path d="m7 7-3 5h6zM17 7l-3 5h6z"/>',
+  hermes: '<path d="M7 5.5h10l2 5.5-7 8-7-8z"/><path d="m8.5 10 3.5 3.5 3.5-3.5M12 13.5v4"/>',
+  comment: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12.5h5"/>',
 };
 
 function icon(name) {
@@ -60,14 +78,48 @@ async function api(path) {
   return response.json();
 }
 
-function recentEvent(createdAt, updatedAt, version = 1) {
-  const timestamp = new Date(updatedAt || createdAt || 0).getTime();
-  if (!timestamp || Date.now() - timestamp > 48 * 60 * 60 * 1000) return null;
-  return version > 1 || (createdAt && updatedAt && createdAt !== updatedAt) ? "updated" : "created";
-}
-
 function statusLabel(status) {
   return statusLabels[status] || String(status || "À vérifier").replaceAll("_", " ");
+}
+
+function formatMoment(value) {
+  if (!value) return "date non renseignée";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function eventWithin(kind, occurredAt, label = eventLabels[kind]) {
+  const timestamp = new Date(occurredAt || 0).getTime();
+  if (!timestamp || Date.now() - timestamp > 48 * 60 * 60 * 1000) return null;
+  return { kind, label: label || "Activité récente", occurredAt };
+}
+
+function knowledgeRecentEvent(item) {
+  const updated = item.updated_at || item.created_at;
+  const created = item.created_at;
+  const isUpdate = (item.version || 1) > 1 || (created && updated && created !== updated);
+  return eventWithin(isUpdate ? "updated" : "created", updated);
+}
+
+function workRecentEvent(item) {
+  const events = item.events || [];
+  const latest = events.at(-1);
+  if (!latest) return null;
+  const mapping = {
+    issue_created: ["created", "Nouveau"],
+    comment_added: ["updated", "Commenté"],
+    status_changed: ["status_changed", "Statut modifié"],
+    hermes_started: ["updated", "Hermes lancé"],
+    hermes_returned: ["updated", "Retour Hermes"],
+    review_requested: ["status_changed", "Revue demandée"],
+    issue_closed: ["status_changed", "Clôturé"],
+  };
+  const [kind, label] = mapping[latest.event_type] || ["updated", "Mis à jour"];
+  return eventWithin(kind, latest.occurred_at, label);
 }
 
 function documentModel(item) {
@@ -89,7 +141,7 @@ function documentModel(item) {
     status,
     signal,
     context: naming.phase_folder || item.parent_project_id,
-    event: null,
+    event: eventWithin("processed", extraction.finished_at),
     attention: status !== "ready" ? "human" : null,
     responsibilities: [
       { icon: "source", label: "Source liée · la carte n’est pas la source" },
@@ -112,6 +164,7 @@ function documentModel(item) {
         `Convertisseur : ${extraction.converter || "non renseigné"}`,
         `Version : ${extraction.converter_version || "non renseignée"}`,
         `Segments : ${extraction.chunk_count || 0}`,
+        `Dernière analyse : ${formatMoment(extraction.finished_at)}`,
         ...(extraction.quality_flags || []).map(flag => `Signal qualité : ${flag}`),
         ...(extraction.error ? [`Erreur : ${extraction.error}`] : []),
       ]],
@@ -132,7 +185,7 @@ function knowledgeModel(item) {
     status,
     signal: `${sourceCount} segment(s) source · ${statusLabel(status)}`,
     context: item.parent_project_id,
-    event: recentEvent(item.created_at, item.updated_at, item.version),
+    event: knowledgeRecentEvent(item),
     attention: ["generated_unreviewed", "needs_review"].includes(status) ? "human" : null,
     responsibilities: [
       { icon: "source", label: `${sourceCount} segment(s) source lié(s)` },
@@ -145,6 +198,8 @@ function knowledgeModel(item) {
         `Famille : ${item.family || "non renseignée"}`,
         `Version : ${item.version || 1}`,
         `Créée par : ${item.created_by || "non renseigné"}`,
+        `Créée : ${formatMoment(item.created_at)}`,
+        `Mise à jour : ${formatMoment(item.updated_at)}`,
       ]],
       ["Statut", [
         statusLabel(status),
@@ -160,6 +215,81 @@ function knowledgeModel(item) {
       ["Prochaine revue", [["generated_unreviewed", "needs_review"].includes(status)
         ? "Relire le Markdown, les sources et les limites avant toute réutilisation conséquente."
         : "La réutilisation reste dépendante du dossier, du périmètre et des sources applicables."]],
+    ],
+  };
+}
+
+function workIssueModel(projection) {
+  const issue = projection.work_issue || {};
+  const status = issue.status || "open";
+  const comments = projection.comments || [];
+  const runs = projection.hermes_runs || [];
+  const events = projection.events || [];
+  const latestRun = runs.at(-1);
+  const latestReturn = latestRun?.normalized_return || {};
+  const statusSignals = {
+    open: issue.assigned_to === "hermes" ? "Prêt pour un handoff Hermes borné" : "À prendre en charge",
+    in_progress: latestRun ? `Run Hermes : ${statusLabel(latestRun.status)}` : "Travail en cours",
+    waiting: latestReturn.summary || "Information, reprise ou capacité attendue",
+    review: latestReturn.summary || "Résultat candidat à examiner par un humain",
+    done: `Clôturé par un humain · ${issue.close_reason || "motif conservé"}`,
+    cancelled: `Annulé · ${issue.close_reason || "motif conservé"}`,
+  };
+
+  const commentEntries = comments.slice(-3).map(comment => `${comment.author} · ${comment.body}`);
+  const runEntries = runs.slice(-3).map(run => {
+    const returned = run.normalized_return || {};
+    return `${run.run_id} · ${statusLabel(run.status)}${returned.outcome ? ` · ${returned.outcome}` : ""}${returned.summary ? ` · ${returned.summary}` : ""}`;
+  });
+  const eventEntries = events.slice(-5).reverse().map(event => `${formatMoment(event.occurred_at)} · ${event.event_type} · ${event.actor_kind}`);
+
+  return {
+    id: `card-${issue.issue_id}`,
+    kind: "work",
+    typeLabel: "Travail",
+    title: issue.title || "Work Issue",
+    summary: `${issue.issue_type || "action"} · priorité ${issue.priority || "normale"}`,
+    status,
+    signal: statusSignals[status] || statusLabel(status),
+    context: issue.case_ref || state.project,
+    event: workRecentEvent(projection),
+    attention: status === "review" || (status === "open" && issue.assigned_to !== "hermes") ? "human" : null,
+    responsibilities: [
+      { icon: "scope", label: `Effet demandé : ${issue.requested_effect || "non renseigné"}` },
+      ...(issue.assigned_to === "hermes" ? [{ icon: "hermes", label: "Hermes exécute uniquement par handoff borné" }] : []),
+      ...(comments.length ? [{ icon: "comment", label: `${comments.length} commentaire(s)` }] : []),
+      { icon: "history", label: `${events.length} événement(s) append-only` },
+      ...(status === "review" ? [{ icon: "decision", label: "Décision humaine attendue", attention: true }] : []),
+    ],
+    sections: [
+      ["Identité", [
+        `Work Issue : ${issue.issue_id || "non renseignée"}`,
+        `Dossier : ${issue.case_ref || "non renseigné"}`,
+        `Type : ${issue.issue_type || "non renseigné"}`,
+        `Priorité : ${issue.priority || "non renseignée"}`,
+        `Version : ${issue.version || 1}`,
+      ]],
+      ["État actuel", [
+        `Statut : ${statusLabel(status)}`,
+        `Assignation : ${issue.assigned_to || "non assignée"}`,
+        `Effet demandé : ${issue.requested_effect || "non renseigné"}`,
+        `Mise à jour : ${formatMoment(issue.updated_at)}`,
+        ...(issue.close_reason ? [`Motif de clôture : ${issue.close_reason}`] : []),
+      ]],
+      ["Demande", [issue.description || "Description non renseignée"]],
+      ["Périmètre d’exécution", [
+        `Task Contract : ${issue.task_contract_ref || "absent"}`,
+        `Context Pack : ${issue.context_pack_ref || "absent"}`,
+        "Hermes ne dispose d’aucune autorité directe sur la base et ne peut ni clôturer ni annuler ce sujet.",
+      ]],
+      ["Commentaires récents", commentEntries.length ? commentEntries : ["Aucun commentaire."]],
+      ["Runs Hermes récents", runEntries.length ? runEntries : ["Aucun run Hermes enregistré."]],
+      ["Trace récente", eventEntries.length ? eventEntries : ["Aucun événement exposé."]],
+      ["Prochaine revue", [status === "review"
+        ? "Examiner le retour candidat, ses traces et ses limites, puis décider explicitement de la suite."
+        : status === "done" || status === "cancelled"
+          ? "Le statut terminal reste une décision humaine enregistrée ; il ne transforme pas le résultat en preuve."
+          : "Poursuivre uniquement dans le périmètre déclaré et conserver tout blocage visible."]],
     ],
   };
 }
@@ -187,12 +317,18 @@ function questionnaireModel() {
 function currentModels() {
   const documents = state.documents.map(documentModel);
   const knowledge = state.knowledge.map(knowledgeModel);
+  const work = state.workIssues.map(workIssueModel);
+  if (state.scene === "work") return work;
   if (state.scene === "documents") return documents;
   if (state.scene === "knowledge") return knowledge;
   if (state.scene === "questionnaire") return [questionnaireModel()];
-  return [...knowledge, ...documents].sort((a, b) => {
-    const priority = value => value.attention === "human" ? 0 : 1;
-    return priority(a) - priority(b);
+  return [...work, ...knowledge, ...documents].sort((a, b) => {
+    const priority = value => value.attention === "human" ? 0 : value.event ? 1 : 2;
+    const priorityDiff = priority(a) - priority(b);
+    if (priorityDiff) return priorityDiff;
+    const aTime = new Date(a.event?.occurredAt || 0).getTime();
+    const bTime = new Date(b.event?.occurredAt || 0).getTime();
+    return bTime - aTime;
   });
 }
 
@@ -225,7 +361,7 @@ function renderCard(model) {
   card.dataset.kind = model.kind;
   card.dataset.status = model.status;
   card.dataset.frame = "gradient";
-  if (model.event) card.dataset.event = model.event;
+  if (model.event) card.dataset.event = model.event.kind;
   if (model.attention) card.dataset.attention = model.attention;
 
   const button = document.createElement("button");
@@ -240,7 +376,8 @@ function renderCard(model) {
   if (model.event) {
     const event = document.createElement("span");
     event.className = "event-chip";
-    event.textContent = model.event === "created" ? "Nouveau" : "Mis à jour";
+    event.textContent = model.event.label || eventLabels[model.event.kind] || "Récent";
+    event.title = formatMoment(model.event.occurredAt);
     header.append(event);
   }
 
@@ -425,6 +562,7 @@ function openDetail(model) {
   title.id = "detail-title";
   title.textContent = model.title;
   content.append(title);
+  if (model.event) content.append(sectionElement("Activité récente", [`${model.event.label} · ${formatMoment(model.event.occurredAt)}`]));
   if (model.questionnaire) content.append(questionnaireContent());
   else for (const [heading, entries] of model.sections || []) content.append(sectionElement(heading, entries));
   $("detail-dialog").showModal();
@@ -460,16 +598,19 @@ async function loadProject() {
   $("load").disabled = true;
   $("scene-status").textContent = "Chargement des projections…";
   try {
-    const [documents, knowledge] = await Promise.all([
+    const [documents, knowledge, workIssues] = await Promise.all([
       api(`../v1/projects/${encodeURIComponent(state.project)}/documents`),
       api(`../v1/projects/${encodeURIComponent(state.project)}/knowledge`),
+      api(`../v1/projects/${encodeURIComponent(state.project)}/work-issues`),
     ]);
     state.documents = documents.documents || [];
     state.knowledge = knowledge.knowledge || [];
+    state.workIssues = workIssues.work_issues || [];
     render();
   } catch (error) {
     state.documents = [];
     state.knowledge = [];
+    state.workIssues = [];
     render();
     $("scene-status").textContent = `Chargement refusé : ${error.message}`;
   } finally {
