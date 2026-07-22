@@ -28,8 +28,8 @@ class KnowledgeUpdateExpired(KnowledgeUpdateError):
     pass
 
 
-def _normalize_markdown(value: str) -> str:
-    """Ignore terminal whitespace-only changes in the first bounded UPDATE gate."""
+def _material_markdown(value: str) -> str:
+    """Normalize only for material-change detection, never for persistence."""
     return value.strip()
 
 
@@ -108,10 +108,9 @@ def preview_knowledge_update(
 ) -> dict:
     """Return a stateless diff and signed confirmation challenge."""
     actor = _validate_actor(actor)
-    proposed_markdown = _normalize_markdown(proposed_markdown)
     if not signing_secret:
         raise KnowledgeUpdateError("Knowledge update signing secret is not configured")
-    if not proposed_markdown:
+    if not proposed_markdown.strip():
         raise KnowledgeUpdateError("proposed Markdown must not be empty")
     if expected_version < 1:
         raise KnowledgeUpdateError("expected_version must be at least 1")
@@ -128,10 +127,8 @@ def preview_knowledge_update(
             f"stale Knowledge version: expected {expected_version}, current {card.get('version')}"
         )
 
-    current_markdown = _normalize_markdown(
-        knowledge.get_knowledge_markdown(conn, knowledge_id)
-    )
-    if proposed_markdown == current_markdown:
+    current_markdown = knowledge.get_knowledge_markdown(conn, knowledge_id)
+    if _material_markdown(proposed_markdown) == _material_markdown(current_markdown):
         raise KnowledgeUpdateError("the proposed UPDATE has no material change")
 
     base_digest = _digest(current_markdown)
@@ -189,6 +186,7 @@ def preview_knowledge_update(
         "limits": [
             "The preview is not persisted.",
             "Terminal whitespace-only changes are not material in this first gate.",
+            "The exact confirmed Markdown is preserved when a material change is applied.",
             "The Knowledge review status is preserved by this first UPDATE path.",
             "The declared actor is bound to the shared editor credential, not an individual SSO identity.",
             "Knowledge remains editorial content, not Evidence, governed memory or doctrine.",
@@ -219,8 +217,7 @@ def apply_knowledge_update(
         raise KnowledgeUpdateError("exact confirmation phrase is required")
     if not signing_secret:
         raise KnowledgeUpdateError("Knowledge update signing secret is not configured")
-    proposed_markdown = _normalize_markdown(proposed_markdown)
-    if not proposed_markdown:
+    if not proposed_markdown.strip():
         raise KnowledgeUpdateError("proposed Markdown must not be empty")
     if len(idempotency_key.strip()) < 8 or len(idempotency_key) > 200:
         raise KnowledgeUpdateError("idempotency_key must be between 8 and 200 characters")
@@ -250,9 +247,7 @@ def apply_knowledge_update(
     if current_version == expected_version:
         if confirmation_expires_at < current_time:
             raise KnowledgeUpdateExpired("Knowledge update confirmation has expired")
-        current_markdown = _normalize_markdown(
-            knowledge.get_knowledge_markdown(conn, knowledge_id)
-        )
+        current_markdown = knowledge.get_knowledge_markdown(conn, knowledge_id)
         if _digest(current_markdown) != base_markdown_digest:
             raise knowledge.StaleKnowledgeWrite(
                 "Knowledge Markdown changed after the signed preview"
