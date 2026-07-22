@@ -9,7 +9,7 @@ class _Connection:
     pass
 
 
-def test_exact_retry_reaches_immutable_replay_after_version_advanced(monkeypatch) -> None:
+def test_exact_retry_reaches_immutable_replay_after_version_advanced_and_expiry(monkeypatch) -> None:
     base_card = {
         "knowledge_id": "knowledge.coverage",
         "parent_project_id": "project-lieurey",
@@ -28,7 +28,7 @@ def test_exact_retry_reaches_immutable_replay_after_version_advanced(monkeypatch
         proposed_markdown=proposed,
         expected_version=3,
         actor="ifan.juang",
-        signing_secret="editor-secret",
+        signing_secret="server-signing-secret",
         now=1_000,
     )
 
@@ -52,12 +52,12 @@ def test_exact_retry_reaches_immutable_replay_after_version_advanced(monkeypatch
         expected_version=3,
         base_markdown_digest=preview["base_markdown_digest"],
         actor="ifan.juang",
-        signing_secret="editor-secret",
+        signing_secret="server-signing-secret",
         confirmation_token=preview["confirmation"]["token"],
         confirmation_expires_at=preview["confirmation"]["expires_at"],
         confirmation_phrase="CONFIRMER UPDATE",
         idempotency_key="knowledge-update-retry-1",
-        now=1_010,
+        now=1_400,
     )
 
     assert result["knowledge"]["version"] == 4
