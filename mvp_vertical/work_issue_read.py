@@ -43,7 +43,7 @@ def list_issue_projections(
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT issue_id, status, updated_at
+            SELECT issue_id
               FROM work_issues
              WHERE case_ref = %s
                {terminal_filter}
@@ -52,13 +52,14 @@ def list_issue_projections(
             """,
             (case_ref, limit),
         )
-        rows = cur.fetchall()
+        issue_ids = [row[0] for row in cur.fetchall()]
 
-    projections = [work_issues.get_issue(conn, issue_id) for issue_id, _status, _updated in rows]
+    projections = [work_issues.get_issue(conn, issue_id) for issue_id in issue_ids]
+    # Python sort is stable: status priority changes grouping while preserving
+    # the database's newest-first order inside each status group.
     projections.sort(
-        key=lambda projection: (
-            _STATUS_ORDER.get(projection["work_issue"]["status"], 99),
-            projection["work_issue"].get("updated_at", ""),
+        key=lambda projection: _STATUS_ORDER.get(
+            projection["work_issue"]["status"], 99
         )
     )
     return projections
