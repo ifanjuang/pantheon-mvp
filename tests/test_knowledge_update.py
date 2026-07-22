@@ -51,6 +51,7 @@ def test_preview_returns_signed_diff_without_writing(monkeypatch) -> None:
     assert preview["status"] == "confirmation_required"
     assert preview["effect"] == "UPDATE"
     assert preview["target"]["current_version"] == 3
+    assert preview["target"]["proposed_review_status"] == "needs_review"
     assert "-Le zinc reste à confirmer." in preview["diff"]
     assert "+Le client confirme le zinc naturel." in preview["diff"]
     assert preview["confirmation"]["phrase"] == "CONFIRMER UPDATE"
@@ -104,7 +105,7 @@ def test_apply_verifies_exact_preview_and_delegates_transactional_write(monkeypa
         "actor": "ifan.juang",
         "actor_kind": "human",
         "idempotency_key": "update-knowledge-0001",
-        "review_status": "needs_review",
+        "review_status": None,
     }
 
 
@@ -152,7 +153,7 @@ def test_apply_rejects_expiry_tampering_scope_and_stale_markdown(monkeypatch) ->
         knowledge_update.apply_knowledge_update(**common, now=1_010)
 
 
-def test_preview_refuses_noop_and_stale_version(monkeypatch) -> None:
+def test_preview_refuses_noop_stale_version_and_status_change(monkeypatch) -> None:
     _patch_reads(monkeypatch)
     with pytest.raises(knowledge_update.KnowledgeUpdateError, match="no material change"):
         knowledge_update.preview_knowledge_update(
@@ -173,4 +174,15 @@ def test_preview_refuses_noop_and_stale_version(monkeypatch) -> None:
             expected_version=2,
             actor="ifan.juang",
             signing_secret="editor-secret",
+        )
+    with pytest.raises(knowledge_update.KnowledgeUpdateError, match="separate governed"):
+        knowledge_update.preview_knowledge_update(
+            _Connection(),
+            parent_project_id="project-lieurey",
+            knowledge_id="knowledge.coverage",
+            proposed_markdown=PROPOSED,
+            expected_version=3,
+            actor="ifan.juang",
+            signing_secret="editor-secret",
+            review_status="reviewed",
         )
