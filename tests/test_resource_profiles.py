@@ -67,3 +67,22 @@ def test_linked_sites_are_deduplicated_classified_and_never_crawled() -> None:
     assert all(site["retrieval_profile"]["mode"] == "address_only" for site in sites)
     assert all(site["retrieval_profile"]["crawl_status"] == "not_authorized" for site in sites)
     assert all(site["retrieval_profile"]["vector_status"] == "not_indexed" for site in sites)
+
+
+def test_malformed_port_is_ignored_instead_of_raising() -> None:
+    sites = resource_profiles.extract_linked_sites(
+        "valid https://example.com/path malformed https://example.com:bad/path"
+    )
+
+    assert [site["url"] for site in sites] == ["https://example.com/path"]
+
+
+def test_ipv6_authority_keeps_brackets_for_downstream_host_validation() -> None:
+    sites = resource_profiles.extract_linked_sites(
+        "linked https://[::1]/private and https://[2001:db8::1]:8443/reference"
+    )
+
+    assert sites[0]["url"] == "https://[::1]/private"
+    assert sites[0]["host"] == "::1"
+    assert sites[1]["url"] == "https://[2001:db8::1]:8443/reference"
+    assert sites[1]["host"] == "2001:db8::1"
