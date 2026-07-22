@@ -301,9 +301,29 @@ async function syncQueue() {
   message(details.length ? `${details.join(". ")}.` : "Synchronisation des demandes Hermes terminée.");
 }
 
+function clearLocalData() {
+  const prefixes = ["pantheon-knowledge:", "pantheon-project:"];
+  for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+    const storedKey = localStorage.key(index);
+    if (storedKey && prefixes.some(prefix => storedKey.startsWith(prefix))) {
+      localStorage.removeItem(storedKey);
+    }
+  }
+  sessionStorage.removeItem("pantheon-human-actor");
+  state.items = [];
+  state.current = null;
+  state.baseMarkdown = "";
+  state.token = "";
+  state.project = "";
+  state.actor = "";
+  state.pendingUpdate = null;
+  window.location.reload();
+}
+
 $("load").onclick = loadProject;
 $("save").onclick = previewRevision;
 $("apply-update").onclick = applyPendingUpdate;
+$("clear-local").onclick = clearLocalData;
 $("confirmation").addEventListener("input", () => {
   const expected = state.pendingUpdate?.preview?.confirmation?.phrase;
   $("apply-update").disabled = $("confirmation").value !== expected;
