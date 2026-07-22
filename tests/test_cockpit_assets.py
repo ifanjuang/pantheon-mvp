@@ -10,16 +10,20 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_JS = ROOT / "mvp_vertical" / "cockpit" / "app.js"
+SCRIPTS = [
+    ROOT / "mvp_vertical" / "cockpit" / "app.js",
+    ROOT / "mvp_vertical" / "cockpit" / "effects.js",
+]
 
 
-def test_cockpit_javascript_parses() -> None:
+@pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.name)
+def test_cockpit_javascript_parses(script: Path) -> None:
     node = shutil.which("node")
     if node is None:  # pragma: no cover - depends on the runner image
         pytest.skip("Node.js is unavailable; JavaScript syntax check skipped")
 
     result = subprocess.run(
-        [node, "--check", str(APP_JS)],
+        [node, "--check", str(script)],
         check=False,
         capture_output=True,
         text=True,
