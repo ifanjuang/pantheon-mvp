@@ -22,6 +22,7 @@ from . import (
     knowledge_update,
     resource_profiles,
     site_manifest_preview,
+    site_navigation_profile,
     store,
     work_issue_read,
     work_issues,
@@ -63,6 +64,11 @@ class StructureSiteScopeBody(BaseModel):
 class StructureManifestPreviewBody(BaseModel):
     mode: Literal["structure_only"] = "structure_only"
     sites: list[StructureSiteScopeBody] = Field(min_length=1, max_length=10)
+
+
+class SiteNavigationProfilePreviewBody(BaseModel):
+    task: str = Field(min_length=3, max_length=500)
+    selected_urls: list[str] = Field(default_factory=list, max_length=10)
 
 
 def connect_cockpit():
@@ -223,6 +229,34 @@ def create_cockpit_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except (
             site_manifest_preview.SiteManifestPreviewError,
+            knowledge.KnowledgeError,
+        ) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/v1/projects/{parent_project_id}/knowledge/{knowledge_id}/navigation-profiles/preview"
+    )
+    def preview_navigation_profiles(
+        parent_project_id: str,
+        knowledge_id: str,
+        body: SiteNavigationProfilePreviewBody,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        """Preview task-specific navigation candidates without querying or installing skills."""
+        try:
+            return with_connection(
+                lambda conn: site_navigation_profile.preview_site_navigation_profiles(
+                    conn,
+                    parent_project_id=parent_project_id,
+                    knowledge_id=knowledge_id,
+                    task=body.task,
+                    selected_urls=body.selected_urls or None,
+                )
+            )
+        except knowledge.KnowledgeNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (
+            site_navigation_profile.SiteNavigationProfileError,
             knowledge.KnowledgeError,
         ) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
