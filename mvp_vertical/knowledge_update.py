@@ -236,21 +236,8 @@ def apply_knowledge_update(
     card = knowledge.get_knowledge_card(conn, knowledge_id)
     _validate_scope(card, parent_project_id=parent_project_id, knowledge_id=knowledge_id)
     _validate_preserved_review_status(card, review_status)
-
-    if card.get("version") != expected_version:
-        # The transactional owner may still replay the exact immutable effect.
-        # A different key or payload remains stale/conflicting and is refused there.
-        snapshot = knowledge.revise_knowledge(
-            conn,
-            knowledge_id=knowledge_id,
-            markdown=proposed_markdown,
-            expected_version=expected_version,
-            actor=actor,
-            actor_kind="human",
-            idempotency_key=idempotency_key,
-            review_status=None,
-        )
-    else:
+    current_version = card.get("version")
+    if current_version == expected_version:
         if confirmation_expires_at < current_time:
             raise KnowledgeUpdateExpired("Knowledge update confirmation has expired")
         current_markdown = knowledge.get_knowledge_markdown(conn, knowledge_id)
@@ -258,17 +245,23 @@ def apply_knowledge_update(
             raise knowledge.StaleKnowledgeWrite(
                 "Knowledge Markdown changed after the signed preview"
             )
-        snapshot = knowledge.revise_knowledge(
-            conn,
-            knowledge_id=knowledge_id,
-            markdown=proposed_markdown,
-            expected_version=expected_version,
-            actor=actor,
-            actor_kind="human",
-            idempotency_key=idempotency_key,
-            review_status=None,
+    elif current_version is None or current_version < expected_version:
+        raise knowledge.StaleKnowledgeWrite(
+            f"stale Knowledge version: expected {expected_version}, current {current_version}"
         )
+    # A version above the signed base can only succeed through the adapter's
+    # immutable idempotency replay. A new or altered key still fails there.
 
+    snapshot = knowledge.revise_knowledge(
+        conn,
+        knowledge_id=knowledge_id,
+        markdown=proposed_markdown,
+        expected_version=expected_version,
+        actor=actor,
+        actor_kind="human",
+        idempotency_key=idempotency_key,
+        review_status=None,
+    )
     return {
         "status": "applied",
         "effect": "UPDATE",
