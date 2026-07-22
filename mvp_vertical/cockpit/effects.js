@@ -1,16 +1,21 @@
 (() => {
   const byId = id => document.getElementById(id);
-  const moduleState = {
-    proposals: [],
-    response: null,
-  };
+  const moduleState = { proposals: [], response: null };
 
   const effectIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h11"/><path d="m12 4 3 3-3 3"/><path d="M20 17H9"/><path d="m12 14-3 3 3 3"/></svg>';
   const decisionIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13M7 7h10M5 20h14"/><path d="m7 7-3 5h6zM17 7l-3 5h6z"/></svg>';
   const scopeIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 1.5v3M22.5 12h-3M12 22.5v-3M1.5 12h3"/></svg>';
 
+  function currentProject() {
+    return byId("project")?.value.trim() || "";
+  }
+
+  function currentToken() {
+    return byId("token")?.value || "";
+  }
+
   function draftKey() {
-    return `pantheon-effect-preview:${byId("project")?.value.trim() || "unscoped"}`;
+    return `pantheon-effect-preview:${currentProject() || "unscoped"}`;
   }
 
   function readDraft() {
@@ -40,6 +45,41 @@
     if (attention) item.dataset.attention = "true";
     item.innerHTML = svg;
     return item;
+  }
+
+  function section(title, entries) {
+    const wrapper = document.createElement("section");
+    wrapper.className = "detail-section";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    wrapper.append(heading);
+    const values = entries.filter(Boolean);
+    if (values.length === 1) {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = values[0];
+      wrapper.append(paragraph);
+    } else {
+      const list = document.createElement("ul");
+      for (const value of values) {
+        const item = document.createElement("li");
+        item.textContent = value;
+        list.append(item);
+      }
+      wrapper.append(list);
+    }
+    return wrapper;
+  }
+
+  function openDialog(title, content) {
+    const dialog = byId("detail-dialog");
+    byId("detail-kind").replaceChildren(typeLockup());
+    const detail = byId("detail-content");
+    detail.replaceChildren();
+    const heading = document.createElement("h2");
+    heading.id = "detail-title";
+    heading.textContent = title;
+    detail.append(heading, content);
+    dialog.showModal();
   }
 
   function createCard({ title, summary, signal, status, context, label, onOpen, attention = false }) {
@@ -95,49 +135,6 @@
     return card;
   }
 
-  function section(title, entries) {
-    const wrapper = document.createElement("section");
-    wrapper.className = "detail-section";
-    const heading = document.createElement("h3");
-    heading.textContent = title;
-    wrapper.append(heading);
-    const values = entries.filter(Boolean);
-    if (values.length === 1) {
-      const paragraph = document.createElement("p");
-      paragraph.textContent = values[0];
-      wrapper.append(paragraph);
-    } else {
-      const list = document.createElement("ul");
-      for (const value of values) {
-        const item = document.createElement("li");
-        item.textContent = value;
-        list.append(item);
-      }
-      wrapper.append(list);
-    }
-    return wrapper;
-  }
-
-  function openDialog(title, content) {
-    const dialog = byId("detail-dialog");
-    byId("detail-kind").replaceChildren(typeLockup());
-    const detail = byId("detail-content");
-    detail.replaceChildren();
-    const heading = document.createElement("h2");
-    heading.id = "detail-title";
-    heading.textContent = title;
-    detail.append(heading, content);
-    dialog.showModal();
-  }
-
-  function currentProject() {
-    return byId("project")?.value.trim() || "";
-  }
-
-  function currentToken() {
-    return byId("token")?.value || "";
-  }
-
   function effectInputCard() {
     return createCard({
       title: "Rapprocher une information",
@@ -153,9 +150,7 @@
 
   function proposalCard(proposal) {
     const target = proposal.target;
-    const targetLabel = target
-      ? `${target.object_type} · ${target.title}`
-      : "Nouvel objet à qualifier";
+    const targetLabel = target ? `${target.object_type} · ${target.title}` : "Nouvel objet à qualifier";
     return createCard({
       title: proposal.effect,
       summary: targetLabel,
@@ -174,8 +169,7 @@
     });
     byId("scene-eyebrow").textContent = "RAPPROCHEMENT";
     byId("scene-title").textContent = "Qualifier une nouvelle information";
-    const status = byId("scene-status");
-    status.textContent = moduleState.proposals.length
+    byId("scene-status").textContent = moduleState.proposals.length
       ? `${moduleState.proposals.length} proposition(s) non persistée(s).`
       : "La création reste le dernier recours ; aucune proposition n’est appliquée automatiquement.";
     const deck = byId("deck");
@@ -239,7 +233,6 @@
     message.className = "effect-message";
     message.setAttribute("role", "status");
     action.addEventListener("click", () => previewEffects({ information, hint, refs, action, message }));
-
     form.append(informationBlock, grid, action, message);
     openDialog("Rapprocher une information", form);
   }
@@ -264,10 +257,7 @@
     try {
       const response = await fetch(`../v1/projects/${encodeURIComponent(project)}/effects/preview`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           information: text,
           explicit_object_refs: referenceValues,
@@ -290,6 +280,7 @@
 
   function openProposal(proposal) {
     const target = proposal.target;
+    const eligibleKnowledgeUpdate = proposal.effect === "UPDATE" && target?.object_type === "knowledge";
     const wrapper = document.createElement("div");
     wrapper.className = "effect-proposal-detail";
     wrapper.append(
@@ -311,10 +302,29 @@
       section("Raisons", proposal.reasons || ["Aucune raison exposée."]),
       section("Gouvernance", [
         "Confirmation humaine obligatoire.",
-        "Aucune route d’application n’est exposée.",
+        eligibleKnowledgeUpdate
+          ? "Seul un sas propriétaire Knowledge peut être préparé ; aucun effet générique n’est applicable."
+          : "Aucune route d’application propriétaire n’est disponible pour cet effet ou cette cible.",
         ...(moduleState.response?.limits || []),
       ]),
     );
+
+    if (eligibleKnowledgeUpdate) {
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "primary-action";
+      action.textContent = "Préparer la mise à jour Knowledge";
+      action.addEventListener("click", () => {
+        document.dispatchEvent(new CustomEvent("pantheon:knowledge-update-request", {
+          detail: {
+            proposal,
+            project: currentProject(),
+            token: currentToken(),
+          },
+        }));
+      });
+      wrapper.append(action);
+    }
     openDialog(`${proposal.effect} · proposition`, wrapper);
   }
 
