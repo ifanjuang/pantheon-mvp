@@ -46,6 +46,7 @@ A card is not the underlying object and never owns its status.
 - Knowledge cards from `GET /v1/projects/{parent_project_id}/knowledge`.
 - Work Issue cards from `GET /v1/projects/{parent_project_id}/work-issues`.
 - Read-only Resource Profiles from `GET /v1/projects/{parent_project_id}/resource-profiles`.
+- Proposal-only structure manifests from `POST /v1/projects/{parent_project_id}/knowledge/{knowledge_id}/site-manifests/preview`.
 - One local Questionnaire card used to test structured clarification UX.
 - Proposal-only Effect cards from `POST /v1/projects/{parent_project_id}/effects/preview`.
 - One owner-specific Knowledge `UPDATE` gate with signed diff and explicit human confirmation.
@@ -121,7 +122,7 @@ The profile deduplicates addresses and may classify common hosts for orientation
 including legal references, safety references, geodata, public data, official
 public sites and general web sources.
 
-The current retrieval profile is always:
+The persisted retrieval profile remains:
 
 ```text
 mode: address_only
@@ -133,13 +134,23 @@ structure_indexed: false
 The cockpit performs no URL request while loading or displaying a card. A link is
 not a fetched source, an indexed source or Evidence.
 
-Possible future coverage modes are documented but not implemented:
+Coverage status is now deliberately split:
 
 ```text
-address_only
-structure_only
+address_only projection
+= implemented
+
+structure_only manifest preview
+= implemented proposal-only
+
+structure_only crawl and structure index
+= documented not implemented
+
 selected_pages
+= documented not implemented
+
 full_content
+= documented not implemented
 ```
 
 The intended responsibility split is:
@@ -156,16 +167,102 @@ Forbidden by this candidate:
 - following undeclared links;
 - default full-site crawling;
 - hidden authentication or session reuse;
+- private, loopback, reserved or local-network targets;
+- credential-bearing URLs;
 - treating sitemap discovery or runtime success as approval;
 - treating a vector index as Evidence or canonical Knowledge;
 - silently widening from structure-only to content indexing;
 - automatically refreshing or deleting indexed content without a governed update
   and rollback path.
 
-A future `structure_only` binding should index only a reviewed site map or bounded
-navigation graph — for example canonical URLs, titles, headings and parent/child
-relations — so retrieval can locate candidate pages before any separately scoped
-content fetch.
+## Structure-only manifest preview
+
+The cockpit can prepare a deterministic candidate perimeter for addresses already
+present in one exact Knowledge item:
+
+```text
+POST /v1/projects/{project}/knowledge/{knowledge}/site-manifests/preview
+```
+
+The preview accepts only:
+
+```text
+mode: structure_only
+1 to 10 selected linked URLs
+1 to 8 path prefixes per URL
+maximum depth from 0 to 5
+```
+
+A selected URL must already be present in the exact Knowledge Markdown and the
+Knowledge must belong to the exact opened project. The preview refuses local,
+private, loopback, reserved, mDNS and credential-bearing targets.
+
+The candidate captures only structural metadata:
+
+```text
+canonical page URL
+page title
+headings
+same-host link graph
+```
+
+It explicitly excludes:
+
+```text
+body text
+images
+downloads
+subdomains
+query-driven traversal
+```
+
+The response exposes:
+
+```text
+stable manifest digest
+normalized origins and path prefixes
+maximum depth
+scope-expansion warnings
+politeness candidate
+Capability Slot posture
+open Pantheon Gates
+execution and indexing posture
+```
+
+The Capability Slot remains unbound:
+
+```text
+function: web_structure_discovery
+candidate Hermes binding: none
+installation status: not assessed
+health: not checked
+update status: not checked
+activation: not authorized
+```
+
+All Gates remain open:
+
+```text
+human scope approval
+binding selection
+runtime health review
+activation authorization
+```
+
+No manifest is persisted. No network request, schedule, Hermes handoff, structure
+index or vectorization is created.
+
+```text
+manifest preview != crawl authorization
+binding selected != dependency adopted
+structure indexed != content adopted
+vectorized != Evidence
+runtime success != proof
+```
+
+A later `structure_only` binding should index only the approved site map or bounded
+navigation graph so retrieval can locate candidate pages before any separately
+scoped content fetch.
 
 ## Deterministic rapprochement preview
 
@@ -281,8 +378,11 @@ Not implemented in this lot:
 - Document or Work Issue application from effect proposals;
 - Knowledge review-status changes through this UPDATE gate;
 - web crawling or web-content vectorization;
-- persisted per-site crawl policies, manifests, refresh schedules or rollback;
-- Decision and Gate projection;
+- persisted site manifests or per-site crawl policies;
+- Hermes crawler binding selection, installation or activation;
+- structure-index health observations;
+- refresh schedules, update authorization or rollback;
+- Decision and Gate persistence/projection;
 - Rite Review cards;
 - Agora;
 - individually authenticated human identity / SSO;
@@ -298,7 +398,7 @@ tokens
 foundations
 layout
 components
-resource indicators
+resource indicators and manifest preview
 variants
 effect preview module
 Knowledge update module
@@ -307,11 +407,11 @@ accessibility
 ```
 
 HTML anatomy remains stable. The main renderer owns persisted-object cards;
-`resources.js` enriches those projections with read-only format/composition and
-linked-site indicators; `effects.js` owns proposal-only rapprochement and
-eligibility routing; `knowledge_updates.js` owns only the signed Knowledge
-`UPDATE` interaction. Colors and motion remain controlled by CSS variables and
-variants.
+`resources.js` enriches those projections with read-only format/composition,
+linked-site indicators and proposal-only manifest preview; `effects.js` owns
+proposal-only rapprochement and eligibility routing; `knowledge_updates.js` owns
+only the signed Knowledge `UPDATE` interaction. Colors and motion remain controlled
+by CSS variables and variants.
 
 ## Motion boundary
 
