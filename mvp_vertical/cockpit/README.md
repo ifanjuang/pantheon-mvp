@@ -110,20 +110,47 @@ POST /v1/projects/{project}/knowledge/{knowledge}/updates/preview
 POST /v1/projects/{project}/knowledge/{knowledge}/updates/apply
 ```
 
+The routes are disabled unless the runtime supplies a separate server-only secret:
+
+```text
+MVP_UPDATE_SIGNING_SECRET=<independent random secret>
+```
+
+This secret must differ from `MVP_EDITOR_API_KEY` and must never be sent to the
+browser. Therefore:
+
+```text
+editor credential != update signing authority
+route present != gate activated
+```
+
 The preview route:
 
 - requires the editor credential;
 - requires `X-Pantheon-Human-Actor`;
+- requires the server-side update signing authority;
 - verifies exact project ownership and optimistic version;
 - preserves the current Knowledge review status;
 - calculates a unified Markdown diff;
 - signs project, target, version, before/after digests, actor and expiry;
 - persists nothing.
 
-The apply route requires the same immutable effect, a valid unexpired signature,
-the exact phrase `CONFIRMER UPDATE`, an idempotency key and the same declared
-human actor. It delegates the final write to `knowledge.revise_knowledge`, which
-owns the transaction, version increment, append-only event and immutable replay.
+The apply route requires the same immutable effect, a valid signature, the exact
+phrase `CONFIRMER UPDATE`, an idempotency key and the same declared human actor.
+A new write is refused after expiration. An exact idempotent retry may still replay
+the result already recorded by the owner transaction. The final write remains
+owned by `knowledge.revise_knowledge`, including version increment, append-only
+event and immutable replay.
+
+The historical direct route is retired:
+
+```text
+PUT /v1/knowledge/{knowledge_id} -> 410 Gone
+```
+
+This closes the editor-key bypass. The mobile editor now keeps offline revisions
+as local drafts and uses the same signed preview/confirmation path when online.
+Legacy queued direct revisions are not auto-applied.
 
 ```text
 UPDATE applied != Knowledge reviewed
