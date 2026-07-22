@@ -22,11 +22,14 @@ def test_cards_first_cockpit_shell_is_available() -> None:
     assert "Le cockpit affiche des projections" in response.text
     assert 'data-scene="work"' in response.text
     assert 'src="effects.js"' in response.text
+    assert 'src="knowledge_updates.js"' in response.text
 
     assert client.get("/cockpit/app.js").status_code == 200
     assert client.get("/cockpit/effects.js").status_code == 200
+    assert client.get("/cockpit/knowledge_updates.js").status_code == 200
     assert client.get("/cockpit/styles/index.css").status_code == 200
     assert client.get("/cockpit/styles/effects.css").status_code == 200
+    assert client.get("/cockpit/styles/knowledge_updates.css").status_code == 200
     assert client.get("/editor/").status_code == 200
 
 
