@@ -43,6 +43,7 @@ A card is not the underlying object and never owns its status.
 - Project Document cards from `GET /v1/projects/{parent_project_id}/documents`.
 - Knowledge cards from `GET /v1/projects/{parent_project_id}/knowledge`.
 - Work Issue cards from `GET /v1/projects/{parent_project_id}/work-issues`.
+- Read-only Resource Profiles from `GET /v1/projects/{parent_project_id}/resource-profiles`.
 - One local Questionnaire card used to test structured clarification UX.
 - Proposal-only Effect cards from `POST /v1/projects/{parent_project_id}/effects/preview`.
 - One owner-specific Knowledge `UPDATE` gate with signed diff and explicit human confirmation.
@@ -51,6 +52,10 @@ The Work Issue route performs one exact `case_ref == parent_project_id` match. I
 returns the existing governed aggregate, including comments, Hermes runs and
 append-only events. It does not infer project membership, broaden scope, mutate
 status or grant Hermes database authority.
+
+Resource Profiles remain observational. They describe file composition and
+Knowledge-linked addresses without crawling, indexing, installing or activating
+anything.
 
 Recent visual effects are derived from owner data:
 
@@ -131,6 +136,7 @@ The preview route:
 - requires the server-side update signing authority;
 - verifies exact project ownership and optimistic version;
 - preserves the current Knowledge review status;
+- preserves and signs the exact Markdown bytes;
 - calculates a unified Markdown diff;
 - signs project, target, version, before/after digests, actor and expiry;
 - persists nothing.
