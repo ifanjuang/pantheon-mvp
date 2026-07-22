@@ -1,6 +1,7 @@
 (() => {
   const emptyProfiles = () => ({ documents: new Map(), knowledgeSites: new Map(), crawlCapability: null });
   state.resourceProfiles = emptyProfiles();
+  sceneCopy.resources = ["RESSOURCES", "Formats, contenus observés et sites liés"];
 
   Object.assign(iconPaths, {
     pdf: '<path d="M6 2.75h8l4 4V21.25H6z"/><path d="M14 2.75v4h4"/><path d="M8.5 13h7M8.5 16h5"/>',
@@ -137,12 +138,43 @@
     return model;
   };
 
+  const originalCurrentModels = currentModels;
+  currentModels = function resourceFilteredModels() {
+    if (state.scene !== "resources") return originalCurrentModels();
+    const linkedKnowledge = state.knowledge
+      .filter(item => (state.resourceProfiles.knowledgeSites.get(item.knowledge_id) || []).length)
+      .map(knowledgeModel);
+    const profiledDocuments = state.documents
+      .filter(item => state.resourceProfiles.documents.has(item.document_id))
+      .map(documentModel);
+    return [...linkedKnowledge, ...profiledDocuments];
+  };
+
   function normalizeProfiles(payload) {
     return {
       documents: new Map((payload.documents || []).map(item => [item.document_id, item])),
       knowledgeSites: new Map((payload.knowledge_sites || []).map(item => [item.knowledge_id, item.sites || []])),
       crawlCapability: payload.crawl_capability || null,
     };
+  }
+
+  function addResourcesTab() {
+    const rail = document.querySelector(".scene-rail");
+    if (!rail || rail.querySelector('[data-scene="resources"]')) return;
+    const button = document.createElement("button");
+    button.className = "scene-tab";
+    button.dataset.scene = "resources";
+    button.type = "button";
+    button.textContent = "Ressources";
+    button.addEventListener("click", () => {
+      state.scene = "resources";
+      document.querySelectorAll("[data-scene]").forEach(tab => {
+        tab.classList.toggle("is-active", tab === button);
+      });
+      render();
+    });
+    const questionnaire = rail.querySelector('[data-scene="questionnaire"]');
+    rail.insertBefore(button, questionnaire || null);
   }
 
   async function loadResourceProfiles() {
@@ -159,5 +191,6 @@
     }
   }
 
+  addResourcesTab();
   $("load").addEventListener("click", loadResourceProfiles);
 })();
