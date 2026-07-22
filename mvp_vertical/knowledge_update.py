@@ -103,10 +103,9 @@ def preview_knowledge_update(
 ) -> dict:
     """Return a stateless diff and signed confirmation challenge."""
     actor = _validate_actor(actor)
-    proposed_markdown = proposed_markdown.strip()
     if not signing_secret:
         raise KnowledgeUpdateError("Knowledge update signing secret is not configured")
-    if not proposed_markdown:
+    if not proposed_markdown.strip():
         raise KnowledgeUpdateError("proposed Markdown must not be empty")
     if expected_version < 1:
         raise KnowledgeUpdateError("expected_version must be at least 1")
@@ -211,13 +210,14 @@ def apply_knowledge_update(
         raise KnowledgeUpdateError("exact confirmation phrase is required")
     if not signing_secret:
         raise KnowledgeUpdateError("Knowledge update signing secret is not configured")
+    if not proposed_markdown.strip():
+        raise KnowledgeUpdateError("proposed Markdown must not be empty")
     if len(idempotency_key.strip()) < 8 or len(idempotency_key) > 200:
         raise KnowledgeUpdateError("idempotency_key must be between 8 and 200 characters")
     current_time = int(time.time()) if now is None else int(now)
     if confirmation_expires_at > current_time + 905:
         raise KnowledgeUpdateError("confirmation expiry is outside the accepted window")
 
-    proposed_markdown = proposed_markdown.strip()
     proposed_digest = _digest(proposed_markdown)
     signed_payload = _effect_payload(
         parent_project_id=parent_project_id,
