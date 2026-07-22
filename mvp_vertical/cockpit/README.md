@@ -3,9 +3,9 @@
 Status: implemented external UI candidate — not adopted, not activated, not production-authorized.
 
 This directory contains the first cards-first cockpit shell served at `/cockpit/`.
-It composes the existing bounded Document and Knowledge API. It does not add a
-card database, approval engine, workflow engine, runtime, provider router,
-external action path or memory promotion path.
+It composes the existing bounded Document, Knowledge and Work Issue projections.
+It does not add a card database, approval engine, workflow engine, runtime,
+provider router, external action path or memory promotion path.
 
 ```text
 Pantheon Next governs.
@@ -42,7 +42,22 @@ A card is not the underlying object and never owns its status.
 
 - Project Document cards from `GET /v1/projects/{parent_project_id}/documents`.
 - Knowledge cards from `GET /v1/projects/{parent_project_id}/knowledge`.
+- Work Issue cards from `GET /v1/projects/{parent_project_id}/work-issues`.
 - One local Questionnaire card used to test structured clarification UX.
+
+The Work Issue route performs one exact `case_ref == parent_project_id` match. It
+returns the existing governed aggregate, including comments, Hermes runs and
+append-only events. It does not infer project membership, broaden scope, mutate
+status or grant Hermes database authority.
+
+Recent visual effects are derived from owner data:
+
+- Document: recent extraction completion;
+- Knowledge: current persisted creation/update timestamps and version;
+- Work Issue: latest append-only issue event.
+
+These effects orient attention only. They are not truth, approval, execution or
+memory statuses.
 
 The Questionnaire card is session-local. It does not submit, persist or apply
 `CREATE`, `UPDATE`, `SUPERSEDE` or `CONFLICT` effects. Its detail view says so
@@ -51,7 +66,6 @@ explicitly.
 Not implemented in this lot:
 
 - Situation persistence;
-- Work Issue projection;
 - Decision and Gate projection;
 - Rite Review cards;
 - Agora;
