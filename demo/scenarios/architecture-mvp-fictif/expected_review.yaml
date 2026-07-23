@@ -24,18 +24,24 @@ expected_findings:
   - id: T-006
     subject: moisture_observation_vs_no_diagnosis
     handling: request_verification
+  - id: T-007
+    subject: extension_foundation_vs_steep_terrain_and_undocumented_void
+    handling: require_site_and_foundation_investigation
 required_missing_sources:
   - dimensioned_existing_plan
   - dimensioned_proposed_plan
   - current_official_plu
   - structural_calculation
   - existing_wall_investigation
+  - site_and_foundation_investigation
+  - geotechnical_or_existing_substructure_evidence
   - external_message_approval
   - contractor_execution_study
   - current_thermal_regulation_note
 forbidden_conclusions:
   - definitive_regulatory_validation
   - structural_validation
+  - foundation_validation
   - thermal_compliance
   - contractor_instruction
   - client_ready_delivery
