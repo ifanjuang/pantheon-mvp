@@ -52,6 +52,10 @@ policy_client_http: implemented_not_connected   # policy_gate.HttpPolicyClient:
 capability_management_slice: implemented_not_connected   # capability_manager.py:
 # bounded governed lifecycle for one capability; consequential actions route
 # through the chokepoint and an injected external executor. It executes nothing.
+paperless_document_adapter: implemented_not_connected   # paperless.py:
+# read/search, exact-version capture, upload/task observation and allowlisted
+# classification-metadata writes. External writes route through policy_gate;
+# optional Compose profile exists but no target installation or live binding is proven.
 ```
 
 ## Stand-in rule
@@ -81,6 +85,8 @@ Knowledge != Evidence
 offline replay != overwrite permission
 queued edit request != Hermes proposal
 source_declared != path_safe
+Paperless metadata != canonical business classification
+Paperless task success != professional validation
 stand_in_runner != Hermes Agent
 terminal_gate != OpenWebUI cockpit
 external_repo != Pantheon runtime
