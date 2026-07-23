@@ -100,7 +100,6 @@ def _decision_from_expectation(expected, decision_id):
             "object_identity": expected["object_identity"],
             "content_digest": expected["expected_digest"],
         },
-        # Wrong on purpose: PEP-owned effect facts must replace this expectation.
         "expectation": {
             "required_ceiling": "C0",
             "required_scope": {"scope_type": "project", "scope_id": "ATTACKER"},
@@ -139,7 +138,8 @@ def _app(fake, policy=None, intake_calls=None):
 
     return create_app(
         paperless_factory=lambda: fake,
-        policy_factory=lambda: policy or StandInPolicyClient(),
+        policy_factory=lambda: policy
+        or StandInPolicyClient(external_effect_allowed=False),
         intake_executor=intake_executor,
         read_api_key="read-key",
         hermes_api_key="hermes-key",
@@ -347,7 +347,7 @@ def test_metadata_scope_is_checked_before_policy_or_paperless_patch():
 
 def test_current_v0_blocks_metadata_external_effect_even_with_matching_decision():
     fake = _FakePaperless()
-    policy = StandInPolicyClient()
+    policy = StandInPolicyClient(external_effect_allowed=False)
     changes = {"tags": [3]}
     decision = _metadata_decision(fake, _contract_yaml(), changes)
     response = TestClient(_app(fake, policy)).post(
