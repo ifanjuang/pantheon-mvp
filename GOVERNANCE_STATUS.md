@@ -10,7 +10,7 @@ It is an external executable candidate intended to host the MVP vertical slice f
 
 ```text
 executed_by: this external repository, when code is present and explicitly run
-exposed_by: terminal decision stand-in, read-only OpenWebUI Document Card candidate and mobile Knowledge editor candidate; not installed
+exposed_by: terminal decision stand-in, read-only OpenWebUI Document Card and Paperless Source Inbox candidates, and mobile Knowledge editor candidate; not installed
 governed_by: Pantheon Next doctrine and adoption gates
 approved_by: human decision only
 forbidden: self-approval, external send, memory promotion, provider routing, scheduling, unrestricted source access
@@ -52,7 +52,20 @@ policy_client_http: implemented_not_connected   # policy_gate.HttpPolicyClient:
 capability_management_slice: implemented_not_connected   # capability_manager.py:
 # bounded governed lifecycle for one capability; consequential actions route
 # through the chokepoint and an injected external executor. It executes nothing.
+paperless_document_adapter: implemented_not_deployed   # paperless.py + paperless_ingestion.py:
+# read/search, exact-version Source Capture, existing Document->Knowledge intake,
+# upload/task observation and allowlisted classification-metadata writes.
+paperless_gateway: implemented_not_deployed   # paperless_gateway.py:
+# server-side read projection plus Hermes-only governed metadata mutation; raw
+# Paperless token is never exposed to the browser.
+paperless_source_inbox: implemented_not_installed   # openwebui/pantheon_paperless_documents.py:
+# read-only Paperless source discovery/inspection and exact-capture display.
+paperless_runtime_profile: implemented_candidate_not_installed   # docker-compose.yml:
+# Paperless + dedicated DB + internal broker + bounded gateway; external secrets
+# and a reviewed pinned Paperless image are required before an operator can run it.
 ```
+
+None of these Paperless statuses establishes a live Paperless instance, target health, real Hermes runtime wiring, adoption, activation or real-dossier authorization.
 
 ## Stand-in rule
 
@@ -63,10 +76,10 @@ runner.py -> explicit Hermes stand-in header (met: module docstring declares sta
 gate.py   -> terminal_gate_standin.py (met: named + header declares terminal_gate != OpenWebUI cockpit)
 ```
 
-Both stand-ins now declare their status explicitly. The separate OpenWebUI
-Document Card Tool is a committed read-only candidate, not a live installation.
-The separate editor key permits only versioned Knowledge writes and edit
-requests; it cannot mutate NAS originals, admit Evidence, promote memory or
+Both stand-ins now declare their status explicitly. The OpenWebUI Document Card
+and Paperless Source Inbox Tools are committed read-only candidates, not live
+installations. The separate editor key permits only versioned Knowledge writes
+and edit requests; it cannot mutate originals, admit Evidence, promote memory or
 approve professional truth. These surfaces prove the governance cage; they are
 not adoption or activation.
 
@@ -81,6 +94,10 @@ Knowledge != Evidence
 offline replay != overwrite permission
 queued edit request != Hermes proposal
 source_declared != path_safe
+Paperless metadata != canonical business classification
+Paperless OCR != source truth
+Paperless task success != professional validation
+Paperless exact capture != Evidence
 stand_in_runner != Hermes Agent
 terminal_gate != OpenWebUI cockpit
 external_repo != Pantheon runtime
