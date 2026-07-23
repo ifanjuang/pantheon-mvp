@@ -26,6 +26,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 
+from .policy_request import build_preflight_payload
+
 # Preflight dispositions that permit continued (candidate) work. Anything else
 # blocks. Mirrors the Pantheon preflight contract; the seat is external.
 _ELIGIBLE_DISPOSITIONS = frozenset(
@@ -60,12 +62,21 @@ def enforce_consequential(
 ) -> GateVerdict:
     """Consult the PDP and return whether the consequential effect may proceed.
 
+    Runtime adapters may express the candidate in their own vocabulary. Before
+    transport, it is normalized to the exact generic ``request + gate_signals``
+    body defined by the Pantheon HTTP policy contract. This keeps Paperless,
+    capability-management and future adapters from leaking product-specific
+    fields into the policy API.
+
     Fail closed: any client error, a non-eligible preflight, or a decision that
     is not `valid` yields `allowed=False`. The effect must not run unless
-    `allowed` is True."""
+    `allowed` is True.
+    """
+
     try:
-        preflight = client.preflight(candidate)
-    except Exception as exc:  # PDP unavailable -> fail closed
+        preflight_payload = build_preflight_payload(candidate, decision_payload)
+        preflight = client.preflight(preflight_payload)
+    except Exception as exc:  # PDP unavailable / malformed adapter payload -> fail closed
         return GateVerdict(False, "policy_unavailable", [f"preflight call failed: {exc}"])
 
     disposition = str(preflight.get("policy_disposition", "unknown"))
@@ -102,7 +113,9 @@ def governed_effect(
     `effect` is a zero-argument callable that performs the actual consequential
     write (e.g. applying a Knowledge revision). It is invoked only when the
     chokepoint allows; on a block it never runs and a refusal is returned as
-    data. This is the seam that makes Pantheon master in fact for this effect."""
+    data. This is the seam that makes Pantheon master in fact for this effect.
+    """
+
     verdict = enforce_consequential(
         client, candidate=candidate, decision_payload=decision_payload
     )
@@ -125,20 +138,21 @@ class StandInPolicyClient:
     """Deterministic offline PDP stand-in for tests. It is NOT the Pantheon
     policy service; it lets the seam be exercised without a live PDP.
 
-    `preflight` echoes a caller-declared disposition (default eligible).
+    `preflight` returns a caller-selected disposition (default eligible).
     `validate_decision` performs a minimal human-signer / required-field check so
     the seam's allow/block branches are testable. Real validation lives in the
-    Pantheon `mcp-server` gate-validation slice."""
+    Pantheon `mcp-server` gate-validation slice.
+    """
 
     _SYSTEM_PREFIXES = ("system", "service", "runtime", "hermes", "bot", "agent")
 
     def __init__(self, *, disposition: str = "eligible_for_candidate_work"):
         self._disposition = disposition
+        self.last_preflight: dict[str, Any] | None = None
 
     def preflight(self, candidate: dict[str, Any]) -> dict[str, Any]:
-        disposition = candidate.get("declared_disposition", self._disposition)
-        missing = candidate.get("missing_requirements", [])
-        return {"policy_disposition": disposition, "missing_requirements": list(missing)}
+        self.last_preflight = candidate
+        return {"policy_disposition": self._disposition, "missing_requirements": []}
 
     def validate_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
         decision = payload.get("decision") or {}
@@ -161,11 +175,15 @@ class HttpPolicyClient:
     `POST /v1/policy/decisions:validate` with a bearer key and returns the JSON
     verdicts. It only reads policy decisions; it never executes the effect.
 
+    The caller supplies an already normalized ``request + gate_signals`` body;
+    `enforce_consequential` performs that normalization before transport.
+
     Fail-closed is handled by `enforce_consequential`: any transport error, HTTP
     error or timeout raised here becomes a block, so an unreachable PDP can never
     let a consequential effect through. `httpx` is imported lazily so the core
     package does not require it; the deployment (cockpit) extra installs it, and
-    tests inject an `httpx.Client` with a mock transport."""
+    tests inject an `httpx.Client` with a mock transport.
+    """
 
     _PREFLIGHT = "/v1/policy/preflights:evaluate"
     _VALIDATE = "/v1/policy/decisions:validate"
