@@ -118,7 +118,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_inspect.add_argument("--document-id", type=int, required=True)
     p_inspect.add_argument("--version-id")
 
-    p_capture = sub.add_parser("capture", help="inspect one exact immutable Source Capture candidate")
+    p_capture = sub.add_parser(
+        "capture", help="inspect one exact immutable Source Capture candidate"
+    )
     p_capture.add_argument("--document-id", type=int, required=True)
     p_capture.add_argument("--version-id", required=True)
 
@@ -132,7 +134,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_intake.add_argument("--document-id", type=int, required=True)
     p_intake.add_argument("--version-id", required=True)
     p_intake.add_argument("--contract", required=True, help="Task Contract YAML file")
-    p_intake.add_argument("--decision", required=True, help="human decision reference JSON file")
+    p_intake.add_argument(
+        "--decision", required=True, help="human decision reference JSON file"
+    )
     p_intake.add_argument("--ingestion-id")
 
     p_metadata = sub.add_parser(
@@ -140,11 +144,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="governed Paperless operational metadata mirror update",
     )
     p_metadata.add_argument("--document-id", type=int, required=True)
-    p_metadata.add_argument("--changes", required=True, help="JSON object with allowlisted changes")
-    p_metadata.add_argument("--decision", required=True, help="human decision reference JSON file")
+    p_metadata.add_argument("--version-id", required=True)
+    p_metadata.add_argument("--contract", required=True, help="Task Contract YAML file")
     p_metadata.add_argument(
-        "--candidate",
-        help="optional JSON candidate carrying scope/gate/decision-expectation facts",
+        "--changes", required=True, help="JSON object with allowlisted changes"
+    )
+    p_metadata.add_argument(
+        "--decision", required=True, help="human decision reference JSON file"
+    )
+    p_metadata.add_argument(
+        "--classification-candidate",
+        help="optional JSON candidate retained as non-authoritative trace context",
     )
 
     return parser
@@ -193,10 +203,14 @@ def main() -> int:
         elif args.command == "update-metadata":
             body: dict[str, Any] = {
                 "changes": _load_json(args.changes),
+                "paperless_version_id": args.version_id,
+                "task_contract_yaml": _load_text(args.contract),
                 "decision_payload": _load_json(args.decision),
             }
-            if args.candidate:
-                body["candidate"] = _load_json(args.candidate)
+            if args.classification_candidate:
+                body["classification_candidate"] = _load_json(
+                    args.classification_candidate
+                )
             result = client.request(
                 "POST",
                 f"/v1/paperless/documents/{quote(str(args.document_id), safe='')}/metadata",
