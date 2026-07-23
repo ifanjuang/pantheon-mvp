@@ -20,6 +20,11 @@ forbidden: self-approval, external send bypass, memory promotion, provider routi
 
 ```text
 implementation_status: blocks_1_2_3_plus_work_issues_and_document_vertical_complete_as_candidates
+# The executable candidate remains aligned to the vendored Pantheon governed-loop
+# schema at UPSTREAM_COMMIT f8bc3bde142d1e105b7c9a966d8e0d62b39918c4.
+# The offline drift guard keeps this cited pin equal to
+# mvp_vertical/vendor/pantheon/UPSTREAM_COMMIT; newer upstream commits are a
+# separate drift signal and do not silently change this executable contract.
 binding_status: candidate
 installation_status: not installed by Pantheon Next
 activation_status: not activated
