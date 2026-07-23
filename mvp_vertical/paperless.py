@@ -80,11 +80,7 @@ class PaperlessSourceCapture:
 
     @contextmanager
     def materialized(self) -> Iterator[Path]:
-        """Materialize the exact captured bytes temporarily for Docling/OCR.
-
-        The temporary path is a processing convenience, never the canonical
-        source locator. It is removed as soon as the context exits.
-        """
+        """Materialize exact bytes temporarily for Docling/OCR, then remove them."""
 
         suffix = Path(self.original_filename).suffix
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
@@ -123,9 +119,8 @@ def _filename_from_headers(headers: Any, fallback: str) -> str:
 class PaperlessClient:
     """Small API client for one reviewed Paperless-ngx instance.
 
-    Authentication uses a Paperless API token held by the external runtime. The
-    token is never returned by this adapter and must not be persisted in Pantheon.
-    ``client`` is injectable so tests can use ``httpx.MockTransport``.
+    The Paperless token is an external runtime secret. It is used only in the
+    Authorization header and is never returned by this adapter.
     """
 
     def __init__(
@@ -184,10 +179,9 @@ class PaperlessClient:
                 client.close()
 
     def probe(self) -> dict[str, Any]:
-        """Bounded reachability probe; a successful probe is not a safety verdict."""
+        """Bounded reachability probe; success is not a safety verdict."""
 
-        response = self._request("GET", "/api/documents/", params={"page_size": 1})
-        payload = response.json()
+        payload = self._request("GET", "/api/documents/", params={"page_size": 1}).json()
         return {
             "reachable": True,
             "document_count": payload.get("count"),
@@ -223,11 +217,7 @@ class PaperlessClient:
         version_id: str,
         preview: bool = False,
     ) -> PaperlessBinary:
-        """Download one exact Paperless version.
-
-        Governed ingestion requires an explicit ``version_id``. Reading "latest"
-        is acceptable for browsing, but not for an immutable Source Capture.
-        """
+        """Download one exact version; mutable latest is not enough for capture."""
 
         version = str(version_id).strip()
         if not version:
@@ -263,7 +253,10 @@ class PaperlessClient:
             media_type=binary.media_type,
             byte_size=len(binary.content),
             content_hash=f"sha256:{binary.sha256}",
-            storage_reference=f"paperless://document/{document_id}/version/{quote(binary.version_id, safe='-_.')}",
+            storage_reference=(
+                f"paperless://document/{document_id}/version/"
+                f"{quote(binary.version_id, safe='-_.')}"
+            ),
             source_ref=source_ref,
             content=binary.content,
         )
@@ -287,15 +280,17 @@ class PaperlessClient:
         tags: list[int] | None = None,
         custom_fields: dict[int | str, Any] | None = None,
     ) -> str:
-        """Perform the native Paperless upload effect. Prefer ``governed_post_document``."""
+        """Perform native upload. Prefer ``governed_post_document`` for real use."""
 
-        data: list[tuple[str, str]] = []
+        # httpx multipart expects a mapping; list values are expanded to repeated
+        # form fields, which matches Paperless' repeated ``tags`` contract.
+        data: dict[str, Any] = {}
         if title:
-            data.append(("title", title))
-        for tag in tags or []:
-            data.append(("tags", str(tag)))
+            data["title"] = title
+        if tags:
+            data["tags"] = [str(tag) for tag in tags]
         if custom_fields:
-            data.append(("custom_fields", json.dumps(custom_fields, separators=(",", ":"))))
+            data["custom_fields"] = json.dumps(custom_fields, separators=(",", ":"))
         response = self._request(
             "POST",
             "/api/documents/post_document/",
@@ -335,7 +330,7 @@ def governed_update_document_metadata(
     decision_payload: dict[str, Any],
     candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Apply a Paperless classification/metadata write only behind Pantheon policy."""
+    """Apply classification/metadata only after Pantheon policy allows the effect."""
 
     proposed = {
         "effect_kind": "external_document_metadata_update",
@@ -365,7 +360,7 @@ def governed_post_document(
     custom_fields: dict[int | str, Any] | None = None,
     candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Upload a new source into Paperless only after a valid consequential gate."""
+    """Upload one source only after a valid consequential Pantheon gate."""
 
     digest = hashlib.sha256(content).hexdigest()
     proposed = {
