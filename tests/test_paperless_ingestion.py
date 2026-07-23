@@ -124,6 +124,33 @@ def test_exact_paperless_version_enters_existing_document_vertical(conn):
     assert binding["content_hash"] == capture.content_hash
 
 
+def test_same_paperless_version_can_back_documents_in_multiple_projects(conn):
+    capture = _capture(document_id=55, version_id="3")
+    fake = _FakePaperless(capture)
+    results = []
+
+    for suffix in ("a", "b"):
+        dossier = f"project-paperless-{suffix}-{uuid.uuid4().hex}"
+        results.append(
+            intake_paperless_document(
+                conn,
+                _contract(capture.source_ref, dossier),
+                fake,
+                paperless_document_id=55,
+                paperless_version_id="3",
+                ingestion_id=f"paperless-multi-{suffix}",
+                docling=_FakeDocling(),
+            )
+        )
+
+    assert results[0]["document"]["document_id"] != results[1]["document"]["document_id"]
+    for result in results:
+        binding = get_binding(conn, result["document"]["document_id"])
+        assert binding["external_document_id"] == 55
+        assert binding["external_version_id"] == "3"
+        assert binding["storage_reference"] == capture.storage_reference
+
+
 def test_paperless_capability_does_not_expand_task_contract_scope(conn):
     capture = _capture(document_id=84, version_id="2")
     dossier = f"project-paperless-scope-{uuid.uuid4().hex}"
