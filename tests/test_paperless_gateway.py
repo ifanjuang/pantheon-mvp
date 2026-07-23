@@ -6,6 +6,7 @@ from mvp_vertical.paperless import PaperlessSourceCapture
 from mvp_vertical.paperless_gateway import (
     _intake_policy_candidate,
     _load_task_contract_yaml,
+    _metadata_policy_candidate,
     create_app,
 )
 from mvp_vertical.policy_gate import StandInPolicyClient
@@ -88,13 +89,10 @@ expected_outputs:
 """
 
 
-def _intake_decision(fake: _FakePaperless, contract_yaml: str):
-    contract = _load_task_contract_yaml(contract_yaml)
-    capture = fake.capture_document(42, version_id="7")
-    expected = _intake_policy_candidate(contract, capture)["decision_expectation"]
+def _decision_from_expectation(expected, decision_id):
     return {
         "decision": {
-            "decision_id": "decision-intake-42",
+            "decision_id": decision_id,
             "decided_by": "marie.dupont",
             "expires_at": "2026-07-24T12:00:00Z",
             "approval_level": expected["required_ceiling"],
@@ -102,8 +100,8 @@ def _intake_decision(fake: _FakePaperless, contract_yaml: str):
             "object_identity": expected["object_identity"],
             "content_digest": expected["expected_digest"],
         },
-        # Deliberately wrong caller expectation: the PEP must replace it with its
-        # own effect-derived expectation before decision validation.
+        # Caller expectation is deliberately wrong. The PEP must ignore it when
+        # the binding supplies runtime-derived decision_expectation facts.
         "expectation": {
             "required_ceiling": "C0",
             "required_scope": {"scope_type": "project", "scope_id": "ATTACKER"},
@@ -111,6 +109,22 @@ def _intake_decision(fake: _FakePaperless, contract_yaml: str):
             "expected_digest": "sha256:fake",
         },
     }
+
+
+def _intake_decision(fake: _FakePaperless, contract_yaml: str):
+    contract = _load_task_contract_yaml(contract_yaml)
+    capture = fake.capture_document(42, version_id="7")
+    expected = _intake_policy_candidate(contract, capture)["decision_expectation"]
+    return _decision_from_expectation(expected, "decision-intake-42")
+
+
+def _metadata_decision(fake: _FakePaperless, contract_yaml: str, changes):
+    contract = _load_task_contract_yaml(contract_yaml)
+    capture = fake.capture_document(42, version_id="7")
+    expected = _metadata_policy_candidate(contract, capture, changes, {})[
+        "decision_expectation"
+    ]
+    return _decision_from_expectation(expected, "decision-metadata-42")
 
 
 def _app(fake, policy=None, intake_calls=None):
@@ -310,42 +324,114 @@ def test_intake_wrong_human_object_identity_is_blocked_after_pep_binding():
 
 
 def test_metadata_write_requires_hermes_key():
-    client = TestClient(_app(_FakePaperless()))
-    response = client.post(
+    fake = _FakePaperless()
+    contract_yaml = _contract_yaml()
+    changes = {"tags": [3]}
+    decision = _metadata_decision(fake, contract_yaml, changes)
+    response = TestClient(_app(fake)).post(
         "/v1/paperless/documents/42/metadata",
-        json={"changes": {"tags": [3]}, "decision_payload": _decision_payload()},
+        json={
+            "changes": changes,
+            "paperless_version_id": "7",
+            "task_contract_yaml": contract_yaml,
+            "decision_payload": decision,
+        },
         headers={"Authorization": "Bearer read-key"},
     )
     assert response.status_code == 401
 
 
+def test_metadata_scope_is_checked_before_policy_or_paperless_patch():
+    fake = _FakePaperless()
+    policy = StandInPolicyClient()
+    response = TestClient(_app(fake, policy)).post(
+        "/v1/paperless/documents/42/metadata",
+        json={
+            "changes": {"tags": [3]},
+            "paperless_version_id": "7",
+            "task_contract_yaml": _contract_yaml("paperless/999/versions/1/other.pdf"),
+            "decision_payload": _decision_payload(),
+        },
+        headers={"Authorization": "Bearer hermes-key"},
+    )
+    assert response.status_code == 422
+    assert policy.last_preflight is None
+    assert fake.updates == []
+
+
 def test_metadata_write_is_blocked_before_paperless_when_policy_blocks():
     fake = _FakePaperless()
-    client = TestClient(
-        _app(fake, StandInPolicyClient(disposition="blocked_pending_human_decision"))
-    )
-    response = client.post(
+    policy = StandInPolicyClient(disposition="blocked_pending_human_decision")
+    response = TestClient(_app(fake, policy)).post(
         "/v1/paperless/documents/42/metadata",
-        json={"changes": {"tags": [3]}, "decision_payload": _decision_payload()},
+        json={
+            "changes": {"tags": [3]},
+            "paperless_version_id": "7",
+            "task_contract_yaml": _contract_yaml(),
+            "decision_payload": _decision_payload(),
+        },
         headers={"Authorization": "Bearer hermes-key"},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "blocked"
     assert fake.updates == []
+    assert policy.last_preflight["request"]["external_effect"] is True
 
 
-def test_metadata_write_applies_after_policy_and_human_decision():
+def test_metadata_write_binds_exact_change_digest_and_applies_only_matching_decision():
     fake = _FakePaperless()
-    client = TestClient(_app(fake))
-    response = client.post(
+    policy = StandInPolicyClient()
+    contract_yaml = _contract_yaml()
+    changes = {"tags": [3, 8], "custom_fields": [{"field": 11, "value": "DCE"}]}
+    decision = _metadata_decision(fake, contract_yaml, changes)
+    fake.captures.clear()
+
+    response = TestClient(_app(fake, policy)).post(
         "/v1/paperless/documents/42/metadata",
         json={
-            "changes": {"tags": [3, 8]},
-            "decision_payload": _decision_payload(),
-            "candidate": {"classification_status": "candidate_reviewed"},
+            "changes": changes,
+            "paperless_version_id": "7",
+            "task_contract_yaml": contract_yaml,
+            "decision_payload": decision,
+            "classification_candidate": {"document_type": "CCTP", "phase": "30_DCE"},
         },
         headers={"Authorization": "Bearer hermes-key"},
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "applied"
-    assert fake.updates == [(42, {"tags": [3, 8]})]
+    payload = response.json()
+    assert payload["status"] == "applied"
+    assert payload["effect_ran"] is True
+    assert payload["operation"] == "external_document_metadata_update"
+    assert payload["canonical_business_classification_changed"] is False
+    assert payload["changed_fields"] == ["custom_fields", "tags"]
+    assert fake.updates == [(42, changes)]
+    expected = payload["decision_expectation"]
+    assert expected["object_identity"] == "paperless-metadata:tc.project-42:42:7"
+    assert expected["expected_digest"].startswith("sha256:")
+    assert policy.last_decision["expectation"] == expected
+    assert policy.last_decision["expectation"] != decision["expectation"]
+
+
+def test_metadata_changed_payload_invalidates_previous_human_decision():
+    fake = _FakePaperless()
+    policy = StandInPolicyClient()
+    contract_yaml = _contract_yaml()
+    approved_changes = {"tags": [3]}
+    decision = _metadata_decision(fake, contract_yaml, approved_changes)
+    fake.captures.clear()
+
+    response = TestClient(_app(fake, policy)).post(
+        "/v1/paperless/documents/42/metadata",
+        json={
+            "changes": {"tags": [3, 8]},
+            "paperless_version_id": "7",
+            "task_contract_yaml": contract_yaml,
+            "decision_payload": decision,
+        },
+        headers={"Authorization": "Bearer hermes-key"},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "blocked"
+    assert response.json()["effect_ran"] is False
+    assert fake.updates == []
+    assert any("content_digest" in item for item in response.json()["reasons"])
