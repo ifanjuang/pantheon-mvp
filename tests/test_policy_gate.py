@@ -27,7 +27,7 @@ class _RaisingClient:
 def test_external_effect_needs_explicit_pdp_effect_authorization():
     ran = []
     out = governed_effect(
-        StandInPolicyClient(),
+        StandInPolicyClient(external_effect_allowed=False),
         candidate={"effect_kind": "external_write"},
         decision_payload=_decision_payload(),
         effect=lambda: ran.append("written"),
