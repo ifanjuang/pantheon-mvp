@@ -1,10 +1,10 @@
-"""Build the exact Pantheon HTTP preflight body expected by the PDP.
+"""Build bounded Pantheon policy/decision payloads for the runtime PEP.
 
-Runtime adapters often know an effect in their own vocabulary (Paperless
-metadata update, capability install, project-document intake). The Pantheon
-policy HTTP contract is deliberately generic and expects only ``request`` plus
-``gate_signals``. This module performs that adapter translation without adding
-policy or authority.
+Runtime adapters know the concrete effect being attempted (Paperless metadata
+update, project-document intake, capability action). The Pantheon HTTP API is
+intentionally generic. This module translates runtime facts into that generic
+contract without letting a caller redefine the object, digest or scope that the
+human decision must cover.
 """
 
 from __future__ import annotations
@@ -34,12 +34,71 @@ _GATE_FIELDS = frozenset(
     }
 )
 
+_EXPECTATION_FIELDS = frozenset(
+    {
+        "required_ceiling",
+        "required_scope",
+        "object_identity",
+        "expected_digest",
+    }
+)
+
 
 def _scope_from_decision(decision_payload: dict[str, Any]) -> dict[str, Any] | None:
     expectation = decision_payload.get("expectation") or {}
     decision = decision_payload.get("decision") or {}
     scope = expectation.get("required_scope") or decision.get("scope")
     return dict(scope) if isinstance(scope, dict) else None
+
+
+def bind_decision_payload(
+    candidate: dict[str, Any],
+    decision_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind decision validation to PEP-owned effect facts when provided.
+
+    ``decision`` remains caller-provided because it represents the human choice
+    reference. ``expectation`` is different: it states what the effect actually
+    requires. When an adapter supplies ``decision_expectation`` those fields are
+    authoritative for this execution attempt and caller-supplied expectation
+    values cannot override them.
+
+    Backward compatibility is deliberately narrow: adapters that have not yet
+    supplied ``decision_expectation`` retain their existing caller expectation.
+    New consequential bindings should always derive and supply the expectation
+    from runtime-observed identity, digest and Task Contract scope.
+    """
+
+    if not isinstance(decision_payload, dict):
+        raise ValueError("decision_payload must be a mapping")
+    decision = decision_payload.get("decision")
+    if not isinstance(decision, dict):
+        raise ValueError("decision_payload.decision must be a mapping")
+
+    explicit = candidate.get("decision_expectation")
+    if explicit is not None:
+        if not isinstance(explicit, dict):
+            raise ValueError("candidate.decision_expectation must be a mapping")
+        expectation = {
+            key: explicit[key]
+            for key in _EXPECTATION_FIELDS
+            if explicit.get(key) not in (None, "")
+        }
+        missing = sorted(_EXPECTATION_FIELDS - set(expectation))
+        if missing:
+            raise ValueError(
+                "candidate.decision_expectation is incomplete: " + ", ".join(missing)
+            )
+    else:
+        caller_expectation = decision_payload.get("expectation")
+        if not isinstance(caller_expectation, dict):
+            raise ValueError("decision_payload.expectation must be a mapping")
+        expectation = dict(caller_expectation)
+
+    return {
+        "decision": dict(decision),
+        "expectation": expectation,
+    }
 
 
 def build_preflight_payload(
@@ -56,8 +115,9 @@ def build_preflight_payload(
     Callers may provide an explicit ``request`` / ``gate_signals`` mapping. When
     they provide only runtime-specific fields, conservative defaults are used:
     a consequential effect is assumed to write state and affect an external
-    runtime unless the caller explicitly says otherwise. Missing scope is left
-    missing so the PDP can fail closed with ``blocked_pending_scope``.
+    runtime unless the caller explicitly says otherwise. New adapters should
+    supply scope explicitly from their Task Contract/effect object; the fallback
+    inference exists only for earlier candidate seams.
     """
 
     explicit_request = candidate.get("request")
