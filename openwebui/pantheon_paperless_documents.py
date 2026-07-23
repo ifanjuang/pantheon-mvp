@@ -122,12 +122,14 @@ class Tools:
                 )
                 + "</article>"
             )
+        empty_html = '<p class="muted">Aucune source.</p>'
+        cards_html = "".join(cards) or empty_html
         content = (
             "<section class='panel'><div class='eyebrow'>Paperless · Source Inbox</div>"
             f"<h1>{_escape(query or 'Tous les documents')}</h1>"
             f"<p class='muted'>{_escape(payload.get('count', len(documents)))} source(s). "
             "Lecture uniquement : aucun classement n’est appliqué ici.</p></section>"
-            f"<section class='grid'>{''.join(cards) or '<p class=\"muted\">Aucune source.</p>'}</section>"
+            f"<section class='grid'>{cards_html}</section>"
         )
         context = {
             "source_runtime": "paperless_ngx",
