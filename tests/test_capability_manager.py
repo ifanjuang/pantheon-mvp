@@ -35,8 +35,6 @@ def _executor_calls():
 
 
 def _external_policy():
-    # Simulates a future/reviewed PDP response that explicitly authorizes the
-    # external lifecycle effect. Current Pantheon V0 keeps this false.
     return StandInPolicyClient(external_effect_allowed=True)
 
 
@@ -73,7 +71,7 @@ def test_current_v0_style_external_denial_blocks_install_even_with_decision():
     executor, calls = _executor_calls()
     out = governed_execute(
         _record(installation_status="proposed"), "install",
-        policy_client=StandInPolicyClient(), executor=executor,
+        policy_client=StandInPolicyClient(external_effect_allowed=False), executor=executor,
         decision_payload=_decision(),
     )
     assert out["status"] == "blocked"
