@@ -91,10 +91,14 @@ Governed operational metadata mirror:
 ```bash
 python3 "$SKILL_ROOT/scripts/pantheon_document_intake.py" update-metadata \
   --document-id 42 \
+  --version-id 7 \
+  --contract /path/to/task-contract.yaml \
   --changes /path/to/changes.json \
   --decision /path/to/human-decision.json \
-  --candidate /path/to/effect-candidate.json
+  --classification-candidate /path/to/classification-candidate.json
 ```
+
+The classification candidate is trace context only. The gateway derives scope, required approval ceiling, effect identity and digest from the exact Paperless version, Task Contract and requested changes.
 
 ## Procedure
 
@@ -111,7 +115,7 @@ Paperless task success != professional validation
 
 ### 2. Freeze an exact source version
 
-Before intake, use `capture` with an explicit Paperless `version-id`.
+Before intake or metadata mutation, use `capture` with an explicit Paperless `version-id`.
 
 Record the returned candidate identity:
 
@@ -138,18 +142,18 @@ If it does not, stop and return a scope gap. Do not edit, widen or regenerate th
 
 ### 4. Check the human decision reference
 
-A governed intake requires a human decision reference covering the exact effect.
+A governed intake or metadata write requires a human decision reference covering the exact effect.
 
 The gateway binds validation to facts it derives itself:
 
 ```text
 required approval ceiling <- Task Contract
 required scope            <- Task Contract
-object identity           <- exact Paperless version + Task Contract
-expected digest           <- exact source capture + Task Contract digest
+object identity           <- exact Paperless version + Task Contract + operation
+expected digest           <- exact source + Task Contract + operation payload
 ```
 
-Caller-supplied `expectation` values cannot weaken those requirements.
+Caller-supplied `expectation` values and Classification Candidate fields cannot weaken those requirements.
 
 If the decision does not match the derived scope/object/digest/ceiling, the effect is blocked. Do not replace it with Hermes smart approval, `/yolo`, model judgment or a fabricated human identity.
 
@@ -178,13 +182,19 @@ Source Capture != Evidence
 runtime success != professional validation
 ```
 
-### 6. Treat blocked results as outcomes
+### 6. Apply metadata only as an operational mirror
+
+`update-metadata` repeats the exact-version and Task Contract checks before any Paperless PATCH. The decision digest includes the requested change object, so changing tags/custom fields requires a matching decision for that exact change.
+
+Paperless tags, document types and custom fields remain operational mirrors. The endpoint explicitly does not change canonical Pantheon business classification.
+
+### 7. Treat blocked results as outcomes
 
 When the gateway returns `status: blocked`, report the disposition and reasons. Do not retry through another write path, direct Paperless credentials, direct database access, a shell workaround, or an ungoverned HTTP call.
 
 Typical next actions are human review, Task Contract revision by the proper governance path, evidence collection, or waiting for the policy service to recover.
 
-### 7. Keep Knowledge separate
+### 8. Keep Knowledge separate
 
 This skill does not publish Knowledge. If the user requests Knowledge publication, use the existing governed Knowledge path after Project Document intake and preserve the source/extraction provenance.
 
@@ -197,7 +207,7 @@ Do not use Paperless tags or custom fields as a substitute for Pantheon project 
 - Do not derive project scope from Paperless tags.
 - Do not send a different version than the one declared by the Task Contract.
 - Do not silently fall back to NAS or another DMS when Paperless is unavailable.
-- Do not use `update-metadata` without an effect candidate that carries the governed scope and decision expectation required by the workflow.
+- Do not let a Classification Candidate define the decision expectation; the gateway computes it.
 - Do not enable Paperless AI, external LLMs, remote OCR, webhooks or additional provider paths as part of this skill.
 - Do not use Hermes cron, background work, queues or gateways to bypass an unresolved gate.
 - Do not retain source content or human decisions in Hermes memory merely because the skill observed them.
@@ -220,6 +230,19 @@ knowledge_published: false
 evidence_admitted: false
 ```
 
+A successful metadata mirror should return:
+
+```text
+status: applied
+effect_ran: true
+operation: external_document_metadata_update
+task_contract_ref
+source_ref
+changed_fields
+decision_expectation
+canonical_business_classification_changed: false
+```
+
 Before relying on a live deployment, verify separately:
 
 ```text
@@ -230,6 +253,7 @@ Pantheon PDP reachable
 blocked decision test prevents the intake executor from running
 wrong source_ref is refused before policy/execution
 wrong object/digest/scope is refused after PEP binding
+metadata change digest changes when requested fields change
 Docling conversion works for a synthetic source
 rollback target exists
 ```
