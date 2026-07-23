@@ -21,6 +21,12 @@ Signal:
 By default it checks EVERY vendored `*.schema.yaml` (each mapped to
 `schemas/<name>` upstream), so a newly vendored schema is covered automatically.
 
+It ALSO runs one purely-local, offline check: the gate's closed decision
+vocabulary (`decision_vocabulary.stand_in.yaml`) must match the vendored
+schema's `$defs.decision_value` enum. That file declares the schema
+authoritative if the two diverge; this makes that promise checkable instead of
+a manual reconciliation the drift monitor used to miss.
+
 Usage:
     python tools/check_schema_drift.py                 # all vendored schemas
     python tools/check_schema_drift.py --local PATH [--upstream-url URL]  # one
@@ -42,6 +48,12 @@ UPSTREAM_REPO = "https://github.com/ifanjuang/Pantheon-Next"
 # Every vendored *.schema.yaml maps to schemas/<name> upstream (raw main). New
 # vendored schemas are picked up automatically — no hardcoded list to forget.
 UPSTREAM_RAW_BASE = "https://raw.githubusercontent.com/ifanjuang/Pantheon-Next/main/schemas/"
+
+# The gate's closed decision vocabulary and the vendored schema that defines the
+# canonical decision enum it must mirror. Both are local — the coherence check
+# between them needs no network.
+DECISION_VOCAB_FILE = VENDOR_DIR / "decision_vocabulary.stand_in.yaml"
+DECISION_SCHEMA_FILE = VENDOR_DIR / "mvp_governed_loop_objects.schema.yaml"
 
 
 def vendored_schemas() -> list[Path]:
@@ -99,6 +111,40 @@ def diff_schemas(local: dict, upstream: dict) -> list[str]:
                 if li.get(key) != ui.get(key) and (li.get(key) or ui.get(key)):
                     out.append(f"{name}.{f}.items.{key}: local={li.get(key)} upstream={ui.get(key)}")
     return out
+
+
+def vocabulary_findings(vocab: dict, schema: dict) -> list[str]:
+    """Pure, offline self-consistency check: the gate's closed decision
+    vocabulary (`allowed_decisions`) must equal the vendored schema's
+    `$defs.decision_value` enum. Empty list means coherent.
+
+    This catches the class of drift the schema-only monitor misses — a vendored
+    vocabulary left behind on a retired decision word after upstream renamed it.
+    """
+    allowed = set(vocab.get("allowed_decisions", []))
+    enum = set(schema.get("$defs", {}).get("decision_value", {}).get("enum", []))
+    if allowed == enum:
+        return []
+    return [
+        "decision vocabulary: allowed_decisions vs schema $defs.decision_value.enum "
+        f"— only-in-vocab {sorted(allowed - enum)} / only-in-schema {sorted(enum - allowed)}"
+    ]
+
+
+def _check_decision_vocabulary() -> bool:
+    """Report-only local check. Returns True if the vocabulary drifted."""
+    if not (DECISION_VOCAB_FILE.exists() and DECISION_SCHEMA_FILE.exists()):
+        return False
+    vocab = yaml.safe_load(DECISION_VOCAB_FILE.read_text(encoding="utf-8"))
+    schema = yaml.safe_load(DECISION_SCHEMA_FILE.read_text(encoding="utf-8"))
+    findings = vocabulary_findings(vocab, schema)
+    if not findings:
+        print(f"  COHERENT {DECISION_VOCAB_FILE.name} (matches schema $defs.decision_value)")
+        return False
+    print(f"  DRIFT {DECISION_VOCAB_FILE.name}:")
+    for f in findings:
+        print("     -", f)
+    return True
 
 
 def _upstream_head_sha() -> str | None:
@@ -161,11 +207,15 @@ def main() -> int:
         state, _ = _check_one(local_path, url)
         drifted = drifted or (state == "drift")
 
-    if drifted:
-        print("\nSCHEMA DRIFT DETECTED — re-vendor the drifted schema(s) and reconcile "
-              "emitted shapes (see the re-vendoring PR for the procedure).")
+    # Local, offline: the closed decision vocabulary must mirror the schema enum.
+    vocab_drift = _check_decision_vocabulary()
+
+    if drifted or vocab_drift:
+        print("\nDRIFT DETECTED — re-vendor the drifted schema(s) and/or re-sync the "
+              "decision vocabulary, then reconcile emitted shapes "
+              "(see tools/revendor.sh and the re-vendoring PR for the procedure).")
         return 1
-    print("\nAll vendored schemas are structurally in sync with upstream.")
+    print("\nAll vendored schemas and the decision vocabulary are in sync with upstream.")
     return 0
 
 

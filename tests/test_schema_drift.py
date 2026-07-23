@@ -14,7 +14,12 @@ from pathlib import Path
 # not `python -m pytest`, so the CWD is not automatically on sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.check_schema_drift import diff_schemas, upstream_url_for, vendored_schemas
+from tools.check_schema_drift import (
+    diff_schemas,
+    upstream_url_for,
+    vendored_schemas,
+    vocabulary_findings,
+)
 
 
 def _schema(**overrides) -> dict:
@@ -79,6 +84,36 @@ def test_enum_change_is_flagged():
     up["$defs"]["decision_value"]["enum"].append("request_revision")
     findings = diff_schemas(_schema(), up)
     assert any("decision_value.enum" in f for f in findings)
+
+
+# ---- decision vocabulary self-consistency (offline, local) ------------------
+
+def _vocab(*decisions) -> dict:
+    return {"status": "matches_vendored_decision_value", "allowed_decisions": list(decisions)}
+
+
+def test_vocabulary_matching_schema_reports_no_drift():
+    schema = _schema()
+    schema["$defs"]["decision_value"]["enum"] = ["approve", "refuse"]
+    assert vocabulary_findings(_vocab("approve", "refuse"), schema) == []
+
+
+def test_vocabulary_left_on_retired_word_is_flagged():
+    # exactly the class of drift the schema-only monitor missed: a vocabulary
+    # still carrying a decision word upstream retired (approve_for_internal_draft
+    # -> approve).
+    schema = _schema()
+    schema["$defs"]["decision_value"]["enum"] = ["approve", "refuse"]
+    findings = vocabulary_findings(_vocab("approve_for_internal_draft", "refuse"), schema)
+    assert findings and "decision vocabulary" in findings[0]
+    assert "approve_for_internal_draft" in findings[0]
+
+
+def test_vocabulary_missing_schema_word_is_flagged():
+    schema = _schema()
+    schema["$defs"]["decision_value"]["enum"] = ["approve", "refuse", "request_revision"]
+    findings = vocabulary_findings(_vocab("approve", "refuse"), schema)
+    assert findings and "request_revision" in findings[0]
 
 
 # ---- auto-discovery: the monitor covers EVERY vendored schema ---------------
