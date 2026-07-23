@@ -3,27 +3,18 @@ Pantheon policy check before it happens.
 
 This repository does not embed the Pantheon policy service. It defines the seam
 the runtime uses to consult a Policy Decision Point (Pantheon `mcp-server`) and
-to enforce the verdict — the Policy Enforcement Point role. A real deployment
-injects an HTTP client to that PDP; tests inject the deterministic stand-in
-below.
+to enforce the verdict — the Policy Enforcement Point role.
 
-Two rules make this a real chokepoint, not advice:
+Rules:
 
-- **Fail closed.** If the policy client is unavailable, the adapter payload is
-  malformed, or the verdict is not a clear eligible result, the consequential
-  effect is blocked and never runs.
-- **Smart-approvals neutralized.** The seam never auto-approves. Only an eligible
-  preflight *and* a valid human decision reference permit the effect; an
-  in-runtime "smart approval" cannot substitute for that decision.
+- fail closed on transport, malformed payload or non-eligible preflight;
+- bind human-decision validation to PEP-derived effect facts when supplied;
+- never let a validated decision override explicit PDP effect-denial flags;
+- neutralize runtime/model smart approvals.
 
-New bindings must also bind the decision expectation to effect facts observed by
-the PEP (scope, object identity, digest and required ceiling). The caller cannot
-weaken those facts by sending a matching but false expectation.
-
-`STAND-IN`: `StandInPolicyClient` occupies the PDP seat for offline tests. It is
-not the Pantheon policy service:
-
-    stand_in_policy_client != Pantheon PDP
+`eligible_for_candidate_work` is not an external-effect authorization. The
+current Pantheon V0 preflight explicitly returns `external_effect_allowed=false`
+and `canonical_effect_allowed=false`; the PEP honors those flags.
 """
 
 from __future__ import annotations
@@ -39,8 +30,6 @@ _ELIGIBLE_DISPOSITIONS = frozenset(
 
 
 class PolicyClient(Protocol):
-    """The bounded surface the PEP consults. It never executes the effect."""
-
     def preflight(self, candidate: dict[str, Any]) -> dict[str, Any]:
         ...
 
@@ -61,19 +50,13 @@ def enforce_consequential(
     candidate: dict[str, Any],
     decision_payload: dict[str, Any],
 ) -> GateVerdict:
-    """Consult the PDP and return whether the consequential effect may proceed.
-
-    Runtime-specific candidates are first normalized to the generic Pantheon
-    preflight body. When the adapter supplies ``decision_expectation``, the human
-    decision is validated against those PEP-owned effect facts rather than a
-    caller-authored expectation.
-    """
+    """Consult the PDP and decide whether the local executor may run."""
 
     try:
         bound_decision = bind_decision_payload(candidate, decision_payload)
         preflight_payload = build_preflight_payload(candidate, bound_decision)
         preflight = client.preflight(preflight_payload)
-    except Exception as exc:  # unavailable / malformed adapter payload -> fail closed
+    except Exception as exc:
         return GateVerdict(False, "policy_unavailable", [f"preflight call failed: {exc}"])
 
     disposition = str(preflight.get("policy_disposition", "unknown"))
@@ -81,6 +64,32 @@ def enforce_consequential(
         reasons = [f"preflight disposition: {disposition}"]
         reasons += list(preflight.get("missing_requirements", []))
         return GateVerdict(False, disposition, reasons)
+
+    request = preflight_payload["request"]
+    requests_external_effect = bool(
+        request.get("external_effect") or request.get("transmission_requested")
+    )
+    if requests_external_effect and preflight.get("external_effect_allowed") is not True:
+        return GateVerdict(
+            False,
+            "blocked_external_effect_not_authorized",
+            [
+                "Pantheon preflight did not authorize an external effect",
+                f"policy disposition: {disposition}",
+            ],
+        )
+
+    if request.get("memory_promotion_requested") and preflight.get(
+        "canonical_effect_allowed"
+    ) is not True:
+        return GateVerdict(
+            False,
+            "blocked_canonical_effect_not_authorized",
+            [
+                "Pantheon preflight did not authorize a canonical/memory effect",
+                f"policy disposition: {disposition}",
+            ],
+        )
 
     try:
         validation = client.validate_decision(bound_decision)
@@ -102,8 +111,6 @@ def governed_effect(
     decision_payload: dict[str, Any],
     effect: Callable[[], Any],
 ) -> dict[str, Any]:
-    """Run a consequential ``effect`` only behind the bounded chokepoint."""
-
     verdict = enforce_consequential(
         client, candidate=candidate, decision_payload=decision_payload
     )
@@ -127,14 +134,27 @@ class StandInPolicyClient:
 
     _SYSTEM_PREFIXES = ("system", "service", "runtime", "hermes", "bot", "agent")
 
-    def __init__(self, *, disposition: str = "eligible_for_candidate_work"):
+    def __init__(
+        self,
+        *,
+        disposition: str = "eligible_for_candidate_work",
+        external_effect_allowed: bool = False,
+        canonical_effect_allowed: bool = False,
+    ):
         self._disposition = disposition
+        self._external_effect_allowed = external_effect_allowed
+        self._canonical_effect_allowed = canonical_effect_allowed
         self.last_preflight: dict[str, Any] | None = None
         self.last_decision: dict[str, Any] | None = None
 
     def preflight(self, candidate: dict[str, Any]) -> dict[str, Any]:
         self.last_preflight = candidate
-        return {"policy_disposition": self._disposition, "missing_requirements": []}
+        return {
+            "policy_disposition": self._disposition,
+            "missing_requirements": [],
+            "external_effect_allowed": self._external_effect_allowed,
+            "canonical_effect_allowed": self._canonical_effect_allowed,
+        }
 
     def validate_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.last_decision = payload
@@ -161,12 +181,7 @@ class StandInPolicyClient:
 
 
 class HttpPolicyClient:
-    """Real ``PolicyClient`` for the Pantheon internal HTTP PDP.
-
-    `enforce_consequential` normalizes the preflight and binds the decision
-    expectation before either request reaches this transport client. Transport
-    errors remain fail-closed at the PEP seam.
-    """
+    """Real ``PolicyClient`` for the Pantheon internal HTTP PDP."""
 
     _PREFLIGHT = "/v1/policy/preflights:evaluate"
     _VALIDATE = "/v1/policy/decisions:validate"
