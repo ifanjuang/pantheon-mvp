@@ -6,8 +6,7 @@ CREATE TABLE IF NOT EXISTS paperless_source_bindings (
     storage_reference TEXT NOT NULL CHECK (length(storage_reference) > 0),
     original_filename TEXT NOT NULL CHECK (length(original_filename) > 0),
     source_digest TEXT NOT NULL CHECK (length(source_digest) > 0),
-    bound_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (paperless_document_id, paperless_version_id)
+    bound_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS paperless_source_binding_external_lookup
