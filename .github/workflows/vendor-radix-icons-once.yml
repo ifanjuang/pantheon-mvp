@@ -1,6 +1,13 @@
 name: Vendor Radix Icons once
 
 on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+      - opened
+      - reopened
   push:
     branches:
       - agent/vendor-radix-icons
