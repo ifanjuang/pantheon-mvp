@@ -4,8 +4,8 @@ import json
 
 import httpx
 
-from mvp_vertical.policy_gate import HttpPolicyClient, governed_effect
-from mvp_vertical.policy_request import build_preflight_payload
+from mvp_vertical.policy_gate import HttpPolicyClient, StandInPolicyClient, governed_effect
+from mvp_vertical.policy_request import bind_decision_payload, build_preflight_payload
 
 
 def _decision_payload():
@@ -80,7 +80,66 @@ def test_explicit_task_contract_signal_is_preserved():
     }
 
 
-def test_http_policy_client_receives_only_contract_fields_and_effect_runs_after_valid_verdict():
+def test_runtime_expectation_overrides_caller_supplied_expectation():
+    caller = _decision_payload()
+    caller["expectation"] = {
+        "required_ceiling": "C0",
+        "required_scope": {"scope_type": "project", "scope_id": "ATTACKER"},
+        "object_identity": "fake-object",
+        "expected_digest": "sha256:fake",
+    }
+    candidate = {
+        "decision_expectation": {
+            "required_ceiling": "C1",
+            "required_scope": {"scope_type": "project", "scope_id": "P-42"},
+            "object_identity": "paperless:42:7",
+            "expected_digest": "sha256:abc",
+        }
+    }
+
+    bound = bind_decision_payload(candidate, caller)
+    assert bound["expectation"] == candidate["decision_expectation"]
+    assert bound["decision"] == caller["decision"]
+
+
+def test_forged_matching_caller_expectation_cannot_authorize_wrong_effect():
+    caller = _decision_payload()
+    caller["decision"]["object_identity"] = "fake-object"
+    caller["decision"]["content_digest"] = "sha256:fake"
+    caller["expectation"] = {
+        "required_ceiling": "C1",
+        "required_scope": {"scope_type": "project", "scope_id": "P-42"},
+        "object_identity": "fake-object",
+        "expected_digest": "sha256:fake",
+    }
+    candidate = {
+        "request": {
+            "intent": "project_document_intake",
+            "external_effect": False,
+            "writes_state": True,
+            "scope": {"scope_type": "project", "scope_id": "P-42"},
+        },
+        "decision_expectation": {
+            "required_ceiling": "C1",
+            "required_scope": {"scope_type": "project", "scope_id": "P-42"},
+            "object_identity": "paperless:42:7",
+            "expected_digest": "sha256:abc",
+        },
+    }
+    ran = []
+    result = governed_effect(
+        StandInPolicyClient(),
+        candidate=candidate,
+        decision_payload=caller,
+        effect=lambda: ran.append("should-not-run"),
+    )
+    assert result["status"] == "blocked"
+    assert result["effect_ran"] is False
+    assert ran == []
+    assert any("object_identity" in reason or "content_digest" in reason for reason in result["reasons"])
+
+
+def test_http_policy_client_receives_only_contract_fields_and_bound_decision():
     observed = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -96,6 +155,12 @@ def test_http_policy_client_receives_only_contract_fields_and_effect_runs_after_
                 },
             )
         if request.url.path.endswith("decisions:validate"):
+            assert body["expectation"] == {
+                "required_ceiling": "C1",
+                "required_scope": {"scope_type": "project", "scope_id": "P-42"},
+                "object_identity": "paperless:42:7",
+                "expected_digest": "sha256:abc",
+            }
             return httpx.Response(200, json={"verdict": "valid", "findings": []})
         return httpx.Response(404)
 
@@ -107,6 +172,12 @@ def test_http_policy_client_receives_only_contract_fields_and_effect_runs_after_
         candidate={
             "effect_kind": "external_document_metadata_update",
             "resource": "paperless_ngx",
+            "decision_expectation": {
+                "required_ceiling": "C1",
+                "required_scope": {"scope_type": "project", "scope_id": "P-42"},
+                "object_identity": "paperless:42:7",
+                "expected_digest": "sha256:abc",
+            },
         },
         decision_payload=_decision_payload(),
         effect=lambda: ran.append("applied") or {"ok": True},
