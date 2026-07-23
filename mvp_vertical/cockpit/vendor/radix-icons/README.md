@@ -1,6 +1,6 @@
 # Radix Icons — pinned Cockpit source
 
-This directory records the Radix Icons source selected for the Pantheon MVP Cockpit.
+This directory records the Radix Icons source selected and activated for the Pantheon MVP Cockpit presentation layer.
 
 Upstream: `radix-ui/icons`
 Upstream commit: `112af91ad275a63c3a29b0da2588342af74ef9bf`
@@ -13,7 +13,7 @@ License: MIT, Copyright (c) 2022 WorkOS. See `LICENSE`.
 Two layers are kept deliberately distinct:
 
 1. `upstream/` is the complete Radix Icons repository pinned as a Git submodule to the exact reviewed upstream commit. It provides the complete source set, including all 331 15×15 icons declared by the upstream manifest.
-2. `icons/` contains SVG files copied verbatim into the MVP tree for Cockpit use. The first committed selection covers the icon keys already used by the current Cockpit. `materialize-icons.sh` can copy the complete pinned SVG set from the checked-out submodule into this directory for a reviewed re-vendoring commit.
+2. `icons/` contains SVG files copied verbatim into the MVP tree for Cockpit use. The committed selection covers the icon keys used by the current Cockpit. `materialize-icons.sh` can copy the complete pinned SVG set from the checked-out submodule into this directory for a reviewed re-vendoring commit.
 
 Clone with the pinned source available:
 
@@ -35,6 +35,17 @@ mvp_vertical/cockpit/vendor/radix-icons/materialize-icons.sh
 
 The script refuses to copy if the checked-out submodule commit differs from `UPSTREAM_COMMIT`.
 
+## Cockpit activation
+
+The Cockpit presentation binding is active:
+
+- `styles/icons.css` maps semantic Cockpit icon keys to the vendored Radix SVGs;
+- `radix-icons.js` replaces the legacy icon renderer after `app.js` bootstrap and immediately re-renders the deck;
+- the detail close control uses the Radix `cross-2` asset directly;
+- existing text labels, status labels and governed records remain authoritative.
+
+The legacy inline 24×24 paths in `app.js` remain only as a temporary bootstrap/fallback implementation and should be removed in a later cleanup once the Radix renderer is folded directly into `app.js`.
+
 ## Boundary
 
 These files are presentation assets only.
@@ -44,7 +55,7 @@ icon displayed != governed status
 healthy icon != safe
 check icon != approval
 runtime success != evidence
-binding pinned != runtime activation
+binding activated in Cockpit != Hermes runtime activation
 upstream update_available != update_authorized
 ```
 
@@ -56,4 +67,4 @@ The upstream pin is immutable until a reviewed change updates `UPSTREAM_COMMIT`,
 
 `SELECTION.md` owns the current Cockpit-key → Radix-asset presentation mapping. An icon mapping does not own object identity, lifecycle, approval or Evidence status.
 
-The Radix source pin is not an npm installation and does not activate any runtime capability.
+The Radix source pin is not an npm installation and does not activate any Hermes or Pantheon runtime capability.
