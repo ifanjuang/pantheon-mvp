@@ -14,7 +14,7 @@ Rules:
 
 `eligible_for_candidate_work` is not an external-effect authorization. The
 current Pantheon V0 preflight explicitly returns `external_effect_allowed=false`
-and `canonical_effect_allowed=false`; the PEP honors those flags.
+and `canonical_effect_allowed=false`; the live PEP honors those flags.
 """
 
 from __future__ import annotations
@@ -130,7 +130,14 @@ def governed_effect(
 
 
 class StandInPolicyClient:
-    """Deterministic offline PDP stand-in for tests; not Pantheon authority."""
+    """Deterministic offline PDP stand-in for tests; not Pantheon authority.
+
+    The stand-in is deliberately policy-version-neutral. Its external-effect
+    flag defaults to ``True`` for backward-compatible seam tests. Tests that
+    model the current Pantheon V0 must pass ``external_effect_allowed=False``
+    explicitly. Live behavior always comes from ``HttpPolicyClient`` responses,
+    never from these defaults.
+    """
 
     _SYSTEM_PREFIXES = ("system", "service", "runtime", "hermes", "bot", "agent")
 
@@ -138,7 +145,7 @@ class StandInPolicyClient:
         self,
         *,
         disposition: str = "eligible_for_candidate_work",
-        external_effect_allowed: bool = False,
+        external_effect_allowed: bool = True,
         canonical_effect_allowed: bool = False,
     ):
         self._disposition = disposition
