@@ -39,7 +39,6 @@ def test_flat_runtime_candidate_is_translated_to_policy_http_contract():
         },
         _decision_payload(),
     )
-
     assert set(payload) == {"request", "gate_signals"}
     assert payload["request"] == {
         "intent": "external_document_metadata_update",
@@ -96,7 +95,6 @@ def test_runtime_expectation_overrides_caller_supplied_expectation():
             "expected_digest": "sha256:abc",
         }
     }
-
     bound = bind_decision_payload(candidate, caller)
     assert bound["expectation"] == candidate["decision_expectation"]
     assert bound["decision"] == caller["decision"]
@@ -136,7 +134,10 @@ def test_forged_matching_caller_expectation_cannot_authorize_wrong_effect():
     assert result["status"] == "blocked"
     assert result["effect_ran"] is False
     assert ran == []
-    assert any("object_identity" in reason or "content_digest" in reason for reason in result["reasons"])
+    assert any(
+        "object_identity" in reason or "content_digest" in reason
+        for reason in result["reasons"]
+    )
 
 
 def test_http_policy_client_receives_only_contract_fields_and_bound_decision():
@@ -152,6 +153,8 @@ def test_http_policy_client_receives_only_contract_fields_and_bound_decision():
                 json={
                     "policy_disposition": "eligible_with_gate_signals_unverified",
                     "missing_requirements": [],
+                    "external_effect_allowed": True,
+                    "canonical_effect_allowed": False,
                 },
             )
         if request.url.path.endswith("decisions:validate"):
@@ -182,7 +185,6 @@ def test_http_policy_client_receives_only_contract_fields_and_bound_decision():
         decision_payload=_decision_payload(),
         effect=lambda: ran.append("applied") or {"ok": True},
     )
-
     assert result["status"] == "applied"
     assert result["effect_ran"] is True
     assert ran == ["applied"]
