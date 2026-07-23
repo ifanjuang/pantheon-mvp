@@ -28,7 +28,6 @@ from .paperless import (
     PaperlessError,
     PaperlessMutationError,
     PaperlessSourceCapture,
-    governed_update_document_metadata,
 )
 from .paperless_ingestion import PaperlessBindingError, intake_paperless_capture
 from .policy_gate import HttpPolicyClient, PolicyClient, governed_effect
@@ -36,8 +35,10 @@ from .policy_gate import HttpPolicyClient, PolicyClient, governed_effect
 
 class MetadataUpdateBody(BaseModel):
     changes: dict[str, Any] = Field(min_length=1)
+    paperless_version_id: str = Field(min_length=1)
+    task_contract_yaml: str = Field(min_length=1)
     decision_payload: dict[str, Any]
-    candidate: dict[str, Any] = Field(default_factory=dict)
+    classification_candidate: dict[str, Any] = Field(default_factory=dict)
 
 
 class PaperlessIntakeBody(BaseModel):
@@ -55,8 +56,6 @@ def _bearer_token(authorization: str | None) -> str:
 
 
 def _document_projection(document: dict[str, Any]) -> dict[str, Any]:
-    """Expose useful Paperless metadata without claiming business authority."""
-
     allowed = (
         "id",
         "title",
@@ -108,8 +107,6 @@ def _default_policy_factory() -> PolicyClient:
 
 
 def _load_task_contract_yaml(text: str) -> TaskContract:
-    """Reuse the vendored Task Contract schema/guards without duplicating them."""
-
     path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -137,20 +134,20 @@ def _required_project_scope(contract: TaskContract) -> dict[str, str]:
     return {"scope_type": scope_type, "scope_id": scope_id}
 
 
-def _intake_object_identity(
-    contract: TaskContract,
-    capture: PaperlessSourceCapture,
-) -> str:
-    return (
-        f"paperless-intake:{contract.contract_id}:"
-        f"{capture.document_id}:{capture.version_id}"
-    )
+def _required_ceiling(contract: TaskContract) -> str:
+    ceiling = str(contract.raw.get("approval_ceiling") or "").strip()
+    if not ceiling:
+        raise ContractError(
+            f"contract {contract.contract_id}: approval_ceiling is required for governed effect"
+        )
+    return ceiling
 
 
-def _intake_effect_digest(
-    contract: TaskContract,
-    capture: PaperlessSourceCapture,
-) -> str:
+def _intake_object_identity(contract: TaskContract, capture: PaperlessSourceCapture) -> str:
+    return f"paperless-intake:{contract.contract_id}:{capture.document_id}:{capture.version_id}"
+
+
+def _intake_effect_digest(contract: TaskContract, capture: PaperlessSourceCapture) -> str:
     envelope = {
         "operation": "project_document_intake",
         "contract_digest": store.contract_digest(contract),
@@ -167,11 +164,6 @@ def _intake_policy_candidate(
     capture: PaperlessSourceCapture,
 ) -> dict[str, Any]:
     scope = _required_project_scope(contract)
-    ceiling = str(contract.raw.get("approval_ceiling") or "").strip()
-    if not ceiling:
-        raise ContractError(
-            f"contract {contract.contract_id}: approval_ceiling is required for governed intake"
-        )
     return {
         "request": {
             "intent": "project_document_intake",
@@ -183,11 +175,9 @@ def _intake_policy_candidate(
             "financial_or_contractual_effect": False,
             "scope": scope,
         },
-        "gate_signals": {
-            "task_contract_ref": contract.contract_id,
-        },
+        "gate_signals": {"task_contract_ref": contract.contract_id},
         "decision_expectation": {
-            "required_ceiling": ceiling,
+            "required_ceiling": _required_ceiling(contract),
             "required_scope": scope,
             "object_identity": _intake_object_identity(contract, capture),
             "expected_digest": _intake_effect_digest(contract, capture),
@@ -199,6 +189,66 @@ def _intake_policy_candidate(
             "source_ref": capture.source_ref,
             "source_content_hash": capture.content_hash,
         },
+    }
+
+
+def _metadata_object_identity(
+    contract: TaskContract,
+    capture: PaperlessSourceCapture,
+) -> str:
+    return f"paperless-metadata:{contract.contract_id}:{capture.document_id}:{capture.version_id}"
+
+
+def _metadata_effect_digest(
+    contract: TaskContract,
+    capture: PaperlessSourceCapture,
+    changes: dict[str, Any],
+) -> str:
+    envelope = {
+        "operation": "external_document_metadata_update",
+        "contract_digest": store.contract_digest(contract),
+        "source_ref": capture.source_ref,
+        "source_content_hash": capture.content_hash,
+        "changes": changes,
+    }
+    canonical = json.dumps(envelope, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _metadata_policy_candidate(
+    contract: TaskContract,
+    capture: PaperlessSourceCapture,
+    changes: dict[str, Any],
+    classification_candidate: dict[str, Any],
+) -> dict[str, Any]:
+    scope = _required_project_scope(contract)
+    return {
+        "request": {
+            "intent": "external_document_metadata_update",
+            "external_effect": True,
+            "writes_state": True,
+            "transmission_requested": False,
+            "memory_promotion_requested": False,
+            "professional_position": False,
+            "financial_or_contractual_effect": False,
+            "scope": scope,
+        },
+        "gate_signals": {"task_contract_ref": contract.contract_id},
+        "decision_expectation": {
+            "required_ceiling": _required_ceiling(contract),
+            "required_scope": scope,
+            "object_identity": _metadata_object_identity(contract, capture),
+            "expected_digest": _metadata_effect_digest(contract, capture, changes),
+        },
+        "runtime_trace": {
+            "resource": "paperless_ngx",
+            "paperless_document_id": capture.document_id,
+            "paperless_version_id": capture.version_id,
+            "source_ref": capture.source_ref,
+            "source_content_hash": capture.content_hash,
+            "changed_fields": sorted(changes),
+        },
+        "classification_candidate": classification_candidate,
     }
 
 
@@ -232,7 +282,7 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(
         title="Pantheon Paperless Gateway",
-        version="0.2.0",
+        version="0.3.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -363,30 +413,23 @@ def create_app(
             task = paperless().get_task(task_id)
         except PaperlessError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
-        return {
-            "task": task,
-            "runtime_success_is_evidence": False,
-        }
+        return {"task": task, "runtime_success_is_evidence": False}
 
     @app.post("/v1/paperless/intakes")
     def intake_document(
         body: PaperlessIntakeBody,
         _authorized: None = Depends(require_hermes_key),
     ) -> dict[str, Any]:
-        """Persist one exact Paperless version as a governed Project Document candidate."""
-
         try:
             contract = _load_task_contract_yaml(body.task_contract_yaml)
             capture = paperless().capture_document(
                 body.paperless_document_id,
                 version_id=body.paperless_version_id,
             )
-            # Source visibility in Paperless never widens the declared perimeter.
             assert_source_in_scope(contract, capture.source_ref)
             candidate = _intake_policy_candidate(contract, capture)
-            policy = app.state.policy_factory()
             result = governed_effect(
-                policy,
+                app.state.policy_factory(),
                 candidate=candidate,
                 decision_payload=body.decision_payload,
                 effect=lambda: app.state.intake_executor(
@@ -418,21 +461,40 @@ def create_app(
         _authorized: None = Depends(require_hermes_key),
     ) -> dict[str, Any]:
         try:
-            policy = app.state.policy_factory()
-            return governed_update_document_metadata(
-                policy,
-                paperless(),
-                document_id=document_id,
-                changes=body.changes,
-                decision_payload=body.decision_payload,
-                candidate=body.candidate,
+            contract = _load_task_contract_yaml(body.task_contract_yaml)
+            capture = paperless().capture_document(
+                document_id, version_id=body.paperless_version_id
             )
+            assert_source_in_scope(contract, capture.source_ref)
+            candidate = _metadata_policy_candidate(
+                contract, capture, body.changes, body.classification_candidate
+            )
+            client = paperless()
+            result = governed_effect(
+                app.state.policy_factory(),
+                candidate=candidate,
+                decision_payload=body.decision_payload,
+                effect=lambda: client.update_document_metadata(document_id, body.changes),
+            )
+        except ContractError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         except PaperlessMutationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except PaperlessConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except PaperlessError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        return {
+            **result,
+            "operation": "external_document_metadata_update",
+            "task_contract_ref": contract.contract_id,
+            "source_ref": capture.source_ref,
+            "source_content_hash": capture.content_hash,
+            "changed_fields": sorted(body.changes),
+            "decision_expectation": candidate["decision_expectation"],
+            "canonical_business_classification_changed": False,
+        }
 
     return app
 
