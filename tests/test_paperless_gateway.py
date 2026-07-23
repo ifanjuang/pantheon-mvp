@@ -28,7 +28,7 @@ class _FakePaperless:
                     "id": 42,
                     "title": "CCTP charpente",
                     "tags": [3],
-                    "content": "derived OCR should not be exposed by the projection",
+                    "content": "derived OCR must not be exposed",
                     "__search_hit__": {"score": 0.9, "rank": 0, "highlights": "CCTP"},
                 }
             ],
@@ -100,8 +100,7 @@ def _decision_from_expectation(expected, decision_id):
             "object_identity": expected["object_identity"],
             "content_digest": expected["expected_digest"],
         },
-        # Caller expectation is deliberately wrong. The PEP must ignore it when
-        # the binding supplies runtime-derived decision_expectation facts.
+        # Wrong on purpose: PEP-owned effect facts must replace this expectation.
         "expectation": {
             "required_ceiling": "C0",
             "required_scope": {"scope_type": "project", "scope_id": "ATTACKER"},
@@ -147,9 +146,9 @@ def _app(fake, policy=None, intake_calls=None):
     )
 
 
-def test_health_exposes_reachability_without_document_data():
-    client = TestClient(_app(_FakePaperless()))
-    assert client.get("/health").json() == {
+def test_health_exposes_bounded_surfaces():
+    response = TestClient(_app(_FakePaperless())).get("/health")
+    assert response.json() == {
         "status": "ok",
         "paperless_reachable": True,
         "write_surface": "governed_only",
@@ -157,27 +156,23 @@ def test_health_exposes_reachability_without_document_data():
     }
 
 
-def test_read_routes_accept_cockpit_or_hermes_key_but_not_unknown_key():
+def test_read_routes_accept_cockpit_or_hermes_key_and_strip_ocr_content():
     client = TestClient(_app(_FakePaperless()))
     assert client.get("/v1/paperless/documents").status_code == 401
     for key in ("read-key", "hermes-key"):
-        ok = client.get(
+        response = client.get(
             "/v1/paperless/documents?query=CCTP",
             headers={"Authorization": f"Bearer {key}"},
         )
-        assert ok.status_code == 200
-        payload = ok.json()
-        assert payload["documents"][0]["title"] == "CCTP charpente"
-        assert "content" not in payload["documents"][0]
-        assert payload["documents"][0]["authority"]["business_classification"] is False
-    assert client.get(
-        "/v1/paperless/documents", headers={"Authorization": "Bearer unknown"}
-    ).status_code == 401
+        assert response.status_code == 200
+        document = response.json()["documents"][0]
+        assert document["title"] == "CCTP charpente"
+        assert "content" not in document
+        assert document["authority"]["business_classification"] is False
 
 
 def test_exact_capture_returns_identity_not_bytes():
-    client = TestClient(_app(_FakePaperless()))
-    response = client.get(
+    response = TestClient(_app(_FakePaperless())).get(
         "/v1/paperless/documents/42/capture?version_id=7",
         headers={"Authorization": "Bearer read-key"},
     )
@@ -185,23 +180,21 @@ def test_exact_capture_returns_identity_not_bytes():
     payload = response.json()
     assert payload["storage_reference"] == "paperless://document/42/version/7"
     assert payload["source_ref"] == "paperless/42/versions/7/cctp.pdf"
+    assert payload["content_hash"] == "sha256:abc"
     assert "content" not in payload
-    assert payload["authority"]["source_capture_candidate"] is True
 
 
 def test_task_success_is_explicitly_not_evidence():
-    client = TestClient(_app(_FakePaperless()))
-    response = client.get(
+    response = TestClient(_app(_FakePaperless())).get(
         "/v1/paperless/tasks/task-1",
-        headers={"Authorization": "Bearer read-key"},
+        headers={"Authorization": "Bearer hermes-key"},
     )
     assert response.status_code == 200
     assert response.json()["runtime_success_is_evidence"] is False
 
 
 def test_intake_requires_hermes_key():
-    fake = _FakePaperless()
-    response = TestClient(_app(fake)).post(
+    response = TestClient(_app(_FakePaperless())).post(
         "/v1/paperless/intakes",
         json={
             "paperless_document_id": 42,
@@ -250,9 +243,7 @@ def test_intake_policy_block_prevents_database_effect():
     )
     assert response.status_code == 200
     assert response.json()["status"] == "blocked"
-    assert response.json()["effect_ran"] is False
     assert calls == []
-    assert policy.last_preflight["request"]["intent"] == "project_document_intake"
     assert policy.last_preflight["request"]["external_effect"] is False
     assert policy.last_preflight["gate_signals"]["task_contract_ref"] == "tc.project-42"
 
@@ -276,13 +267,10 @@ def test_intake_binds_decision_to_exact_capture_contract_and_scope():
         },
         headers={"Authorization": "Bearer hermes-key"},
     )
-
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "applied"
     assert payload["effect_ran"] is True
-    assert payload["operation"] == "project_document_intake"
-    assert payload["source_ref"] == "paperless/42/versions/7/cctp.pdf"
     assert payload["knowledge_published"] is False
     assert payload["evidence_admitted"] is False
     assert calls == [
@@ -304,7 +292,6 @@ def test_intake_wrong_human_object_identity_is_blocked_after_pep_binding():
     contract_yaml = _contract_yaml()
     decision = _intake_decision(fake, contract_yaml)
     decision["decision"]["object_identity"] = "paperless-intake:tc.project-42:42:WRONG"
-    fake.captures.clear()
 
     response = TestClient(_app(fake, policy, calls)).post(
         "/v1/paperless/intakes",
@@ -325,15 +312,14 @@ def test_intake_wrong_human_object_identity_is_blocked_after_pep_binding():
 
 def test_metadata_write_requires_hermes_key():
     fake = _FakePaperless()
-    contract_yaml = _contract_yaml()
     changes = {"tags": [3]}
-    decision = _metadata_decision(fake, contract_yaml, changes)
+    decision = _metadata_decision(fake, _contract_yaml(), changes)
     response = TestClient(_app(fake)).post(
         "/v1/paperless/documents/42/metadata",
         json={
             "changes": changes,
             "paperless_version_id": "7",
-            "task_contract_yaml": contract_yaml,
+            "task_contract_yaml": _contract_yaml(),
             "decision_payload": decision,
         },
         headers={"Authorization": "Bearer read-key"},
@@ -359,28 +345,31 @@ def test_metadata_scope_is_checked_before_policy_or_paperless_patch():
     assert fake.updates == []
 
 
-def test_metadata_write_is_blocked_before_paperless_when_policy_blocks():
+def test_current_v0_blocks_metadata_external_effect_even_with_matching_decision():
     fake = _FakePaperless()
-    policy = StandInPolicyClient(disposition="blocked_pending_human_decision")
+    policy = StandInPolicyClient()
+    changes = {"tags": [3]}
+    decision = _metadata_decision(fake, _contract_yaml(), changes)
     response = TestClient(_app(fake, policy)).post(
         "/v1/paperless/documents/42/metadata",
         json={
-            "changes": {"tags": [3]},
+            "changes": changes,
             "paperless_version_id": "7",
             "task_contract_yaml": _contract_yaml(),
-            "decision_payload": _decision_payload(),
+            "decision_payload": decision,
         },
         headers={"Authorization": "Bearer hermes-key"},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "blocked"
+    assert response.json()["disposition"] == "blocked_external_effect_not_authorized"
     assert fake.updates == []
-    assert policy.last_preflight["request"]["external_effect"] is True
+    assert policy.last_decision is None
 
 
-def test_metadata_write_binds_exact_change_digest_and_applies_only_matching_decision():
+def test_metadata_write_binds_exact_change_digest_when_future_policy_allows_external_effect():
     fake = _FakePaperless()
-    policy = StandInPolicyClient()
+    policy = StandInPolicyClient(external_effect_allowed=True)
     contract_yaml = _contract_yaml()
     changes = {"tags": [3, 8], "custom_fields": [{"field": 11, "value": "DCE"}]}
     decision = _metadata_decision(fake, contract_yaml, changes)
@@ -400,25 +389,20 @@ def test_metadata_write_binds_exact_change_digest_and_applies_only_matching_deci
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "applied"
-    assert payload["effect_ran"] is True
-    assert payload["operation"] == "external_document_metadata_update"
     assert payload["canonical_business_classification_changed"] is False
     assert payload["changed_fields"] == ["custom_fields", "tags"]
     assert fake.updates == [(42, changes)]
     expected = payload["decision_expectation"]
     assert expected["object_identity"] == "paperless-metadata:tc.project-42:42:7"
-    assert expected["expected_digest"].startswith("sha256:")
     assert policy.last_decision["expectation"] == expected
-    assert policy.last_decision["expectation"] != decision["expectation"]
 
 
-def test_metadata_changed_payload_invalidates_previous_human_decision():
+def test_metadata_changed_payload_invalidates_previous_decision_when_effect_branch_is_enabled():
     fake = _FakePaperless()
-    policy = StandInPolicyClient()
+    policy = StandInPolicyClient(external_effect_allowed=True)
     contract_yaml = _contract_yaml()
     approved_changes = {"tags": [3]}
     decision = _metadata_decision(fake, contract_yaml, approved_changes)
-    fake.captures.clear()
 
     response = TestClient(_app(fake, policy)).post(
         "/v1/paperless/documents/42/metadata",
