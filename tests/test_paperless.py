@@ -167,7 +167,7 @@ def test_current_v0_style_policy_blocks_external_metadata_even_with_valid_decisi
 
     paperless = PaperlessClient("http://paperless:8000", "token", client=_client(handler))
     result = governed_update_document_metadata(
-        StandInPolicyClient(),
+        StandInPolicyClient(external_effect_allowed=False),
         paperless,
         document_id=42,
         changes={"tags": [3]},
@@ -214,7 +214,7 @@ def test_governed_upload_is_blocked_by_current_v0_external_effect_posture():
 
     paperless = PaperlessClient("http://paperless:8000", "token", client=_client(handler))
     result = governed_post_document(
-        StandInPolicyClient(),
+        StandInPolicyClient(external_effect_allowed=False),
         paperless,
         filename="source.pdf",
         content=b"pdf",
