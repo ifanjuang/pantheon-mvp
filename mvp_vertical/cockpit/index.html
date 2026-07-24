@@ -19,12 +19,12 @@
   <main class="app-shell">
     <section class="connection-panel" aria-labelledby="connection-title">
       <div>
-        <p class="eyebrow">ESPACE PROJET</p>
-        <h1 id="connection-title">Ouvrir un dossier</h1>
+        <p class="eyebrow">AFFAIRE</p>
+        <h1 id="connection-title">Ouvrir une affaire</h1>
         <p class="supporting-copy">La clé reste en mémoire de session. Le cockpit affiche des projections ; il ne transforme pas une carte en source, preuve ou décision.</p>
       </div>
       <label>
-        <span>Projet</span>
+        <span>Affaire / projet</span>
         <input id="project" autocomplete="off" placeholder="project-maison-a">
       </label>
       <label>
@@ -34,20 +34,20 @@
       <button id="load" class="primary-action" type="button">Ouvrir</button>
     </section>
 
-    <nav class="scene-rail" aria-label="Vues du cockpit">
-      <button class="scene-tab is-active" data-scene="now" type="button">Maintenant</button>
-      <button class="scene-tab" data-scene="work" type="button">Travail</button>
-      <button class="scene-tab" data-scene="documents" type="button">Documents</button>
-      <button class="scene-tab" data-scene="knowledge" type="button">Knowledge</button>
-      <button class="scene-tab" data-scene="questionnaire" type="button">Questionnaire</button>
+    <nav class="scene-rail" aria-label="Espaces du cockpit">
+      <button class="scene-tab is-active" data-space="pantheon" type="button">Pantheon</button>
+      <button class="scene-tab" data-space="affaires" type="button">Affaires</button>
+      <button class="scene-tab" data-space="connaissances" type="button">Connaissances</button>
+      <button class="scene-tab" data-space="outils" type="button">Outils</button>
+      <button class="scene-tab" data-space="decisions" type="button">Décisions</button>
     </nav>
 
     <section class="scene-heading" aria-live="polite">
       <div>
-        <p id="scene-eyebrow" class="eyebrow">MAINTENANT</p>
-        <h2 id="scene-title">Cartes à examiner</h2>
+        <p id="scene-eyebrow" class="eyebrow">PANTHEON</p>
+        <h2 id="scene-title">Contexte et attention</h2>
       </div>
-      <p id="scene-status" class="scene-status">Indiquez un projet pour charger ses cartes.</p>
+      <p id="scene-status" class="scene-status">Ouvrez une affaire pour construire un contexte explicite.</p>
     </section>
 
     <section id="deck" class="card-deck" aria-label="Pile de cartes"></section>
@@ -75,5 +75,7 @@
   <script src="resources.js" defer></script>
   <script src="effects.js" defer></script>
   <script src="knowledge_updates.js" defer></script>
+  <script src="information_architecture.js" defer></script>
+  <script src="capability_reconciliation.js" defer></script>
 </body>
 </html>
