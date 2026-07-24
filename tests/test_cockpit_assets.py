@@ -10,6 +10,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = [
+    ROOT / "mvp_vertical" / "cockpit" / "structured_interface.js",
+    ROOT / "mvp_vertical" / "cockpit" / "context_resolver.js",
     ROOT / "mvp_vertical" / "cockpit" / "app.js",
     ROOT / "mvp_vertical" / "cockpit" / "resources.js",
     ROOT / "mvp_vertical" / "cockpit" / "effects.js",
@@ -34,6 +36,31 @@ def test_cockpit_javascript_parses(script: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_cockpit_v2_foundations_are_loaded_before_legacy_renderers() -> None:
+    html = (ROOT / "mvp_vertical" / "cockpit" / "index.html").read_text(encoding="utf-8")
+    resolver = (ROOT / "mvp_vertical" / "cockpit" / "context_resolver.js").read_text(encoding="utf-8")
+    contract = (ROOT / "mvp_vertical" / "cockpit" / "structured_interface.js").read_text(encoding="utf-8")
+
+    assert 'src="structured_interface.js"' in html
+    assert 'src="context_resolver.js"' in html
+    assert html.index('src="structured_interface.js"') < html.index('src="app.js"')
+    assert html.index('src="context_resolver.js"') < html.index('src="app.js"')
+
+    for prefix in ('_', '"#"', '"@"', '"*"'):
+        assert prefix in resolver
+    assert "registerProvider" in resolver
+    assert "namespace_required" in resolver
+    assert "searchableText" in resolver
+    assert "item.tags" in resolver
+    assert "item.aliases" in resolver
+
+    assert '"pantheon", "decisions", "affaires", "connaissances", "outils"' in contract
+    assert '"conversation", "container", "entity"' in contract
+    assert "buildTagProjection" in contract
+    assert "buildCardContextEnvelope" in contract
+    assert "scope_widened_implicitly: false" in contract
 
 
 def test_static_demo_reuses_cockpit_assets_and_blocks_network() -> None:
