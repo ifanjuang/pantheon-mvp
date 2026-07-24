@@ -1,6 +1,6 @@
 # Cockpit V2 — structured agency interface foundation
 
-Status: executable foundation implemented / product UI migration partial / PostgreSQL Agency Data seam implemented / Notion collaborative sync contract partial / not adopted or production-authorized.
+Status: executable foundation implemented / spatial V2 route implemented candidate / PostgreSQL Agency Data seam implemented / Notion collaborative sync contract partial / not adopted or production-authorized.
 
 This branch begins the Cockpit V2 implementation direction documented in Pantheon Next `PANTHEON_COCKPIT_STRUCTURED_AGENCY_INTERFACE.md`.
 
@@ -118,6 +118,51 @@ basic Card model validation
 
 `Card Context Envelope` explicitly holds a root object, descendants, source refs, user additions and exclusions, with `scope_widened_implicitly=false`.
 
+### Executable spatial V2 route
+
+`mvp_vertical/cockpit/v2.html` is now an executable candidate route that makes the product grammar visible without replacing the legacy Cockpit route yet.
+
+The implementation is split into:
+
+```text
+spatial_navigation.js  pure navigation state / depth / sibling boundaries
+v2_app.js               Card graph composition and existing project endpoint adapter
+styles/v2.css           universal Card skins, recto/verso, orbs and motion
+v2.html                 five-space interaction surface
+```
+
+Implemented interaction grammar:
+
+```text
+root horizontal:
+Pantheon ↔ Décisions ↔ Affaires ↔ Connaissances ↔ Outils
+
+at deeper depth:
+Left / Right = siblings in the current collection only
+Up           = descend into declared children
+Down         = return to parent
+Space/button = front/back of the same object
+```
+
+Pointer swipes and explicit controls use the same navigation model. The breadcrumb exposes the current hierarchy and reduced-motion preferences disable spatial entrance animations.
+
+Implemented visual projection rules include:
+
+```text
+Project       white front + restrained identity accent + thin accent back border
+Document      family-color front + white family-border back
+Knowledge     family-color front + white family-border back
+Capability    gradient-capable active front + white bordered back
+Containers    same anatomy with quieter emphasis
+Status/Metric/Tag indicators share one bottom-right rail
+```
+
+A fixed Hermes dock is rendered against the current Card but its action remains deliberately disabled in this tranche because the scoped Hermes handoff is not yet connected.
+
+The V2 route currently reuses the existing per-project endpoints for Documents, Knowledge and Work Issues. It therefore exposes one explicitly loaded Project at a time; it does not claim the future global PostgreSQL Agency Data project listing is live.
+
+`Décisions` is already projected cross-object from review-relevant Work Issues, Documents and Knowledge while preserving the underlying entity identity/family.
+
 ## Target data flow
 
 Normal operation:
@@ -178,20 +223,26 @@ PostgreSQL remains the system of record. Recovery compares revisions before resu
 ## Planned next slices
 
 ```text
-1 universal Card primitive and front/back anatomy
-2 standardized tag/status/metric orbs
-3 spatial navigation engine
-4 Context Resolver UI in Pantheon dialogue
-5 live bounded Agency Data API transport over PostgreSQL
-6 Hermes server-side Agency Data mutation adapter with revision checks
-7 external Notion sync adapter for declared field policies
-8 Tag Registry owner API + picker
-9 Project Card / Person / Organization / Participation real projections
-10 Document revision/representation/issues cards
-11 Décisions cross-object attention projection
-12 Knowledge families/items
-13 Outils hierarchy + RuntimeHost/model observations + role references
-14 fixed scoped Hermes dock + attached answer projections
+implemented candidate
+  universal Card front/back anatomy
+  standardized Tag/Status/Metric indicator rail
+  spatial navigation state + keyboard/pointer gestures
+  five-space V2 route
+  first cross-object Décisions projection
+  fixed Hermes dock presentation
+
+next
+  Context Resolver interaction inside Pantheon dialogue
+  live bounded Agency Data API transport over PostgreSQL
+  all-project Affaires collection from Agency Data
+  real Project / Person / Organization / Participation projections
+  Hermes server-side Agency Data mutation adapter with revision checks
+  external Notion sync adapter for declared field policies
+  Tag Registry owner API + picker
+  Document revision/representation/issues Cards
+  Knowledge family hierarchy
+  Outils live Capability/RuntimeHost/model observations
+  scoped Hermes dock handoff + attached answer projections
 ```
 
 ## Boundaries
@@ -211,4 +262,4 @@ host observed != healthy/safe
 model discovered != task-authorized
 ```
 
-The existing visible Cockpit remains in place while these foundations are introduced. No database migration, live Notion synchronization service, credential configuration or production activation is claimed by this PR.
+The existing visible Cockpit remains available while `v2.html` is introduced as a separate executable candidate route. No database migration, live Notion synchronization service, credential configuration, global Agency Data listing, Hermes handoff or production activation is claimed by this PR.
