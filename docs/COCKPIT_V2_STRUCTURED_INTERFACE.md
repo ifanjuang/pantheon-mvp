@@ -1,6 +1,6 @@
 # Cockpit V2 — structured agency interface foundation
 
-Status: executable foundation implemented / product UI migration partial / optional Notion projection seam implemented / not adopted or production-authorized.
+Status: executable foundation implemented / product UI migration partial / PostgreSQL Agency Data seam implemented / Notion collaborative sync contract partial / not adopted or production-authorized.
 
 This branch begins the Cockpit V2 implementation direction documented in Pantheon Next `PANTHEON_COCKPIT_STRUCTURED_AGENCY_INTERFACE.md`.
 
@@ -9,14 +9,17 @@ This branch begins the Cockpit V2 implementation direction documented in Pantheo
 The Cockpit is treated as a user-friendly interface over structured professional records shared between the agency and AI-assisted work.
 
 ```text
-Pantheon governs.
-Hermes executes bounded operations.
-Cockpit exposes and captures bounded intent.
-Owner systems remain authoritative for their data/runtime.
-Human decides consequential effects.
+PostgreSQL Agency Data = default system of record for native agency records
+Notion = optional collaborative projection for explicitly mapped fields
+Pantheon governs consequential effects and status qualification
+Hermes executes bounded operations
+Cockpit exposes records and captures bounded intent
+Human decides consequential effects when required
 ```
 
-## Implemented in this first slice
+Notion is not required for normal Cockpit/Hermes operation.
+
+## Implemented foundations
 
 ### Context Resolver JS
 
@@ -29,42 +32,73 @@ _  Affaires
 *  global permitted search
 ```
 
-The resolver:
+The resolver normalizes accents/case, composes multiple providers, isolates provider failures, explains matches with `matched_field` / `match_reason`, deduplicates by stable identity where available and never imports provider-side selection state into the active Context.
 
-- normalizes accents/case;
-- supports prefix-weighted project search;
-- searches normalized labels, descriptions, aliases, tags and provider-supplied search terms;
-- accepts multiple injected providers per namespace rather than embedding fake data or becoming a database;
-- isolates provider failures and returns provider-error observations without collapsing the whole search;
-- deduplicates global results by stable identity where available;
-- explains matches with `matched_field` / `match_reason`;
-- returns normalized entity projections;
-- never imports provider-side `selected` state into search results.
+### PostgreSQL Agency Data owner seam
 
-Live owner API bindings remain separate from the resolver.
+`mvp_vertical/cockpit/agency_data_binding.js` is now the default owner-facing projection seam for native agency records.
 
-### Optional Notion agency binding seam
-
-`mvp_vertical/cockpit/notion_agency_binding.js` adds the first optional read-only agency-data binding contract.
-
-Initial pilot mapping:
+Conceptual resources:
 
 ```text
-_Affaires      -> Project / Affaire
-_Personnes     -> Person
-_Sociétés      -> Organization
-_Intervenants  -> ProjectParticipation projection
+projects
+people
+organizations
+project_participations
 ```
 
-The module registers Notion-backed providers with the Context Resolver when explicitly created in `read_only` mode.
+The module:
+
+- exposes `_`, `@` and `*` resolver projections through an injected bounded Agency Data transport;
+- marks source authority as `agency_system_of_record` and `system_of_record=postgres`;
+- keeps database credentials out of the browser;
+- provides `buildMutationIntent()` for a bounded Hermes/Agency Data mutation candidate with an expected revision;
+- never marks that candidate as execution-authorized.
+
+This does not implement a PostgreSQL migration, direct SQL access or a Hermes server-side write adapter.
+
+### Optional Notion collaboration contract
+
+`mvp_vertical/cockpit/notion_agency_binding.js` no longer registers Notion as the primary owner/search source.
+
+It models Notion as an optional collaborative projection over PostgreSQL-owned agency records.
+
+Supported posture vocabulary:
 
 ```text
-_  uses Notion Affaires when attached
-@  uses Notion People when attached
-*  can additionally discover organizations and participations
+disabled
+mirror_read_only
+selective_bidirectional
 ```
 
-The binding never handles Notion credentials in the browser. It requires an injected bounded transport and sends only a `read_only` search request contract. The concrete live connector transport is not connected in this PR.
+A field policy declares:
+
+```text
+entity_type
+field
+notion_visible
+notion_editable
+sync_direction
+conflict_policy
+validation_rule
+sensitivity
+```
+
+A Notion-originated edit becomes only a mutation candidate when:
+
+1. the field is explicitly `notion_editable=true`;
+2. its direction is `bidirectional`;
+3. the Notion edit is based on the current PostgreSQL revision.
+
+Otherwise it is rejected or classified as a conflict.
+
+```text
+Notion edit accepted as candidate != mutation executed
+Notion editable != Notion authoritative
+sync success != Evidence
+```
+
+The browser executes neither synchronization nor external writes.
 
 Detailed contract: `docs/COCKPIT_V2_NOTION_AGENCY_BINDING.md`.
 
@@ -84,7 +118,62 @@ basic Card model validation
 
 `Card Context Envelope` explicitly holds a root object, descendants, source refs, user additions and exclusions, with `scope_widened_implicitly=false`.
 
-This is a frontend contract only. It does not establish an authorization service, retrieval engine, database schema or Hermes runtime.
+## Target data flow
+
+Normal operation:
+
+```text
+Cockpit / Hermes
+       ↓
+bounded Agency Data API
+       ↓
+PostgreSQL
+system of record
+```
+
+With optional Notion collaboration:
+
+```text
+                    PostgreSQL
+                 system of record
+                  ↑           ↓
+       allowed Notion edit   projection
+                  │           │
+                  └── Notion ─┘
+                 optional UI
+```
+
+The real synchronization mechanism remains external to these browser contracts.
+
+## Conflict rule
+
+No generic last-write-wins rule is accepted for business-significant fields.
+
+Example:
+
+```text
+common base revision = 42
+PostgreSQL/Hermes -> phase EXE, revision 43
+Notion edit based on revision 42 -> phase ACT
+
+result: conflict
+not automatic overwrite
+```
+
+A field policy may select a bounded conflict posture such as `human_review`, `merge_append` or `postgres_authoritative`, but the frontend contract does not execute the resolution.
+
+## Notion outage posture
+
+When Notion is unavailable:
+
+```text
+PostgreSQL Agency Data  remains available
+Cockpit                 remains available
+Hermes/Agency Data      remains available
+Notion collaboration    unavailable/degraded
+```
+
+PostgreSQL remains the system of record. Recovery compares revisions before resuming synchronization; Notion unavailability does not transfer ownership or block native Agency Data writes.
 
 ## Planned next slices
 
@@ -93,55 +182,33 @@ This is a frontend contract only. It does not establish an authorization service
 2 standardized tag/status/metric orbs
 3 spatial navigation engine
 4 Context Resolver UI in Pantheon dialogue
-5 live optional Agency Data transport binding (Notion pilot read-only)
-6 Tag Registry owner API + picker
-7 Project Card / Person / Organization / Participation real projections
-8 Document revision/representation/issues cards
-9 Décisions cross-object attention projection
-10 Knowledge families/items
-11 Outils hierarchy + RuntimeHost/model observations + role references
-12 fixed scoped Hermes dock + attached answer projections
+5 live bounded Agency Data API transport over PostgreSQL
+6 Hermes server-side Agency Data mutation adapter with revision checks
+7 external Notion sync adapter for declared field policies
+8 Tag Registry owner API + picker
+9 Project Card / Person / Organization / Participation real projections
+10 Document revision/representation/issues cards
+11 Décisions cross-object attention projection
+12 Knowledge families/items
+13 Outils hierarchy + RuntimeHost/model observations + role references
+14 fixed scoped Hermes dock + attached answer projections
 ```
-
-The live Notion connector must remain optional. Cockpit V2 must still work with another Agency Data binding or no Notion binding at all.
-
-## Data direction
-
-The implementation should bind progressively to owner records such as:
-
-```text
-Project
-Person / Organization / Participation
-ProjectFact
-Document / Revision / Representation / Issue
-Evidence
-Knowledge
-Tag / TagAssignment
-WorkIssue
-DecisionRequest / Decision
-CapabilityRecord
-RuntimeHostObservation / RuntimeModelObservation
-CardComment
-```
-
-A physical database choice does not collapse authority. Where Notion remains the declared owner of a Project/Person field, a normalized Cockpit/PostgreSQL projection is not automatically a replacement owner.
-
-No database migration is introduced by this slice.
 
 ## Boundaries
 
 ```text
 card != source of truth
-tag != established fact
 search result != selected context
-Notion record != Pantheon governance record
-read permission != write authorization
+PostgreSQL Agency Data record != Pantheon governance Decision
+Notion projection != system of record
+Notion editable != unrestricted write authority
+sync candidate != executed mutation
+revision conflict != last-write-wins
 Document != Evidence
 Document != Knowledge
-Decision projection != Decision record
 role reference != runtime agent
 host observed != healthy/safe
 model discovered != task-authorized
 ```
 
-The existing Cockpit UI remains in place while these foundations are introduced; this PR starts the migration rather than claiming the spatial V2 UI is already complete.
+The existing visible Cockpit remains in place while these foundations are introduced. No database migration, live Notion synchronization service, credential configuration or production activation is claimed by this PR.
