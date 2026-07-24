@@ -1,6 +1,6 @@
 # Cockpit V2 — structured agency interface foundation
 
-Status: executable foundation implemented / product UI migration partial / not adopted or production-authorized.
+Status: executable foundation implemented / product UI migration partial / optional Notion projection seam implemented / not adopted or production-authorized.
 
 This branch begins the Cockpit V2 implementation direction documented in Pantheon Next `PANTHEON_COCKPIT_STRUCTURED_AGENCY_INTERFACE.md`.
 
@@ -34,12 +34,39 @@ The resolver:
 - normalizes accents/case;
 - supports prefix-weighted project search;
 - searches normalized labels, descriptions, aliases, tags and provider-supplied search terms;
-- accepts injected providers rather than embedding fake data or becoming a database;
-- deduplicates global results by stable identity;
+- accepts multiple injected providers per namespace rather than embedding fake data or becoming a database;
+- isolates provider failures and returns provider-error observations without collapsing the whole search;
+- deduplicates global results by stable identity where available;
+- explains matches with `matched_field` / `match_reason`;
 - returns normalized entity projections;
-- never auto-selects a search result into context.
+- never imports provider-side `selected` state into search results.
 
-Provider binding to real owner APIs remains to implement.
+Live owner API bindings remain separate from the resolver.
+
+### Optional Notion agency binding seam
+
+`mvp_vertical/cockpit/notion_agency_binding.js` adds the first optional read-only agency-data binding contract.
+
+Initial pilot mapping:
+
+```text
+_Affaires      -> Project / Affaire
+_Personnes     -> Person
+_Sociétés      -> Organization
+_Intervenants  -> ProjectParticipation projection
+```
+
+The module registers Notion-backed providers with the Context Resolver when explicitly created in `read_only` mode.
+
+```text
+_  uses Notion Affaires when attached
+@  uses Notion People when attached
+*  can additionally discover organizations and participations
+```
+
+The binding never handles Notion credentials in the browser. It requires an injected bounded transport and sends only a `read_only` search request contract. The concrete live connector transport is not connected in this PR.
+
+Detailed contract: `docs/COCKPIT_V2_NOTION_AGENCY_BINDING.md`.
 
 ### Structured interface contract JS
 
@@ -66,14 +93,17 @@ This is a frontend contract only. It does not establish an authorization service
 2 standardized tag/status/metric orbs
 3 spatial navigation engine
 4 Context Resolver UI in Pantheon dialogue
-5 Tag Registry owner API + picker
-6 Project Card and ProjectFact bindings
-7 Document revision/representation/issues cards
-8 Décisions cross-object attention projection
-9 Knowledge families/items
-10 Outils hierarchy + RuntimeHost/model observations + role references
-11 fixed scoped Hermes dock + attached answer projections
+5 live optional Agency Data transport binding (Notion pilot read-only)
+6 Tag Registry owner API + picker
+7 Project Card / Person / Organization / Participation real projections
+8 Document revision/representation/issues cards
+9 Décisions cross-object attention projection
+10 Knowledge families/items
+11 Outils hierarchy + RuntimeHost/model observations + role references
+12 fixed scoped Hermes dock + attached answer projections
 ```
+
+The live Notion connector must remain optional. Cockpit V2 must still work with another Agency Data binding or no Notion binding at all.
 
 ## Data direction
 
@@ -94,6 +124,8 @@ RuntimeHostObservation / RuntimeModelObservation
 CardComment
 ```
 
+A physical database choice does not collapse authority. Where Notion remains the declared owner of a Project/Person field, a normalized Cockpit/PostgreSQL projection is not automatically a replacement owner.
+
 No database migration is introduced by this slice.
 
 ## Boundaries
@@ -102,6 +134,8 @@ No database migration is introduced by this slice.
 card != source of truth
 tag != established fact
 search result != selected context
+Notion record != Pantheon governance record
+read permission != write authorization
 Document != Evidence
 Document != Knowledge
 Decision projection != Decision record
