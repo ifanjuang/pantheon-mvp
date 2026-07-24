@@ -15,6 +15,7 @@ SCRIPTS = [
     ROOT / "mvp_vertical" / "cockpit" / "effects.js",
     ROOT / "mvp_vertical" / "cockpit" / "knowledge_updates.js",
     ROOT / "mvp_vertical" / "cockpit" / "information_architecture.js",
+    ROOT / "mvp_vertical" / "cockpit" / "capability_reconciliation.js",
     ROOT / "mvp_vertical" / "cockpit" / "demo.js",
     ROOT / "mvp_vertical" / "mobile_editor" / "app.js",
     ROOT / "mvp_vertical" / "mobile_editor" / "sw.js",
@@ -42,6 +43,9 @@ def test_live_cockpit_exposes_five_primary_spaces_and_ia_layer() -> None:
     javascript = (
         ROOT / "mvp_vertical" / "cockpit" / "information_architecture.js"
     ).read_text(encoding="utf-8")
+    reconciliation = (
+        ROOT / "mvp_vertical" / "cockpit" / "capability_reconciliation.js"
+    ).read_text(encoding="utf-8")
     css = (
         ROOT / "mvp_vertical" / "cockpit" / "styles" / "information_architecture.css"
     ).read_text(encoding="utf-8")
@@ -49,7 +53,9 @@ def test_live_cockpit_exposes_five_primary_spaces_and_ia_layer() -> None:
     for space in ("Pantheon", "Affaires", "Connaissances", "Outils", "Décisions"):
         assert f">{space}</button>" in html
     assert 'src="information_architecture.js"' in html
+    assert 'src="capability_reconciliation.js"' in html
     assert html.index('src="knowledge_updates.js"') < html.index('src="information_architecture.js"')
+    assert html.index('src="information_architecture.js"') < html.index('src="capability_reconciliation.js"')
 
     assert '["pantheon", "Pantheon"]' in javascript
     assert '["affaires", "Affaires"]' in javascript
@@ -63,6 +69,8 @@ def test_live_cockpit_exposes_five_primary_spaces_and_ia_layer() -> None:
     assert 'frame: "tool"' in javascript
     assert 'Decision Request / Gate · pas encore une Decision' in javascript
     assert 'installed ≠ approved' in javascript
+    assert "HermesCapabilityExecutor" in reconciliation
+    assert "Candidats empilés · adoption non établie" in reconciliation
     assert 'data-frame="project"' in css
     assert 'data-frame="knowledge-folder"' in css
 
