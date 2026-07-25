@@ -11,7 +11,7 @@ from typing import Callable
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import hermes_handoff_preview
+from . import card_scope, hermes_handoff_preview
 
 
 class EntityRefBody(BaseModel):
@@ -32,12 +32,14 @@ class HermesHandoffPreviewBody(BaseModel):
     question: str = Field(min_length=3, max_length=8_000)
     card_context_envelope: CardContextEnvelopeBody
     selected_context: list[EntityRefBody] = Field(default_factory=list, max_length=250)
+    include_declared_descendants: bool = False
 
 
 def install_hermes_handoff_preview_routes(
     app: FastAPI,
     *,
     require_read_key: Callable,
+    with_connection: Callable,
 ) -> None:
     @app.post("/v1/cockpit/hermes-handoffs/preview")
     def preview_hermes_handoff(
@@ -49,11 +51,47 @@ def install_hermes_handoff_preview_routes(
                 status_code=422,
                 detail="Card Context Envelope may not widen scope implicitly",
             )
+
+        envelope = body.card_context_envelope.model_dump()
+        scope_resolution = {
+            "requested": body.include_declared_descendants,
+            "policy": "root_only",
+            "descendants_added": 0,
+            "source_refs_added": 0,
+            "counts": {},
+        }
+        if body.include_declared_descendants:
+            try:
+                resolved = with_connection(
+                    lambda conn: card_scope.resolve_declared_descendants(
+                        conn,
+                        root_entity=envelope["root_entity"],
+                    )
+                )
+            except card_scope.CardScopeError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            envelope["descendants"] = [
+                *envelope.get("descendants", []),
+                *resolved["descendants"],
+            ]
+            envelope["source_refs"] = [
+                *envelope.get("source_refs", []),
+                *resolved["source_refs"],
+            ]
+            scope_resolution = {
+                "requested": True,
+                "policy": resolved["policy"],
+                "descendants_added": len(resolved["descendants"]),
+                "source_refs_added": len(resolved["source_refs"]),
+                "counts": resolved["counts"],
+            }
+
         try:
-            return hermes_handoff_preview.build_preview(
+            preview = hermes_handoff_preview.build_preview(
                 question=body.question,
-                card_context_envelope=body.card_context_envelope.model_dump(),
+                card_context_envelope=envelope,
                 selected_context=[item.model_dump() for item in body.selected_context],
             )
         except hermes_handoff_preview.HandoffPreviewError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {**preview, "scope_resolution": scope_resolution}
