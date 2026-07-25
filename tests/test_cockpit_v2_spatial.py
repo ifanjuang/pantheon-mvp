@@ -72,7 +72,7 @@ def test_spatial_navigation_keeps_sibling_and_parent_boundaries() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_v2_route_exposes_five_spaces_and_explicit_navigation() -> None:
+def test_v2_route_exposes_five_spaces_and_live_agency_project_collection() -> None:
     html = (COCKPIT / "v2.html").read_text(encoding="utf-8")
     css = (COCKPIT / "styles" / "v2.css").read_text(encoding="utf-8")
     javascript = (COCKPIT / "v2_app.js").read_text(encoding="utf-8")
@@ -104,16 +104,16 @@ def test_v2_route_exposes_five_spaces_and_explicit_navigation() -> None:
     assert 'state.navigator.returnToRoot' in javascript
     assert 'state.flipped' in javascript
     assert 'PostgreSQL Agency Data' in javascript
-    assert 'la liste Agency Data globale n’est pas encore branchée' not in javascript.lower()
+    assert '../v1/agency/projects?limit=200' in javascript
+    assert 'state.projects = payload.projects || []' in javascript
+    assert "La clé seule charge la collection Agency Data" in html
 
 
-def test_v2_does_not_claim_hermes_handoff_or_global_agency_data_is_live() -> None:
+def test_v2_keeps_hermes_handoff_disabled_until_scoped_adapter_is_connected() -> None:
     html = (COCKPIT / "v2.html").read_text(encoding="utf-8")
     javascript = (COCKPIT / "v2_app.js").read_text(encoding="utf-8")
 
-    assert "La liste globale PostgreSQL Agency Data n’est pas encore branchée" in html
     assert "Handoff Hermes non branché" in html
     assert 'disabled title="Handoff Hermes non branché' in html
-    assert "la liste Agency Data globale n’est pas encore branchée" in javascript
     assert "direct_database_credentials" not in javascript
     assert "notion_token" not in javascript.lower()
