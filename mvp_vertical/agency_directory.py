@@ -123,10 +123,54 @@ def get_organization(conn: psycopg.Connection, organization_id: str) -> dict:
     return _jsonable(dict(row))
 
 
+def list_participations(
+    conn: psycopg.Connection,
+    *,
+    query: str | None = None,
+    project_id: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    _bounded_limit(limit)
+    clauses: list[str] = []
+    params: list[Any] = []
+    if project_id:
+        clauses.append("p.project_id = %s")
+        params.append(project_id)
+    if query and query.strip():
+        needle = f"%{query.strip()}%"
+        clauses.append(
+            "(p.role ILIKE %s OR p.participation_type ILIKE %s OR p.label ILIKE %s "
+            "OR person.display_name ILIKE %s OR org.name ILIKE %s OR project.display_name ILIKE %s OR project.code ILIKE %s)"
+        )
+        params.extend([needle, needle, needle, needle, needle, needle, needle])
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    params.append(limit)
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            f"""
+            SELECT p.*,
+                   person.display_name AS person_name,
+                   org.name AS organization_name,
+                   project.display_name AS project_name,
+                   project.code AS project_code
+              FROM agency_project_participations p
+              JOIN agency_projects project ON project.project_id = p.project_id
+              LEFT JOIN agency_people person ON person.person_id = p.person_id
+              LEFT JOIN agency_organizations org ON org.organization_id = p.organization_id
+              {where}
+             ORDER BY lower(project.display_name), lower(p.role),
+                      lower(COALESCE(p.label, person.display_name, org.name, ''))
+             LIMIT %s
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+    return [_jsonable(dict(row)) for row in rows]
+
+
 def list_project_participations(conn: psycopg.Connection, project_id: str) -> list[dict]:
-    # Reuse the project-owned relation query so project existence and relation
-    # semantics stay in one adapter rather than drifting across modules.
     try:
-        return agency_data.list_project_participations(conn, project_id)
+        agency_data.get_project(conn, project_id)
     except agency_data.ProjectNotFound as exc:
         raise AgencyDirectoryError(str(exc)) from exc
+    return list_participations(conn, project_id=project_id, limit=500)
