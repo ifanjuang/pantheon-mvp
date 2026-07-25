@@ -8,12 +8,17 @@ dispatch endpoint or provider routing exists here.
 from __future__ import annotations
 
 import hmac
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import hermes_execution, hermes_runtime_return, work_issues
+from . import (
+    hermes_execution,
+    hermes_result_candidate,
+    hermes_runtime_return,
+    work_issues,
+)
 from .app_lifecycle import install_post_start_initializer
 
 
@@ -43,8 +48,21 @@ class HermesNormalizedReturn(BaseModel):
     evidence_candidate_refs: list[str] = Field(default_factory=list, max_length=500)
 
 
+class HermesResultCandidateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_type: str = Field(min_length=1, max_length=200)
+    candidate_payload: dict[str, Any] = Field(default_factory=dict)
+    confidence_note: str | None = Field(default=None, max_length=10_000)
+    known_limits: list[str] = Field(default_factory=list, max_length=500)
+    open_questions: list[str] = Field(default_factory=list, max_length=500)
+    source_refs: list[str] = Field(default_factory=list, max_length=500)
+    missing_evidence: list[str] = Field(default_factory=list, max_length=500)
+
+
 class HermesRuntimeReturnBody(BaseModel):
     normalized_return: HermesNormalizedReturn
+    result_candidate: HermesResultCandidateBody | None = None
     expected_issue_version: int = Field(ge=1)
     idempotency_key: str = Field(min_length=8, max_length=200)
 
@@ -98,6 +116,7 @@ def install_hermes_execution_routes(
             try:
                 for migration in hermes_execution.MIGRATIONS:
                     conn.execute(migration.read_text(encoding="utf-8"))
+                conn.execute(hermes_result_candidate.MIGRATION.read_text(encoding="utf-8"))
                 conn.commit()
             finally:
                 conn.close()
@@ -220,6 +239,11 @@ def install_hermes_execution_routes(
                     admission_id=admission_id,
                     run_id=run_id,
                     normalized_return=body.normalized_return.model_dump(),
+                    result_candidate=(
+                        body.result_candidate.model_dump()
+                        if body.result_candidate is not None
+                        else None
+                    ),
                     actor=actor,
                     expected_issue_version=body.expected_issue_version,
                     idempotency_key=body.idempotency_key,
