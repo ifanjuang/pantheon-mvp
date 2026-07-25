@@ -2,6 +2,9 @@ ALTER TABLE hermes_execution_admissions
     ADD COLUMN IF NOT EXISTS work_issue_version INTEGER;
 
 ALTER TABLE hermes_execution_admissions
+    ADD COLUMN IF NOT EXISTS ttl_seconds INTEGER;
+
+ALTER TABLE hermes_execution_admissions
     ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS hermes_execution_admission_events (
