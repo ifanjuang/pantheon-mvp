@@ -20,6 +20,14 @@ class HermesRuntimeReturnConflict(HermesRuntimeReturnError):
     pass
 
 
+def _work_issue_record(conn: psycopg.Connection, issue_id: str) -> dict:
+    projection = work_issues.get_issue(conn, issue_id)
+    issue = projection.get("work_issue")
+    if not isinstance(issue, dict):
+        raise HermesRuntimeReturnError("Work Issue projection is missing its work_issue record")
+    return issue
+
+
 def _run_for_admission(
     conn: psycopg.Connection,
     *,
@@ -75,14 +83,14 @@ def record_external_runtime_return(
                         f"Hermes run is not running; current runtime status is {run['status']}"
                     )
 
-        issue = work_issues.get_issue(conn, run["work_issue_id"])
+        issue = _work_issue_record(conn, run["work_issue_id"])
         if issue["version"] != expected_issue_version and run["status"] == "running":
             raise HermesRuntimeReturnConflict(
                 f"stale Work Issue version: expected {expected_issue_version}, current {issue['version']}"
             )
 
         try:
-            updated_issue = work_issues.record_hermes_return(
+            updated_projection = work_issues.record_hermes_return(
                 conn,
                 issue_id=run["work_issue_id"],
                 run_id=run_id,
@@ -96,6 +104,7 @@ def record_external_runtime_return(
         except work_issues.WorkIssueError as exc:
             raise HermesRuntimeReturnError(str(exc)) from exc
 
+        updated_issue = updated_projection["work_issue"]
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("SELECT * FROM hermes_runs WHERE run_id = %s", (run_id,))
             returned_run = dict(cur.fetchone())
