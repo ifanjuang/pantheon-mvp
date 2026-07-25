@@ -67,7 +67,6 @@
     if (namespace === "_") {
       if (label === query) return { score: 110, matched_field: "label", match_reason: "exact" };
       if (label.startsWith(query)) return { score: 100, matched_field: "label", match_reason: "prefix" };
-      if (label.includes(query)) return { score: 70, matched_field: "label", match_reason: "contains" };
       const projectAliases = aliases(item).map(normalize);
       if (projectAliases.some(value => value === query)) {
         return { score: 105, matched_field: "alias", match_reason: "exact" };
@@ -79,6 +78,7 @@
       if (projectTerms.some(value => value === query || value.startsWith(query))) {
         return { score: 85, matched_field: "metadata", match_reason: "identity_prefix" };
       }
+      if (label.includes(query)) return { score: 70, matched_field: "label", match_reason: "contains" };
       return { score: 0, matched_field: null, match_reason: null };
     }
 
