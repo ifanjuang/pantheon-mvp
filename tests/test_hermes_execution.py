@@ -88,10 +88,17 @@ def test_issue_version_change_after_admission_makes_it_stale(conn) -> None:
     handoff = _submitted(conn)
     admission = _admit(conn, handoff)
     issue = handoff["work_issue"]
-    work_issues.transition_issue(
-        conn, issue_id=issue["issue_id"], target_status="waiting", actor="ifan",
-        actor_kind="human", expected_version=issue["version"], idempotency_key=_id("issue-change"),
+    changed = work_issues.add_comment(
+        conn,
+        issue_id=issue["issue_id"],
+        comment_id=_id("comment"),
+        body="Contexte métier modifié après admission.",
+        author="ifan",
+        expected_version=issue["version"],
+        idempotency_key=_id("issue-comment"),
     )
+    assert changed["status"] == "open"
+    assert changed["version"] == issue["version"] + 1
     observed = hermes_execution.get_admission(conn, admission["admission_id"])
     assert observed["admission_state"] == "stale"
     with pytest.raises(hermes_execution.RuntimeStartConflict, match="not consumable"):
