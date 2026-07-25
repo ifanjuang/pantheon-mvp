@@ -122,6 +122,7 @@ def test_manifest_exposes_only_exact_admitted_identities_without_global_surfaces
 
     assert manifest["requested_effect"] == "read_only"
     assert manifest["run_status"] == "running"
+    assert manifest["field_projection_version"] == "scoped-context-v1"
     assert manifest["global_search_available"] is False
     assert manifest["global_listing_available"] is False
     assert manifest["source_dereference_available"] is False
@@ -149,8 +150,11 @@ def test_exact_admitted_person_can_be_read_but_existing_unrelated_person_is_refu
     )
     assert allowed["record"]["person_id"] == admitted_person
     assert allowed["record"]["display_name"] == "Personne admise"
+    assert allowed["field_projection_version"] == "scoped-context-v1"
     assert allowed["record_owner_system"] == "postgres"
     assert allowed["source_binary_included"] is False
+    assert "created_by" not in allowed["record"]
+    assert "updated_by" not in allowed["record"]
 
     with pytest.raises(
         hermes_scoped_context.ScopedContextConflict,
@@ -193,6 +197,8 @@ def test_context_entity_is_current_owner_reread_not_admission_snapshot(conn) -> 
     assert materialized["current_revision"] == 2
     assert materialized["read_semantics"] == "current_owner_read"
     assert materialized["context_pack_authorizes_identity_not_snapshot"] is True
+    assert "created_by" not in materialized["record"]
+    assert "updated_by" not in materialized["record"]
 
 
 def test_wrong_run_and_completed_run_cannot_read_context(conn) -> None:
