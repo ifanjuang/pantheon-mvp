@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from . import card_scope, hermes_handoff_preview, hermes_handoff_store
+from .app_lifecycle import install_post_start_initializer
 from .hermes_execution_api import install_hermes_execution_routes
 
 
@@ -78,9 +79,7 @@ def install_hermes_handoff_preview_routes(
 
     if require_human_actor is None:
         def require_human_actor(
-            x_pantheon_human_actor: str | None = Header(
-                default=None, alias="X-Pantheon-Human-Actor"
-            ),
+            x_pantheon_human_actor: str | None = Header(default=None, alias="X-Pantheon-Human-Actor"),
         ) -> str:
             if not x_pantheon_human_actor or not x_pantheon_human_actor.strip():
                 raise HTTPException(
@@ -89,9 +88,6 @@ def install_hermes_handoff_preview_routes(
                 )
             return x_pantheon_human_actor.strip()
 
-    # The production Cockpit connector is raw and intentionally does not replay
-    # schema DDL on each request. Install the handoff snapshot table once at
-    # startup. Injected test connectors stay isolated.
     connect_fn = getattr(app.state, "connect_fn", None)
     if (
         getattr(connect_fn, "__module__", "") == "mvp_vertical.cockpit_shell"
@@ -105,14 +101,11 @@ def install_hermes_handoff_preview_routes(
             finally:
                 conn.close()
 
-        app.add_event_handler("startup", initialize_handoff_schema)
+        install_post_start_initializer(app, initialize_handoff_schema)
 
     def prepare(body: HermesHandoffPreviewBody) -> dict:
         if body.card_context_envelope.scope_widened_implicitly:
-            raise HTTPException(
-                status_code=422,
-                detail="Card Context Envelope may not widen scope implicitly",
-            )
+            raise HTTPException(status_code=422, detail="Card Context Envelope may not widen scope implicitly")
 
         envelope = body.card_context_envelope.model_dump()
         scope_resolution = {
@@ -126,20 +119,13 @@ def install_hermes_handoff_preview_routes(
             try:
                 resolved = use_connection(
                     lambda conn: card_scope.resolve_declared_descendants(
-                        conn,
-                        root_entity=envelope["root_entity"],
+                        conn, root_entity=envelope["root_entity"]
                     )
                 )
             except card_scope.CardScopeError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
-            envelope["descendants"] = [
-                *envelope.get("descendants", []),
-                *resolved["descendants"],
-            ]
-            envelope["source_refs"] = [
-                *envelope.get("source_refs", []),
-                *resolved["source_refs"],
-            ]
+            envelope["descendants"] = [*envelope.get("descendants", []), *resolved["descendants"]]
+            envelope["source_refs"] = [*envelope.get("source_refs", []), *resolved["source_refs"]]
             scope_resolution = {
                 "requested": True,
                 "policy": resolved["policy"],
@@ -156,11 +142,7 @@ def install_hermes_handoff_preview_routes(
             )
         except hermes_handoff_preview.HandoffPreviewError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {
-            **preview,
-            "scope_resolution": scope_resolution,
-            "resolved_card_context_envelope": envelope,
-        }
+        return {**preview, "scope_resolution": scope_resolution, "resolved_card_context_envelope": envelope}
 
     @app.post("/v1/cockpit/hermes-handoffs/preview")
     def preview_hermes_handoff(
@@ -194,7 +176,7 @@ def install_hermes_handoff_preview_routes(
             )
 
         try:
-            result = use_connection(
+            return use_connection(
                 lambda conn: hermes_handoff_store.submit_handoff(
                     conn,
                     actor=actor,
@@ -210,7 +192,6 @@ def install_hermes_handoff_preview_routes(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (hermes_handoff_store.HandoffSubmissionError, card_scope.CardScopeError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return result
 
     install_hermes_execution_routes(
         app,
