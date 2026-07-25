@@ -32,6 +32,7 @@ from . import (
 )
 from .agency_data_api import install_agency_data_routes
 from .cockpit_api import create_app
+from .hermes_handoff_api import install_hermes_handoff_preview_routes
 
 COCKPIT = Path(__file__).resolve().parent / "cockpit"
 _DEFAULT_INITIALIZER = object()
@@ -412,6 +413,10 @@ def create_cockpit_app(
         require_read_key=require_agency_read_key,
         require_writer_kind=require_agency_writer_kind,
         require_actor=require_agency_actor,
+    )
+    install_hermes_handoff_preview_routes(
+        app,
+        require_read_key=require_read_key,
     )
 
     if COCKPIT.is_dir():
