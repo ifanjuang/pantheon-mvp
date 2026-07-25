@@ -46,6 +46,15 @@ def _one(conn, sql: str, params: tuple, *, required: str | None = None) -> dict 
     return dict(row) if row else None
 
 
+def _work_issue_record(conn, issue_id: str) -> dict:
+    """Return only the Work Issue record from the governed projection."""
+    projection = work_issues.get_issue(conn, issue_id)
+    issue = projection.get("work_issue")
+    if not isinstance(issue, dict):
+        raise HermesExecutionError("Work Issue projection is missing its work_issue record")
+    return issue
+
+
 def _handoff(conn, handoff_id: str, lock: bool = False) -> dict:
     return _one(
         conn,
@@ -98,7 +107,7 @@ def _state(conn, admission: dict, issue: dict, run: dict | None) -> tuple[str, d
 
 
 def _projection(conn, admission: dict) -> dict:
-    issue = work_issues.get_issue(conn, admission["work_issue_id"])
+    issue = _work_issue_record(conn, admission["work_issue_id"])
     run = _run(conn, admission["admission_id"])
     state, revoked = _state(conn, admission, issue, run)
     return {
@@ -142,7 +151,7 @@ def admit_handoff(conn, *, handoff_id: str, actor: str, idempotency_key: str, tt
 
         handoff = _handoff(conn, handoff_id, True)
         conn.execute("SELECT issue_id FROM work_issues WHERE issue_id=%s FOR UPDATE", (handoff["work_issue_id"],))
-        issue = work_issues.get_issue(conn, handoff["work_issue_id"])
+        issue = _work_issue_record(conn, handoff["work_issue_id"])
         if issue["assigned_to"] != "hermes": raise AdmissionConflict("Work Issue is not assigned to Hermes")
         if issue["requested_effect"] != "read_only" or handoff["requested_effect"] != "read_only":
             raise AdmissionConflict("first execution-admission slice accepts read_only work only")
@@ -223,7 +232,7 @@ def record_external_runtime_start(conn, *, admission_id: str, run_id: str, actor
         if existing:
             if existing["run_id"] != run_id: raise RuntimeStartConflict("admission already consumed by another run")
             return {"admission_id":admission_id,"run_id":run_id,"runtime_start_recorded":True,"replayed":True,
-                    "work_issue":work_issues.get_issue(conn, admission["work_issue_id"])}
+                    "work_issue":_work_issue_record(conn, admission["work_issue_id"])}
         current = _projection(conn, admission)
         if current["admission_state"] != "admitted":
             raise RuntimeStartConflict(f"execution admission is not consumable; current state is {current['admission_state']}")
@@ -240,4 +249,4 @@ def record_external_runtime_start(conn, *, admission_id: str, run_id: str, actor
             cur.execute("UPDATE hermes_runs SET admission_ref=%s WHERE run_id=%s AND admission_ref IS NULL", (admission_id,run_id))
             if cur.rowcount != 1: raise RuntimeStartConflict("Hermes run admission linkage could not be recorded")
         return {"admission_id":admission_id,"run_id":run_id,"runtime_start_recorded":True,"replayed":False,
-                "work_issue":started,"non_equivalences":["runtime start recorded != Evidence","running != task success"]}
+                "work_issue":started["work_issue"],"non_equivalences":["runtime start recorded != Evidence","running != task success"]}
