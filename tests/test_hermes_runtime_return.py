@@ -62,9 +62,11 @@ def test_result_candidate_moves_issue_to_review_without_closing_or_admitting_evi
         conn, admission_id=admission["admission_id"], run_id=run_id, actor="hermes-adapter",
         expected_issue_version=issue["version"], idempotency_key=_id("runtime-return"),
         normalized_return={
-            "outcome": "result_candidate", "summary": "Analyse terminée, à relire.",
-            "trace_refs": ["hermes://trace/run-1"], "source_refs": [],
-            "evidence_candidate_refs": [], "limitations": [], "open_questions": [],
+            "outcome": "result_candidate",
+            "summary": "Analyse terminée, à relire.",
+            "result_refs": [],
+            "trace_refs": ["hermes://trace/run-1"],
+            "evidence_candidate_refs": [],
         },
     )
     assert result["runtime_return_recorded"] is True
@@ -89,6 +91,28 @@ def test_partial_return_waits_and_same_material_event_can_replay(conn) -> None:
     assert first["runtime_status"] == "partial"
     assert replay["work_issue"]["status"] == "waiting"
     assert replay["runtime_status"] == "partial"
+
+
+def test_direct_adapter_refuses_unimplemented_rich_return_fields(conn) -> None:
+    admission, issue, run_id = _running(conn)
+    with pytest.raises(
+        hermes_runtime_return.HermesRuntimeReturnError,
+        match="unsupported normalized Hermes return field",
+    ):
+        hermes_runtime_return.record_external_runtime_return(
+            conn,
+            admission_id=admission["admission_id"],
+            run_id=run_id,
+            actor="hermes-adapter",
+            expected_issue_version=issue["version"],
+            idempotency_key=_id("runtime-return"),
+            normalized_return={
+                "outcome": "result_candidate",
+                "summary": "Analyse à relire.",
+                "trace_refs": ["hermes://trace/run-rich"],
+                "source_refs": ["nas://project/source.pdf"],
+            },
+        )
 
 
 def test_return_for_wrong_admission_is_refused(conn) -> None:
