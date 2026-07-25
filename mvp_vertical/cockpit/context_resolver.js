@@ -8,9 +8,9 @@
     "*": { key: "global", label: "Recherche globale" },
   });
 
-  // More than one owner/provider may contribute to a namespace. This matters for
-  // the global resolver, where Notion, Documents, Knowledge and other bounded
-  // sources may coexist without one registration silently replacing another.
+  // More than one bounded provider may contribute to a namespace. This matters
+  // for global search, where Agency Data, Documents, Knowledge and other sources
+  // may coexist without one registration silently replacing another.
   const providers = new Map();
 
   function normalize(value) {
@@ -65,8 +65,20 @@
 
     const label = normalize(item.label || item.title || item.display_name);
     if (namespace === "_") {
+      if (label === query) return { score: 110, matched_field: "label", match_reason: "exact" };
       if (label.startsWith(query)) return { score: 100, matched_field: "label", match_reason: "prefix" };
       if (label.includes(query)) return { score: 70, matched_field: "label", match_reason: "contains" };
+      const projectAliases = aliases(item).map(normalize);
+      if (projectAliases.some(value => value === query)) {
+        return { score: 105, matched_field: "alias", match_reason: "exact" };
+      }
+      if (projectAliases.some(value => value.startsWith(query))) {
+        return { score: 95, matched_field: "alias", match_reason: "prefix" };
+      }
+      const projectTerms = searchTerms(item).map(normalize);
+      if (projectTerms.some(value => value === query || value.startsWith(query))) {
+        return { score: 85, matched_field: "metadata", match_reason: "identity_prefix" };
+      }
       return { score: 0, matched_field: null, match_reason: null };
     }
 
