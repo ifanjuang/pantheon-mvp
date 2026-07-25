@@ -67,6 +67,30 @@ hermes_runs_api_observer: implemented_candidate_not_connected
 # the active api_server tool surface to an explicit reviewed allowlist. It never
 # POSTs /v1/runs, stops a run, resolves an approval or changes activation.
 # reachable != safe; compatible Runs API != run authorized.
+hermes_run_launch_reservation: implemented_candidate_not_connected
+# 007_hermes_run_launch_reservations.sql + hermes_launch_context.py create one
+# immutable launch reservation and bounded launch snapshot per admitted run.
+# State advances admitted -> launch_reserved -> consumed; launch_expired is a
+# lazy projection. Reservation closes the revocation window but performs no
+# runtime submission and creates no queue/scheduler/retry worker.
+hermes_runs_external_binding: implemented_candidate_not_connected
+# hermes_run_binding.py is the execution-side client that, only after a qualified
+# Runs API/tool surface observation and exact launch reservation, may POST exactly
+# one /v1/runs request and report the returned run_id. Network ambiguity never
+# triggers automatic retry. Provider/model routing remains inside Hermes.
+hermes_active_context_bridge: implemented_candidate_not_connected
+# hermes_active_context.py resolves one exact running run server-side from the
+# admission identity, then delegates to the bounded scoped-context reader. The
+# caller does not supply a run_id and cannot gain global Agency Data access.
+hermes_context_plugin: implemented_candidate_not_installed
+# hermes/plugins/pantheon-context-bridge registers only pantheon_context_manifest
+# and pantheon_context_entity. Neither schema accepts admission_id/run_id. The
+# plugin derives the admission from Hermes host task_id and fails closed unless it
+# is an admission-* identity. Exact live v0.19 task_id == submitted session_id
+# behavior remains to verify before installation/enablement/activation.
+hermes_run_launch_junction_ci: green_on_pr_75_candidate
+# PR #75 acceptance suite and contract-tests pass on the transaction-boundary
+# hardened candidate. test_pass != adoption and no live Hermes target was called.
 human_issuer_signing: implemented_not_connected   # decision_signing.py: producer
 # that signs a decision so the PDP (with an issuer key registry) authenticates
 # who decided. apply_knowledge_update accepts an optional issuer_signing_secret.
@@ -107,6 +131,11 @@ external_repo != Pantheon runtime
 Hermes API reachable != Hermes safe for admitted scope
 Runs API available != run authorized
 toolset configured != toolset approved
+launch reservation != dispatch
+launch reservation != Hermes run
+session_id correlation != memory promotion
+plugin installed != approved
+plugin enabled != activated
 ```
 
 ## Adoption gates
