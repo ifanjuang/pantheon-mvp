@@ -42,6 +42,22 @@
     color: rgb(255 255 255 / 48%);
   }
 
+  .v2-handoff-option {
+    display: flex;
+    gap: .5rem;
+    align-items: flex-start;
+    color: rgb(255 255 255 / 72%);
+    font-size: .7rem;
+    line-height: 1.35;
+    cursor: pointer;
+  }
+
+  .v2-handoff-option input {
+    width: auto;
+    margin-top: .1rem;
+    accent-color: var(--white);
+  }
+
   .v2-handoff-actions {
     display: flex;
     gap: .5rem;
