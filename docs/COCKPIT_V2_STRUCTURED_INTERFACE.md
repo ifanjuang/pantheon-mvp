@@ -1,6 +1,6 @@
 # Cockpit V2 — structured agency interface foundation
 
-Status: executable candidate — partial / not production-authorized.
+Status: executable candidate — partial / current branch CI validation pending / not production-authorized.
 
 This document records the implementation state of the Cockpit V2 branch in `pantheon-mvp`.
 
@@ -28,18 +28,18 @@ Hermes runtime success != Evidence
 ## Current implementation map
 
 ```text
-Agency Data PostgreSQL                    implemented candidate
-Agency Data bounded HTTP API              implemented candidate
-Cockpit V2 spatial route                  implemented candidate
-Universal Card projections                implemented candidate
-Live Context Resolver                     implemented candidate
-Project → Intervenants hierarchy          implemented candidate
-Hermes handoff preview                     implemented candidate
-Human Work Issue submission               implemented candidate
-Read-only execution admission             implemented candidate
-Hermes envelope lookup by admission_id    implemented candidate
-Hermes runtime-start callback record      implemented candidate
-Hermes normalized return callback         implemented candidate
+Agency Data PostgreSQL                    implemented candidate / CI to verify
+Agency Data bounded HTTP API              implemented candidate / CI to verify
+Cockpit V2 spatial route                  implemented candidate / CI to verify
+Universal Card projections                implemented candidate / CI to verify
+Live Context Resolver                     implemented candidate / CI to verify
+Project → Intervenants hierarchy          implemented candidate / CI to verify
+Hermes handoff preview                    implemented candidate / CI to verify
+Human Work Issue submission               implemented candidate / CI to verify
+Read-only execution admission             implemented candidate / CI to verify
+Hermes envelope lookup by admission_id    implemented candidate / CI to verify
+Hermes runtime-start callback record      implemented candidate / CI to verify
+Hermes normalized return callback         implemented candidate / CI to verify
 Live Hermes transport / dispatcher        not implemented
 Admission expiry / revocation / retry     not implemented
 Notion live synchronization               not implemented
@@ -69,15 +69,7 @@ agency_project_events
 
 `agency_project_events` is append-only.
 
-Project mutations use:
-
-- explicit actor identity;
-- optimistic revision checks;
-- idempotency keys;
-- a bounded field allowlist;
-- append-only material events.
-
-There is no generic SQL endpoint.
+Project mutations use explicit actor identity, optimistic revision checks, idempotency keys, a bounded field allowlist and append-only material events. There is no generic SQL endpoint.
 
 ### Read API
 
@@ -157,17 +149,7 @@ _  Projects
 *  Projects + People + Organizations + ProjectParticipations
 ```
 
-Behavior:
-
-- accent/case normalization;
-- project code recognized as an identity alias;
-- multiple providers per namespace;
-- provider failure isolation;
-- stable identity deduplication;
-- `matched_field` / `match_reason`;
-- debounce;
-- stale-response protection;
-- explicit selection only.
+Behavior includes accent/case normalization, project-code identity aliasing, multiple providers per namespace, provider-failure isolation, stable identity deduplication, match explanations, debounce, stale-response protection and explicit selection only.
 
 ```text
 search result != selected context
@@ -247,12 +229,7 @@ None of these steps starts Hermes from the Cockpit.
 POST /v1/cockpit/hermes-handoffs/preview
 ```
 
-Produces deterministic candidate snapshots:
-
-```text
-Task Contract Candidate
-Context Pack Candidate
-```
+Produces deterministic `Task Contract Candidate` and `Context Pack Candidate` snapshots.
 
 Current Card Context:
 
@@ -265,15 +242,7 @@ current Card
 
 Declared descendants are resolved server-side. DOM nesting is not a scope boundary.
 
-For a Project the current policy may include:
-
-```text
-ProjectParticipations
-Documents directly owned by the Project
-Document source_refs
-```
-
-It does not silently include all Knowledge, other Projects or the whole database.
+For a Project the current policy may include ProjectParticipations, Documents directly owned by the Project and Document source refs. It does not silently include all Knowledge, other Projects or the whole database.
 
 The preview exposes:
 
@@ -288,23 +257,9 @@ requested_effect = read_only
 POST /v1/cockpit/hermes-handoffs/submit
 ```
 
-Requires:
+Requires editor credential, `X-Pantheon-Human-Actor`, exact preview/Task Contract/Context Pack identity and idempotency.
 
-- editor credential;
-- `X-Pantheon-Human-Actor`;
-- the exact preview digest;
-- exact Task Contract ref;
-- exact Context Pack ref;
-- idempotency key.
-
-The server recalculates the preview before persistence.
-
-If it changed:
-
-```text
-HTTP 409
-prepare again
-```
+The server recalculates the preview before persistence. A stale preview returns HTTP 409.
 
 A valid submission persists:
 
@@ -333,7 +288,7 @@ mvp_vertical/hermes_execution_api.py
 mvp_vertical/hermes_runtime_return.py
 ```
 
-Current doctrine counterpart:
+Doctrine counterpart:
 
 ```text
 Pantheon-Next/docs/governance/HERMES_EXECUTION_ADMISSION_BRIDGE.md
@@ -356,30 +311,13 @@ one admission
 one consuming Hermes run
 ```
 
-Admission checks that the Work Issue is still:
+Admission verifies that the Work Issue is still open, assigned to Hermes, bound to the same Task Contract and Context Pack and unused by a Hermes run.
 
-- open;
-- assigned to Hermes;
-- bound to the same Task Contract;
-- bound to the same Context Pack;
-- unused by any Hermes run.
-
-The immutable record is stored in:
+The immutable record is stored in `hermes_execution_admissions`.
 
 ```text
-hermes_execution_admissions
-```
-
-The admission response may say:
-
-```text
-ready_for_external_runtime = true
-```
-
-This is eligibility, not dispatch.
-
-```text
-admission != dispatch
+ready_for_external_runtime = eligibility
+ready_for_external_runtime != dispatch
 admission != Hermes run
 ```
 
@@ -387,7 +325,7 @@ admission != Hermes run
 
 The Cockpit never calls runtime-start or runtime-return routes.
 
-Only the external Hermes adapter may use the Hermes credential to access the runtime-facing surface.
+Only an external Hermes adapter with the Hermes credential may access the runtime-facing surface.
 
 ### Exact envelope lookup
 
@@ -395,22 +333,7 @@ Only the external Hermes adapter may use the Hermes credential to access the run
 GET /v1/hermes/execution-admissions/{admission_id}
 ```
 
-Returns the exact admitted Task Contract / Context Pack snapshots by ID.
-
-It does not expose a pending-work collection.
-
-Deliberately absent:
-
-```text
-GET /v1/hermes/execution-admissions
-claim-next-job
-pending queue
-lease
-scheduler
-retry worker
-```
-
-PostgreSQL is the governed record, not an execution queue.
+There is deliberately no pending-work collection, `claim-next-job`, lease, scheduler or retry-worker endpoint.
 
 ### Runtime start callback
 
@@ -420,9 +343,7 @@ After Hermes has started itself externally:
 POST /v1/hermes/execution-admissions/{admission_id}/runs/start
 ```
 
-The caller supplies the real external `run_id`.
-
-Pantheon validates the admission and current Work Issue, then records the Hermes run observation.
+The external adapter supplies the real `run_id`. Pantheon validates and records the observation.
 
 ```text
 runtime-start callback != command to start
@@ -438,7 +359,7 @@ After execution:
 POST /v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/return
 ```
 
-Current normalized outcomes:
+Normalized outcomes:
 
 ```text
 result_candidate
@@ -447,23 +368,15 @@ failed
 capability_gap
 ```
 
-A normalized return requires at least:
+A return requires `outcome`, `summary` and `trace_refs`; optional fields can carry source refs, Evidence candidates, limitations and open questions.
+
+Current issue projection:
 
 ```text
-outcome
-summary
-trace_refs
-```
-
-Optional candidate references include sources, Evidence candidates, limitations and open questions.
-
-Result handling remains conservative:
-
-```text
-result_candidate -> Work Issue review
-partial          -> Work Issue waiting
-failed           -> Work Issue waiting
-capability_gap   -> Work Issue waiting
+result_candidate -> review
+partial          -> waiting
+failed           -> waiting
+capability_gap   -> waiting
 ```
 
 The callback explicitly returns:
@@ -488,7 +401,7 @@ runtime success != governance success
 
 No verified live Hermes client/endpoint exists in this repo.
 
-The implementation therefore stops at a runtime-facing contract:
+The implementation therefore stops at the runtime-facing contract:
 
 ```text
 human creates admission
@@ -502,13 +415,11 @@ Hermes fetches exact envelope
 Hermes starts itself
 ```
 
-The middle delivery/binding step is not implemented here.
-
-Pantheon does not invent it and does not become a dispatcher to compensate.
+The delivery/binding step is not implemented here. Pantheon does not invent it and does not become a dispatcher to compensate.
 
 ### Admission lifecycle gaps
 
-Before production runtime activation, the following require an explicit design:
+Before production runtime activation, explicit design is still required for:
 
 ```text
 expiry
@@ -528,17 +439,7 @@ one admission = one execution opportunity
 
 ### Consequential effects
 
-The execution admission currently covers `read_only` work only.
-
-It is not authority for:
-
-- Agency Data consequential mutation;
-- external email/message transmission;
-- repository mutation;
-- document transmission;
-- canonical memory or Evidence promotion;
-- installation;
-- capability activation.
+The execution admission currently covers `read_only` work only. It is not authority for Agency Data consequential mutation, external communication, repository mutation, document transmission, memory/Evidence promotion, installation or capability activation.
 
 Those effects retain their own Pantheon gate requirements.
 
@@ -546,19 +447,11 @@ Those effects retain their own Pantheon gate requirements.
 
 `mvp_vertical/cockpit/notion_agency_binding.js` remains an optional collaboration contract over PostgreSQL-owned Agency Data.
 
-Supported posture vocabulary:
-
 ```text
-disabled
-mirror_read_only
-selective_bidirectional
-```
-
-A Notion edit is never automatically authoritative.
-
-```text
-Notion editable != Notion authoritative
+Notion projection != system of record
+Notion editable != unrestricted write authority
 sync success != Evidence
+Notion permission != Hermes execution admission
 ```
 
 The live synchronization adapter remains unimplemented.
@@ -567,22 +460,20 @@ The live synchronization adapter remains unimplemented.
 
 ### Pantheon governs
 
-- scope;
-- effect ceiling;
+- scope and effect ceiling;
 - exact candidate contract/context binding;
 - human execution admission;
 - validation of runtime callbacks;
-- observed run status;
-- Evidence/approval boundaries.
+- observed run state;
+- downstream Evidence/approval boundaries.
 
 ### Hermes executes
 
 - actual runtime start;
-- tools;
-- subagents/workers;
+- tools/subagents/workers;
 - provider/model choice;
-- runtime retries within admitted authority;
-- runtime run IDs;
+- runtime scheduling/retries within admitted authority;
+- real run IDs;
 - execution traces.
 
 ### Cockpit exposes
@@ -604,9 +495,8 @@ Current conservative first slice:
 ### Forbidden
 
 - Pantheon as runtime;
-- Pantheon as queue/scheduler;
-- Cockpit calling runtime-start callbacks;
-- PostgreSQL as `claim next work` queue;
+- Pantheon/PostgreSQL as execution queue or scheduler;
+- Cockpit calling runtime-start/runtime-return callbacks;
 - Pantheon provider routing;
 - automatic downstream consequential authority;
 - runtime success treated as Evidence.
@@ -614,7 +504,7 @@ Current conservative first slice:
 ## Next slices
 
 ```text
-1 validate current CI and PostgreSQL acceptance tests
+1 validate current head CI and PostgreSQL acceptance tests
 2 design admission expiry / revocation / stale invalidation
 3 define a real external Hermes delivery binding only after observing its actual API/runtime surface
 4 add bounded Person / Organization / Participation mutation policies
@@ -641,4 +531,4 @@ PostgreSQL system of record != Pantheon governance authority
 Notion projection != system of record
 ```
 
-The legacy Cockpit remains available. `v2.html` and all execution-admission behavior on this branch remain candidate implementation until reviewed, CI-validated and explicitly adopted for production.
+The legacy Cockpit remains available. `v2.html` and the execution-admission bridge remain candidate implementation until reviewed, CI-validated and explicitly adopted for production.
