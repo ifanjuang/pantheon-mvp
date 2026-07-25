@@ -13,7 +13,7 @@ class _Connection:
         pass
 
 
-def test_agency_project_list_accepts_cockpit_and_hermes_read_keys(monkeypatch) -> None:
+def test_agency_project_list_accepts_cockpit_but_refuses_hermes_global_read(monkeypatch) -> None:
     observed = []
 
     def list_projects(_conn, *, query, limit):
@@ -41,8 +41,9 @@ def test_agency_project_list_accepts_cockpit_and_hermes_read_keys(monkeypatch) -
         "/v1/agency/projects",
         headers={"Authorization": "Bearer hermes-key"},
     )
-    assert hermes.status_code == 200
-    assert observed == [("lie", 20), (None, 100)]
+    assert hermes.status_code == 403
+    assert "admitted scoped execution envelope" in hermes.json()["detail"]
+    assert observed == [("lie", 20)]
 
 
 def test_agency_directory_routes_are_normalized_and_read_only(monkeypatch) -> None:
@@ -89,17 +90,13 @@ def test_agency_directory_routes_are_normalized_and_read_only(monkeypatch) -> No
     assert participations.json()["participations"][0]["role"] == "BET STRUCTURE"
 
 
-def test_hermes_reversible_project_update_is_bounded_and_does_not_infer_approval(monkeypatch) -> None:
-    observed = {}
+def test_hermes_direct_project_update_is_refused_before_adapter_execution(monkeypatch) -> None:
+    called = False
 
-    def update_project(_conn, **values):
-        observed.update(values)
-        return {
-            "project_id": values["project_id"],
-            "description": values["changes"]["description"],
-            "revision": values["expected_revision"] + 1,
-            "owner_system": "postgres",
-        }
+    def update_project(_conn, **_values):
+        nonlocal called
+        called = True
+        raise AssertionError("Hermes global write must not reach Agency Data adapter")
 
     monkeypatch.setattr(agency_data, "update_project", update_project)
     client = TestClient(
@@ -122,21 +119,18 @@ def test_hermes_reversible_project_update_is_bounded_and_does_not_infer_approval
             "description": "Description de travail enrichie.",
         },
     )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["effect"] == "internal_agency_data_write"
-    assert payload["approval_inferred"] is False
-    assert observed["actor_kind"] == "hermes"
-    assert observed["actor"] == "hermes-agency-adapter"
-    assert observed["changes"] == {"description": "Description de travail enrichie."}
-    assert observed["expected_revision"] == 4
+    assert response.status_code == 403
+    assert "admitted bounded capability" in response.json()["detail"]
+    assert called is False
 
 
-def test_hermes_consequential_field_surfaces_missing_governance_gate(monkeypatch) -> None:
+def test_hermes_consequential_project_update_is_also_refused_at_global_boundary(monkeypatch) -> None:
+    called = False
+
     def update_project(_conn, **_values):
-        raise agency_data.GovernanceGateRequired(
-            "Hermes Agency Data mutation requires a verifiable Pantheon gate for field(s): phase"
-        )
+        nonlocal called
+        called = True
+        raise AssertionError("Hermes global write must not reach Agency Data adapter")
 
     monkeypatch.setattr(agency_data, "update_project", update_project)
     client = TestClient(
@@ -158,8 +152,8 @@ def test_hermes_consequential_field_surfaces_missing_governance_gate(monkeypatch
             "phase": "DCE",
         },
     )
-    assert response.status_code == 409
-    assert "verifiable Pantheon gate" in response.json()["detail"]
+    assert response.status_code == 403
+    assert called is False
 
 
 def test_editor_project_create_is_recorded_as_human_actor(monkeypatch) -> None:
@@ -210,7 +204,7 @@ def test_agency_write_requires_actor_and_writer_key() -> None:
     }
     missing_actor = client.patch(
         "/v1/agency/projects/project-lieurey",
-        headers={"Authorization": "Bearer hermes-key"},
+        headers={"Authorization": "Bearer editor-key"},
         json=body,
     )
     assert missing_actor.status_code == 422
@@ -219,7 +213,7 @@ def test_agency_write_requires_actor_and_writer_key() -> None:
         "/v1/agency/projects/project-lieurey",
         headers={
             "Authorization": "Bearer wrong-key",
-            "X-Pantheon-Actor": "hermes-agency-adapter",
+            "X-Pantheon-Actor": "human-editor",
         },
         json=body,
     )
