@@ -2,10 +2,12 @@
   "use strict";
 
   const $ = id => document.getElementById(id);
+  const ACTIVE_ADMISSION_KEY = "pantheon-active-hermes-admission";
   let selectedContext = [];
   let prepared = null;
   let submitted = null;
   let admitted = null;
+  let lastAdmission = null;
   let generation = 0;
 
   const token = () => $("v2-token")?.value || "";
@@ -51,12 +53,11 @@
     const human = actor();
     $("v2-handoff-submit").disabled = !prepared || !human || Boolean(submitted);
     $("v2-handoff-admit").disabled = !submitted || !human || !ttlSeconds() || Boolean(admitted);
-    $("v2-handoff-revoke").disabled = !admitted || admitted.admission_state !== "admitted" || !human || revokeReason().length < 3;
+    $("v2-handoff-revoke").disabled = !lastAdmission || lastAdmission.admission_state !== "admitted" || !human || revokeReason().length < 3;
   }
 
   function rows(host, values) {
-    const dl = document.createElement("dl");
-    dl.className = "v2-handoff-refs";
+    const dl = document.createElement("dl"); dl.className = "v2-handoff-refs";
     values.forEach(([name, value]) => {
       const dt = document.createElement("dt"); dt.textContent = name;
       const dd = document.createElement("dd"); dd.textContent = String(value ?? "—");
@@ -86,7 +87,9 @@
     $("v2-handoff-preview").append(s);
   }
 
-  function renderAdmission(payload, title = "Admission créée") {
+  function renderAdmission(payload, title = "Admission créée", replace = false) {
+    const host = $("v2-handoff-preview");
+    if (replace) host.replaceChildren();
     const s = document.createElement("section"); s.className = "v2-handoff-receipt v2-handoff-receipt--admission";
     const h = document.createElement("strong"); h.textContent = title; s.append(h);
     rows(s, [
@@ -97,16 +100,33 @@
     ]);
     const p = document.createElement("p"); p.className = "v2-handoff-warning";
     p.textContent = "Pantheon n’a rien dispatché. L’expiration est vérifiée à la demande, sans scheduler."; s.append(p);
-    $("v2-handoff-preview").append(s);
+    host.append(s);
   }
 
-  async function request(url, body, humanActor = false) {
+  async function post(url, body, humanActor = false) {
     const headers = { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" };
     if (humanActor) headers["X-Pantheon-Human-Actor"] = actor();
     const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({ detail: response.statusText }));
     if (!response.ok) throw new Error(payload.detail || response.statusText);
     return payload;
+  }
+
+  async function refreshLastAdmission({ render = true } = {}) {
+    const admissionId = sessionStorage.getItem(ACTIVE_ADMISSION_KEY);
+    if (!admissionId || !token()) return;
+    try {
+      const response = await fetch(`../v1/cockpit/hermes-execution-admissions/${encodeURIComponent(admissionId)}`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      const payload = await response.json().catch(() => ({ detail: response.statusText }));
+      if (!response.ok) throw new Error(payload.detail || response.statusText);
+      lastAdmission = payload;
+      if (render) renderAdmission(payload, "Dernière admission", true);
+      buttons();
+    } catch (e) {
+      $("v2-handoff-message").textContent = `Admission mémorisée non relue : ${e.message}`;
+    }
   }
 
   async function prepare() {
@@ -116,7 +136,7 @@
     $("v2-handoff-message").textContent = "Préparation…";
     try {
       const req = baseRequest();
-      const payload = await request("../v1/cockpit/hermes-handoffs/preview", req);
+      const payload = await post("../v1/cockpit/hermes-handoffs/preview", req);
       if (mine !== generation) return;
       prepared = { req, payload, submitKey: key("handoff-submit") };
       renderPrepared(payload);
@@ -129,9 +149,8 @@
     if (!prepared || !actor()) return;
     try {
       const p = prepared.payload;
-      const payload = await request("../v1/cockpit/hermes-handoffs/submit", {
-        ...prepared.req,
-        expected_preview_digest: p.preview_digest,
+      const payload = await post("../v1/cockpit/hermes-handoffs/submit", {
+        ...prepared.req, expected_preview_digest: p.preview_digest,
         expected_task_contract_ref: p.task_contract.task_contract_ref,
         expected_context_pack_ref: p.context_pack.context_pack_ref,
         idempotency_key: prepared.submitKey,
@@ -147,10 +166,12 @@
   async function admit() {
     if (!submitted || !actor() || !ttlSeconds()) return;
     try {
-      const payload = await request(`../v1/cockpit/hermes-handoffs/${encodeURIComponent(submitted.payload.handoff_id)}/admissions`, {
+      const payload = await post(`../v1/cockpit/hermes-handoffs/${encodeURIComponent(submitted.payload.handoff_id)}/admissions`, {
         ttl_seconds: ttlSeconds(), idempotency_key: submitted.admissionKey,
       }, true);
       admitted = payload;
+      lastAdmission = payload;
+      sessionStorage.setItem(ACTIVE_ADMISSION_KEY, payload.admission_id);
       renderAdmission(payload);
       $("v2-handoff-message").textContent = "Admission bornée créée. Pantheon n’a pas lancé Hermes.";
     } catch (e) { $("v2-handoff-message").textContent = `Admission refusée : ${e.message}`; }
@@ -158,13 +179,14 @@
   }
 
   async function revoke() {
-    if (!admitted || admitted.admission_state !== "admitted" || revokeReason().length < 3) return;
+    if (!lastAdmission || lastAdmission.admission_state !== "admitted" || revokeReason().length < 3) return;
     try {
-      const payload = await request(`../v1/cockpit/hermes-execution-admissions/${encodeURIComponent(admitted.admission_id)}/revocations`, {
+      const payload = await post(`../v1/cockpit/hermes-execution-admissions/${encodeURIComponent(lastAdmission.admission_id)}/revocations`, {
         reason: revokeReason(), idempotency_key: key("admission-revoke"),
       }, true);
-      admitted = payload;
-      renderAdmission(payload, "Admission révoquée");
+      lastAdmission = payload;
+      if (admitted?.admission_id === payload.admission_id) admitted = payload;
+      renderAdmission(payload, "Admission révoquée", true);
       $("v2-handoff-message").textContent = "Admission révoquée avant consommation.";
     } catch (e) { $("v2-handoff-message").textContent = `Révocation refusée : ${e.message}`; }
     buttons();
@@ -173,15 +195,16 @@
   function invalidate(message) {
     generation += 1; prepared = submitted = admitted = null;
     $("v2-handoff-preview")?.replaceChildren();
+    if (lastAdmission) renderAdmission(lastAdmission, "Dernière admission", false);
     if (message) $("v2-handoff-message").textContent = message;
     scopeLabel(); buttons();
   }
 
   document.addEventListener("pantheon:v2-context-changed", e => {
     selectedContext = Array.isArray(e.detail?.selected) ? e.detail.selected : [];
-    invalidate("Contexte modifié : préparez à nouveau.");
+    invalidate("Contexte modifié : le brouillon est effacé, l’admission existante reste traçable.");
   });
-  new MutationObserver(() => invalidate("Carte modifiée : préparez à nouveau.")).observe($("v2-stage"), { childList: true });
+  new MutationObserver(() => invalidate("Carte modifiée : le brouillon est effacé, l’admission existante reste traçable.")).observe($("v2-stage"), { childList: true });
 
   $("v2-handoff-prepare")?.addEventListener("click", () => void prepare());
   $("v2-handoff-submit")?.addEventListener("click", () => void submit());
@@ -190,8 +213,10 @@
   $("v2-handoff-question")?.addEventListener("input", () => invalidate("Question modifiée : préparez à nouveau."));
   $("v2-handoff-descendants")?.addEventListener("change", () => invalidate("Scope modifié : préparez à nouveau."));
   ["v2-handoff-actor", "v2-handoff-ttl", "v2-handoff-revoke-reason"].forEach(id => $(id)?.addEventListener("input", buttons));
+  $("v2-token")?.addEventListener("change", () => void refreshLastAdmission());
 
   const remembered = sessionStorage.getItem("pantheon-human-actor");
   if (remembered && $("v2-handoff-actor")) $("v2-handoff-actor").value = remembered;
   scopeLabel(); buttons();
+  void refreshLastAdmission();
 })();
