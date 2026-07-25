@@ -55,9 +55,18 @@ capability_management_slice: implemented_not_connected   # capability_manager.py
 knowledge_update_chokepoint: wired_not_connected   # apply_knowledge_update takes
 # an optional policy_client; when set, the write routes through the chokepoint
 # before any DB access. A live PDP is still not configured here.
-capability_executor_http: implemented_not_connected   # HermesCapabilityExecutor:
-# real HTTP executor asking Hermes to perform one native operation; native-op
-# path to-verify against a real 0.19 install.
+capability_executor_http: implemented_transport_requires_verified_binding
+# HermesCapabilityExecutor remains a generic externally-injected HTTP transport,
+# but the former assumed default /v1/capabilities:operate is retired. It is not
+# part of the verified Hermes Agent v0.19 public stable API. A caller must provide
+# an explicitly reviewed native capability-operation endpoint; /v1/runs is not
+# treated as install/enable/update semantics.
+hermes_runs_api_observer: implemented_candidate_not_connected
+# hermes_runs_observer.py reads only /v1/capabilities and /v1/toolsets. It can
+# verify run_submission/run_status/run_events_sse/run_stop support and compare
+# the active api_server tool surface to an explicit reviewed allowlist. It never
+# POSTs /v1/runs, stops a run, resolves an approval or changes activation.
+# reachable != safe; compatible Runs API != run authorized.
 human_issuer_signing: implemented_not_connected   # decision_signing.py: producer
 # that signs a decision so the PDP (with an issuer key registry) authenticates
 # who decided. apply_knowledge_update accepts an optional issuer_signing_secret.
@@ -95,6 +104,9 @@ source_declared != path_safe
 stand_in_runner != Hermes Agent
 terminal_gate != OpenWebUI cockpit
 external_repo != Pantheon runtime
+Hermes API reachable != Hermes safe for admitted scope
+Runs API available != run authorized
+toolset configured != toolset approved
 ```
 
 ## Adoption gates
