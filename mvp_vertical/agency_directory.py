@@ -28,6 +28,10 @@ class OrganizationNotFound(AgencyDirectoryError):
     pass
 
 
+class ParticipationNotFound(AgencyDirectoryError):
+    pass
+
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
@@ -133,6 +137,32 @@ def get_organization(conn: psycopg.Connection, organization_id: str) -> dict:
         row = cur.fetchone()
     if row is None:
         raise OrganizationNotFound(f"unknown Agency Organization: {organization_id}")
+    return _jsonable(dict(row))
+
+
+def get_participation(conn: psycopg.Connection, participation_id: str) -> dict:
+    """Return one exact ProjectParticipation without invoking a directory search."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT p.*,
+                   person.display_name AS person_name,
+                   org.name AS organization_name,
+                   project.display_name AS project_name,
+                   project.code AS project_code
+              FROM agency_project_participations p
+              JOIN agency_projects project ON project.project_id = p.project_id
+              LEFT JOIN agency_people person ON person.person_id = p.person_id
+              LEFT JOIN agency_organizations org ON org.organization_id = p.organization_id
+             WHERE p.participation_id = %s
+            """,
+            (participation_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        raise ParticipationNotFound(
+            f"unknown Agency ProjectParticipation: {participation_id}"
+        )
     return _jsonable(dict(row))
 
 
