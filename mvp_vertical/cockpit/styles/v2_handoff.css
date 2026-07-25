@@ -1,0 +1,142 @@
+@layer components {
+  .v2-hermes-dock {
+    width: min(36rem, calc(100vw - 1rem));
+  }
+
+  .v2-handoff-shell {
+    display: grid;
+    gap: .7rem;
+    width: 100%;
+  }
+
+  .v2-handoff-head {
+    display: flex;
+    gap: .7rem;
+    align-items: center;
+  }
+
+  .v2-handoff-scope {
+    display: block;
+    max-width: 26rem;
+    overflow: hidden;
+    color: rgb(255 255 255 / 70%);
+    font-size: .72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v2-handoff-question {
+    width: 100%;
+    min-height: 2.6rem;
+    resize: vertical;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: .75rem;
+    padding: .65rem .75rem;
+    background: rgb(255 255 255 / 9%);
+    color: var(--white);
+    font: inherit;
+    line-height: 1.35;
+  }
+
+  .v2-handoff-question::placeholder {
+    color: rgb(255 255 255 / 48%);
+  }
+
+  .v2-handoff-actions {
+    display: flex;
+    gap: .5rem;
+  }
+
+  .v2-handoff-actions button {
+    flex: 1 1 auto;
+    border: 1px solid rgb(255 255 255 / 22%);
+    border-radius: 999px;
+    padding: .55rem .75rem;
+    background: rgb(255 255 255 / 10%);
+    color: var(--white);
+    font-size: .72rem;
+    font-weight: 850;
+    cursor: pointer;
+  }
+
+  .v2-handoff-actions button:first-child {
+    background: var(--white);
+    color: var(--ink-950);
+  }
+
+  .v2-handoff-actions button:disabled {
+    cursor: not-allowed;
+    opacity: .45;
+  }
+
+  .v2-handoff-message {
+    margin: 0;
+    color: rgb(255 255 255 / 68%);
+    font-size: .7rem;
+    line-height: 1.35;
+  }
+
+  .v2-handoff-preview {
+    display: grid;
+    gap: .55rem;
+    max-height: 13rem;
+    overflow-y: auto;
+    border-top: 1px solid rgb(255 255 255 / 12%);
+    padding-top: .65rem;
+  }
+
+  .v2-handoff-preview:empty {
+    display: none;
+  }
+
+  .v2-handoff-preview-status {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    color: var(--white);
+    font-size: .72rem;
+  }
+
+  .v2-handoff-preview-status span {
+    color: rgb(255 255 255 / 68%);
+  }
+
+  .v2-handoff-refs {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: .25rem .7rem;
+    margin: 0;
+    font-size: .68rem;
+  }
+
+  .v2-handoff-refs dt {
+    color: rgb(255 255 255 / 55%);
+  }
+
+  .v2-handoff-refs dd {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: rgb(255 255 255 / 82%);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v2-handoff-warning {
+    margin: 0;
+    color: #f2c96e;
+    font-size: .68rem;
+    line-height: 1.35;
+  }
+
+  @media (max-width: 620px) {
+    .v2-hermes-dock {
+      width: calc(100vw - .75rem);
+    }
+
+    .v2-handoff-preview-status,
+    .v2-handoff-actions {
+      display: grid;
+    }
+  }
+}
