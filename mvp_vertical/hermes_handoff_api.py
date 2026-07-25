@@ -104,45 +104,92 @@ def install_hermes_handoff_preview_routes(
         install_post_start_initializer(app, initialize_handoff_schema)
 
     def prepare(body: HermesHandoffPreviewBody) -> dict:
-        if body.card_context_envelope.scope_widened_implicitly:
-            raise HTTPException(status_code=422, detail="Card Context Envelope may not widen scope implicitly")
+        requested = body.card_context_envelope
+        if requested.scope_widened_implicitly:
+            raise HTTPException(
+                status_code=422,
+                detail="Card Context Envelope may not widen scope implicitly",
+            )
+        if requested.descendants or requested.source_refs or requested.explicit_additions:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "descendants, source_refs and explicit_additions are server-controlled; "
+                    "use selected_context and include_declared_descendants"
+                ),
+            )
 
-        envelope = body.card_context_envelope.model_dump()
-        scope_resolution = {
-            "requested": body.include_declared_descendants,
-            "policy": "root_only",
-            "descendants_added": 0,
-            "source_refs_added": 0,
-            "counts": {},
-        }
-        if body.include_declared_descendants:
-            try:
-                resolved = use_connection(
-                    lambda conn: card_scope.resolve_declared_descendants(
-                        conn, root_entity=envelope["root_entity"]
-                    )
-                )
-            except card_scope.CardScopeError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-            envelope["descendants"] = [*envelope.get("descendants", []), *resolved["descendants"]]
-            envelope["source_refs"] = [*envelope.get("source_refs", []), *resolved["source_refs"]]
-            scope_resolution = {
-                "requested": True,
-                "policy": resolved["policy"],
-                "descendants_added": len(resolved["descendants"]),
-                "source_refs_added": len(resolved["source_refs"]),
-                "counts": resolved["counts"],
+        def resolve_scope(conn):
+            root = card_scope.validate_entity_ref(
+                conn,
+                entity_ref=requested.root_entity.model_dump(),
+            )
+            selected = card_scope.resolve_explicit_context(
+                conn,
+                entity_refs=[item.model_dump() for item in body.selected_context],
+            )
+            exclusions = card_scope.resolve_explicit_context(
+                conn,
+                entity_refs=[item.model_dump() for item in requested.explicit_exclusions],
+            )
+
+            envelope = {
+                "root_entity": {
+                    "entity_id": root["entity_id"],
+                    "entity_type": root["entity_type"],
+                },
+                "descendants": [],
+                "source_refs": list(selected["source_refs"]),
+                "explicit_additions": [],
+                "explicit_exclusions": exclusions["entities"],
+                "scope_widened_implicitly": False,
             }
+            scope_resolution = {
+                "requested": body.include_declared_descendants,
+                "policy": "root_only",
+                "descendants_added": 0,
+                "source_refs_added": len(selected["source_refs"]),
+                "selected_entities_validated": len(selected["entities"]),
+                "counts": {},
+            }
+            if body.include_declared_descendants:
+                descendants = card_scope.resolve_declared_descendants(
+                    conn,
+                    root_entity=envelope["root_entity"],
+                )
+                envelope["descendants"].extend(descendants["descendants"])
+                for source_ref in descendants["source_refs"]:
+                    if source_ref not in envelope["source_refs"]:
+                        envelope["source_refs"].append(source_ref)
+                scope_resolution = {
+                    "requested": True,
+                    "policy": descendants["policy"],
+                    "descendants_added": len(descendants["descendants"]),
+                    "source_refs_added": len(envelope["source_refs"]),
+                    "selected_entities_validated": len(selected["entities"]),
+                    "counts": descendants["counts"],
+                }
+            return envelope, selected["entities"], scope_resolution
+
+        try:
+            envelope, selected_context, scope_resolution = use_connection(resolve_scope)
+        except card_scope.CardScopeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         try:
             preview = hermes_handoff_preview.build_preview(
                 question=body.question,
                 card_context_envelope=envelope,
-                selected_context=[item.model_dump() for item in body.selected_context],
+                selected_context=selected_context,
             )
         except hermes_handoff_preview.HandoffPreviewError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {**preview, "scope_resolution": scope_resolution, "resolved_card_context_envelope": envelope}
+        return {
+            **preview,
+            "scope_resolution": scope_resolution,
+            "resolved_card_context_envelope": envelope,
+            "resolved_selected_context": selected_context,
+        }
 
     @app.post("/v1/cockpit/hermes-handoffs/preview")
     def preview_hermes_handoff(
@@ -184,7 +231,7 @@ def install_hermes_handoff_preview_routes(
                     question=body.question,
                     preview=current,
                     card_context_envelope=current["resolved_card_context_envelope"],
-                    selected_context=[item.model_dump() for item in body.selected_context],
+                    selected_context=current["resolved_selected_context"],
                     include_declared_descendants=body.include_declared_descendants,
                 )
             )
