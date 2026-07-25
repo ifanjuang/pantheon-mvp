@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="styles/index.css">
   <link rel="stylesheet" href="styles/v2.css">
   <link rel="stylesheet" href="styles/v2_context.css">
+  <link rel="stylesheet" href="styles/v2_handoff.css">
   <title>Pantheon Cockpit V2</title>
 </head>
 <body class="v2-body">
@@ -78,12 +79,22 @@
   </main>
 
   <aside class="v2-hermes-dock" aria-label="Assistant Hermes lié à la carte courante">
-    <div class="v2-hermes-mark" aria-hidden="true">H</div>
-    <div class="v2-hermes-copy">
-      <strong>Hermes</strong>
-      <span id="v2-scope">Aucun contexte</span>
+    <div class="v2-handoff-shell">
+      <div class="v2-handoff-head">
+        <div class="v2-hermes-mark" aria-hidden="true">H</div>
+        <div class="v2-hermes-copy">
+          <strong>Hermes</strong>
+          <span id="v2-handoff-scope" class="v2-handoff-scope">Aucune carte courante</span>
+        </div>
+      </div>
+      <textarea id="v2-handoff-question" class="v2-handoff-question" rows="2" placeholder="Poser une question dans cette portée…" aria-label="Question pour Hermes"></textarea>
+      <div class="v2-handoff-actions">
+        <button id="v2-handoff-prepare" type="button">Préparer le handoff</button>
+        <button id="v2-handoff-execute" type="button" disabled title="Exécution non branchée">Exécuter</button>
+      </div>
+      <p id="v2-handoff-message" class="v2-handoff-message" aria-live="polite">Préparation uniquement : aucune exécution Hermes.</p>
+      <div id="v2-handoff-preview" class="v2-handoff-preview" aria-label="Aperçu du Task Contract et du Context Pack"></div>
     </div>
-    <button type="button" disabled title="Handoff Hermes non branché dans cette tranche">Question</button>
   </aside>
 
   <script src="structured_interface.js" defer></script>
@@ -92,5 +103,6 @@
   <script src="spatial_navigation.js" defer></script>
   <script src="v2_app.js" defer></script>
   <script src="v2_context.js" defer></script>
+  <script src="v2_handoff.js" defer></script>
 </body>
 </html>
