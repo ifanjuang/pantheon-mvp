@@ -8,6 +8,12 @@
     organizations: "organizations",
     participations: "project_participations",
   });
+  const PAYLOAD_KEYS = Object.freeze({
+    affaires: "projects",
+    people: "people",
+    organizations: "organizations",
+    participations: "participations",
+  });
 
   function field(record, name) {
     return record?.fields?.[name] ?? record?.[name] ?? null;
@@ -21,13 +27,23 @@
     return "";
   }
 
+  function recordIdentity(record) {
+    return record?.entity_id
+      ?? record?.project_id
+      ?? record?.person_id
+      ?? record?.organization_id
+      ?? record?.participation_id
+      ?? record?.id
+      ?? null;
+  }
+
   function sourceProjection(record, resource) {
     return {
       system: "postgres",
       resource,
-      entity_id: record?.entity_id ?? record?.id ?? null,
+      entity_id: recordIdentity(record),
       revision: record?.revision ?? null,
-      observed_at: record?.observed_at ?? null,
+      observed_at: record?.observed_at ?? record?.updated_at ?? null,
       authority: "agency_system_of_record",
     };
   }
@@ -38,14 +54,14 @@
     const phase = text(field(record, "phase"));
     const location = text(field(record, "location"));
     return {
-      entity_id: record.entity_id ?? record.id,
+      entity_id: recordIdentity(record),
       entity_type: "project",
       label,
       secondary_label: [status, phase, location].filter(Boolean).join(" · "),
       description: text(field(record, "description")),
       status: status || null,
       tags: Array.isArray(record.tags) ? record.tags : [],
-      aliases: Array.isArray(record.aliases) ? record.aliases : [],
+      aliases: [text(field(record, "code")), ...(Array.isArray(record.aliases) ? record.aliases : [])].filter(Boolean),
       search_terms: [
         text(field(record, "code")),
         phase,
@@ -64,7 +80,7 @@
     const label = text(field(record, "display_name")) || text(field(record, "name")) || text(record.label) || "Personne sans nom";
     const organization = text(field(record, "organization_name"));
     return {
-      entity_id: record.entity_id ?? record.id,
+      entity_id: recordIdentity(record),
       entity_type: "person",
       label,
       secondary_label: organization,
@@ -86,7 +102,7 @@
   function normalizeOrganization(record, config) {
     const label = text(field(record, "display_name")) || text(field(record, "name")) || text(record.label) || "Société sans nom";
     return {
-      entity_id: record.entity_id ?? record.id,
+      entity_id: recordIdentity(record),
       entity_type: "organization",
       label,
       secondary_label: text(field(record, "siret")),
@@ -107,28 +123,31 @@
 
   function normalizeParticipation(record, config) {
     const role = text(field(record, "role"));
-    const type = text(field(record, "type"));
+    const type = text(field(record, "participation_type")) || text(field(record, "type"));
     const person = text(field(record, "person_name"));
     const organization = text(field(record, "organization_name"));
+    const project = text(field(record, "project_name")) || text(field(record, "project_code"));
     const label = text(field(record, "display_name")) || [role, person, organization].filter(Boolean).join(" · ") || "Intervenant";
     return {
-      entity_id: record.entity_id ?? record.id,
+      entity_id: recordIdentity(record),
       entity_type: "project_participation",
       label,
-      secondary_label: [type, role, organization].filter(Boolean).join(" · "),
+      secondary_label: [type, role, organization, project].filter(Boolean).join(" · "),
       description: "",
       status: record.status ?? null,
       tags: Array.isArray(record.tags) ? record.tags : [],
       aliases: Array.isArray(record.aliases) ? record.aliases : [],
-      search_terms: [role, type, person, organization, text(field(record, "project_name"))].filter(Boolean),
+      search_terms: [role, type, person, organization, project].filter(Boolean),
       scope: { system: "postgres", resource: config.resources.participations },
       source: sourceProjection(record, config.resources.participations),
     };
   }
 
-  function normalizePayload(payload) {
+  function normalizePayload(payload, kind) {
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload?.results)) return payload.results;
+    const key = PAYLOAD_KEYS[kind];
+    if (key && Array.isArray(payload?.[key])) return payload[key];
     return [];
   }
 
@@ -181,7 +200,7 @@
         limit: request.limit,
         currentScope: request.currentScope,
       });
-      return normalizePayload(payload);
+      return normalizePayload(payload, kind);
     }
 
     async function affairesProvider(request) {
