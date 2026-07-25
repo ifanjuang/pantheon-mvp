@@ -3,13 +3,6 @@
 
   const $ = id => document.getElementById(id);
   const ROOT_SPACES = ["pantheon", "decisions", "affaires", "connaissances", "outils"];
-  const SPACE_LABELS = {
-    pantheon: "Pantheon",
-    decisions: "Décisions",
-    affaires: "Affaires",
-    connaissances: "Connaissances",
-    outils: "Outils",
-  };
   const STATUS_LABELS = {
     ready: "Prêt",
     reviewed: "Revu",
@@ -44,6 +37,7 @@
   const state = {
     project: "",
     token: "",
+    projects: [],
     documents: [],
     knowledge: [],
     workIssues: [],
@@ -66,7 +60,9 @@
   function stableAccent(value) {
     const input = String(value || "project");
     let hash = 0;
-    for (let index = 0; index < input.length; index += 1) hash = ((hash << 5) - hash + input.charCodeAt(index)) | 0;
+    for (let index = 0; index < input.length; index += 1) {
+      hash = ((hash << 5) - hash + input.charCodeAt(index)) | 0;
+    }
     return PROJECT_ACCENTS[Math.abs(hash) % PROJECT_ACCENTS.length];
   }
 
@@ -83,7 +79,9 @@
       ...input,
     };
     const validation = window.PantheonStructuredInterface?.validateCardModel?.(candidate);
-    if (validation && !validation.valid) throw new Error(`Invalid V2 card ${candidate.entity_id}: ${validation.errors.join(", ")}`);
+    if (validation && !validation.valid) {
+      throw new Error(`Invalid V2 card ${candidate.entity_id}: ${validation.errors.join(", ")}`);
+    }
     return candidate;
   }
 
@@ -131,7 +129,11 @@
         title: "Affaires",
         summary: "Projets, personnes, organisations et relations métier.",
         status: "active",
-        back: [["Source métier", "Agency Data PostgreSQL est le system of record natif."], ["Notion", "Projection collaborative optionnelle lorsqu’elle est activée."]],
+        metrics: state.projects.length ? [{ value: state.projects.length, label: "affaires" }] : [],
+        back: [
+          ["Source métier", "PostgreSQL Agency Data est le system of record natif."],
+          ["Notion", "Projection collaborative optionnelle lorsqu’elle est activée."],
+        ],
       }),
       card({
         entity_id: "space:connaissances",
@@ -154,6 +156,54 @@
         back: [["Principe", "Installé ≠ approuvé · healthy ≠ safe · sélectionné ≠ autorisé."]],
       }),
     ];
+  }
+
+  function projectEntityId(item) {
+    return `project:${item.project_id || item.entity_id || item.code || item.display_name}`;
+  }
+
+  function normalizeProject(item, { selected = false } = {}) {
+    const projectId = item.project_id || item.entity_id || item.code || item.display_name;
+    const title = item.display_name || item.code || projectId || "Affaire";
+    const businessSummary = [
+      item.code && item.code !== title ? item.code : null,
+      item.status,
+      item.phase,
+      item.location,
+    ].filter(Boolean).join(" · ");
+    const selectedSummary = selected
+      ? `${state.documents.length} document(s) · ${state.knowledge.length} connaissance(s) · ${state.workIssues.length} sujet(s)`
+      : businessSummary || "Affaire Agency Data";
+    return card({
+      entity_id: projectEntityId(item),
+      entity_type: "project",
+      role: "entity",
+      family: "project",
+      title,
+      summary: selectedSummary,
+      status: item.status || "active",
+      identity_accent: stableAccent(projectId),
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      metrics: selected
+        ? [
+            { value: state.documents.length, label: "documents" },
+            { value: state.workIssues.length, label: "attention" },
+          ]
+        : item.revision
+          ? [{ value: item.revision, label: "révision" }]
+          : [],
+      front: { issuer: item.primary_client || null },
+      back: [
+        ["System of record", "PostgreSQL Agency Data"],
+        ["Code", text(item.code, "Non renseigné")],
+        ["Phase", text(item.phase, "Non renseignée")],
+        ["Lieu", text(item.location, "Non renseigné")],
+        ["Maîtrise d’ouvrage", text(item.primary_client, "Non renseignée")],
+        ["Révision", text(item.revision, "Non renseignée")],
+        ...(selected ? [["Connaissances liées", `${state.knowledge.length} item(s) exposé(s) dans l’espace Connaissances.`]] : []),
+      ],
+      source_project_id: String(projectId || ""),
+    });
   }
 
   function normalizeDocument(item) {
@@ -238,6 +288,14 @@
     ];
   }
 
+  function projectLookup() {
+    const wanted = state.project.trim().toLocaleLowerCase("fr-FR");
+    if (!wanted) return null;
+    return state.projects.find(item => [item.project_id, item.code, item.display_name]
+      .filter(Boolean)
+      .some(value => String(value).toLocaleLowerCase("fr-FR") === wanted)) || null;
+  }
+
   function rebuildGraph() {
     state.cards.clear();
     state.children.clear();
@@ -245,35 +303,34 @@
 
     for (const model of rootCards()) putCard(model);
 
-    const documentIds = state.documents.map(item => putCard(normalizeDocument(item), state.project ? `project:${state.project}` : null));
+    const selected = projectLookup();
+    const selectedProjectId = selected?.project_id || state.project || null;
+    const selectedCardId = selected ? projectEntityId(selected) : selectedProjectId ? `project:${selectedProjectId}` : null;
+
+    const documentIds = state.documents.map(item => putCard(normalizeDocument(item), selectedCardId));
     const knowledgeIds = state.knowledge.map(item => putCard(normalizeKnowledge(item), "space:connaissances"));
     const workIds = state.workIssues.map(item => putCard(normalizeWorkIssue(item), "space:decisions"));
 
-    let projectIds = [];
-    if (state.project) {
-      const projectId = `project:${state.project}`;
-      putCard(card({
-        entity_id: projectId,
-        entity_type: "project",
-        role: "entity",
-        family: "project",
-        title: state.project,
-        summary: `${state.documents.length} document(s) · ${state.knowledge.length} connaissance(s) · ${state.workIssues.length} sujet(s)`,
-        status: "active",
-        identity_accent: stableAccent(state.project),
-        metrics: [
-          { value: state.documents.length, label: "documents" },
-          { value: state.workIssues.length, label: "attention" },
-        ],
-        back: [
-          ["System of record", "PostgreSQL Agency Data (direction cible)."],
-          ["Chargement actuel", "Cette tranche réutilise les endpoints projet existants ; la liste Agency Data globale n’est pas encore branchée."],
-          ["Connaissances liées", `${state.knowledge.length} item(s) exposé(s) dans l’espace Connaissances.`],
-        ],
-      }), "space:affaires");
-      projectIds = [projectId];
-      setChildren(projectId, documentIds);
+    const projectIds = [];
+    for (const item of state.projects) {
+      const model = normalizeProject(item, { selected: item.project_id === selectedProjectId });
+      projectIds.push(putCard(model, "space:affaires"));
     }
+
+    if (selectedProjectId && !projectIds.includes(selectedCardId)) {
+      const fallback = normalizeProject(
+        {
+          project_id: selectedProjectId,
+          code: selectedProjectId,
+          display_name: selectedProjectId,
+          status: "active",
+        },
+        { selected: true },
+      );
+      projectIds.push(putCard(fallback, "space:affaires"));
+    }
+
+    if (selectedCardId && state.cards.has(selectedCardId)) setChildren(selectedCardId, documentIds);
 
     const reviewDocuments = state.documents
       .filter(item => (item.analysis_status || "partial") !== "ready")
@@ -315,7 +372,10 @@
 
   function renderTags(model, rail) {
     const tags = (model.tags || []).slice(0, 3);
-    for (const tag of tags) rail.append(orb(typeof tag === "string" ? tag.slice(0, 2).toUpperCase() : (tag.name || "T").slice(0, 2).toUpperCase(), typeof tag === "string" ? tag : tag.name, "tag"));
+    for (const tag of tags) {
+      const name = typeof tag === "string" ? tag : tag.name;
+      rail.append(orb((name || "T").slice(0, 2).toUpperCase(), name, "tag"));
+    }
     if ((model.tags || []).length > 3) rail.append(orb(`+${model.tags.length - 3}`, "Tags supplémentaires", "tag"));
   }
 
@@ -328,8 +388,7 @@
     const index = document.createElement("span");
     index.className = "v2-index";
     index.textContent = model.index || (model.role === "container" ? "↳" : familyMark(model));
-    const status = orb(statusLabel(model.status).slice(0, 2).toUpperCase(), statusLabel(model.status), "status");
-    top.append(index, status);
+    top.append(index, orb(statusLabel(model.status).slice(0, 2).toUpperCase(), statusLabel(model.status), "status"));
 
     const body = document.createElement("div");
     body.className = "v2-card-body";
@@ -423,8 +482,7 @@
 
   function breadcrumbLabels() {
     const snap = state.navigator.snapshot();
-    const labels = snap.path.map(part => state.cards.get(part.current_id)?.title).filter(Boolean);
-    return labels;
+    return snap.path.map(part => state.cards.get(part.current_id)?.title).filter(Boolean);
   }
 
   function setMessage(message) {
@@ -455,18 +513,11 @@
       stage.append(renderCard(model));
     }
 
-    const breadcrumb = $("v2-breadcrumb");
-    breadcrumb.textContent = breadcrumbLabels().join(" / ");
-
-    const previous = $("v2-previous");
-    const next = $("v2-next");
-    const ascend = $("v2-ascend");
-    const descend = $("v2-descend");
-    previous.disabled = !snap.can_move_previous;
-    next.disabled = !snap.can_move_next;
-    ascend.disabled = !snap.can_ascend;
-    descend.disabled = !model || !(state.children.get(model.entity_id) || []).length;
-
+    $("v2-breadcrumb").textContent = breadcrumbLabels().join(" / ");
+    $("v2-previous").disabled = !snap.can_move_previous;
+    $("v2-next").disabled = !snap.can_move_next;
+    $("v2-ascend").disabled = !snap.can_ascend;
+    $("v2-descend").disabled = !model || (!(state.children.get(model.entity_id) || []).length && model.entity_type !== "project");
     $("v2-flip").disabled = !model;
     $("v2-scope").textContent = model ? `${model.title} · portée carte courante` : "Aucun contexte";
     updateSpaceRail();
@@ -478,10 +529,15 @@
     render();
   }
 
-  function descend() {
+  async function descend() {
     const model = currentModel();
     if (!model) return;
     const children = state.children.get(model.entity_id) || [];
+    if (!children.length && model.entity_type === "project" && model.source_project_id && model.source_project_id !== state.project) {
+      $("v2-project").value = model.source_project_id;
+      await loadProject({ focusProject: true });
+      return;
+    }
     if (!children.length) {
       toggleFlip();
       setMessage("Cette carte n’a pas d’enfant déclaré ; verso affiché à la place.");
@@ -526,16 +582,44 @@
     return response.json();
   }
 
-  async function loadProject() {
-    state.project = $("v2-project").value.trim();
+  async function loadAgencyProjects() {
+    const payload = await api("../v1/agency/projects?limit=200");
+    state.projects = payload.projects || [];
+    return state.projects;
+  }
+
+  async function loadProject(options = {}) {
+    const focusProject = Boolean(options.focusProject);
+    const requested = $("v2-project").value.trim();
     state.token = $("v2-token").value;
-    if (!state.project || !state.token) {
-      setMessage("Projet et clé d’accès requis pour charger les projections existantes.");
+    if (!state.token) {
+      setMessage("Clé d’accès requise pour lire Agency Data.");
       return;
     }
+
     $("v2-load").disabled = true;
-    setMessage("Chargement des projections projet…");
+    setMessage("Chargement d’Agency Data…");
     try {
+      await loadAgencyProjects();
+      state.project = requested;
+      const matched = projectLookup();
+      if (matched?.project_id) {
+        state.project = matched.project_id;
+        $("v2-project").value = matched.code || matched.display_name || matched.project_id;
+      }
+
+      if (!state.project) {
+        state.documents = [];
+        state.knowledge = [];
+        state.workIssues = [];
+        rebuildGraph();
+        state.navigator.returnToRoot("space:affaires");
+        render();
+        setMessage(`${state.projects.length} affaire(s) Agency Data chargée(s). ↑ pour ouvrir la collection.`);
+        return;
+      }
+
+      setMessage(`Chargement des projections de ${state.project}…`);
       const [documents, knowledge, workIssues] = await Promise.all([
         api(`../v1/projects/${encodeURIComponent(state.project)}/documents`),
         api(`../v1/projects/${encodeURIComponent(state.project)}/knowledge`),
@@ -546,8 +630,20 @@
       state.workIssues = workIssues.work_issues || [];
       rebuildGraph();
       state.navigator.returnToRoot("space:affaires");
+      if (focusProject || state.project) {
+        const projectIds = state.children.get("space:affaires") || [];
+        const target = projectIds.find(id => state.cards.get(id)?.source_project_id === state.project);
+        if (target) {
+          state.navigator.descend({
+            parent_entity_id: "space:affaires",
+            collection_id: "children:space:affaires",
+            item_ids: projectIds,
+            initial_entity_id: target,
+          });
+        }
+      }
       render();
-      setMessage(`Projet ${state.project} chargé dans la hiérarchie V2.`);
+      setMessage(`Affaire ${matched?.display_name || matched?.code || state.project} chargée dans la hiérarchie V2.`);
     } catch (error) {
       state.documents = [];
       state.knowledge = [];
@@ -574,7 +670,7 @@
       start = null;
       if (Math.max(Math.abs(dx), Math.abs(dy)) < 54) return;
       if (Math.abs(dx) > Math.abs(dy)) moveHorizontal(dx < 0 ? 1 : -1);
-      else if (dy < 0) descend();
+      else if (dy < 0) void descend();
       else ascend();
     });
   }
@@ -583,18 +679,18 @@
     $("v2-previous").addEventListener("click", () => moveHorizontal(-1));
     $("v2-next").addEventListener("click", () => moveHorizontal(1));
     $("v2-ascend").addEventListener("click", ascend);
-    $("v2-descend").addEventListener("click", descend);
+    $("v2-descend").addEventListener("click", () => void descend());
     $("v2-flip").addEventListener("click", toggleFlip);
-    $("v2-load").addEventListener("click", loadProject);
+    $("v2-load").addEventListener("click", () => void loadProject());
     document.querySelectorAll("[data-space]").forEach(button => button.addEventListener("click", () => jumpToSpace(button.dataset.space)));
     document.addEventListener("keydown", event => {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
       const actions = {
         ArrowLeft: () => moveHorizontal(-1),
         ArrowRight: () => moveHorizontal(1),
-        ArrowUp: descend,
+        ArrowUp: () => void descend(),
         ArrowDown: ascend,
-        Enter: descend,
+        Enter: () => void descend(),
         " ": toggleFlip,
       };
       const action = actions[event.key];
