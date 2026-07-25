@@ -20,7 +20,7 @@ valid human decision (fail-closed). Distinctions held as data:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from .policy_gate import PolicyClient, enforce_consequential
@@ -42,12 +42,10 @@ class CapabilityRecord:
     source_ref: str | None = None
 
 
-# Each action: whether it is consequential (must route through the chokepoint),
-# a legality predicate over the current record, and the record transition.
 @dataclass(frozen=True)
 class _Action:
     consequential: bool
-    legal: Callable[[CapabilityRecord], str | None]  # None = legal, else reason
+    legal: Callable[[CapabilityRecord], str | None]
     apply: Callable[[CapabilityRecord], CapabilityRecord]
 
 
@@ -56,53 +54,17 @@ def _requires(status_field: str, value: str):
         if getattr(record, status_field) != value:
             return f"{status_field} must be {value!r} (is {getattr(record, status_field)!r})"
         return None
-
     return check
 
 
 ACTIONS: dict[str, _Action] = {
-    # Authoring a candidate is not consequential: nothing is installed.
-    "propose_install": _Action(
-        consequential=False,
-        legal=_requires("installation_status", "absent"),
-        apply=lambda r: replace(r, installation_status="proposed"),
-    ),
-    "install": _Action(
-        consequential=True,
-        legal=_requires("installation_status", "proposed"),
-        apply=lambda r: replace(r, installation_status="installed", health_status="unknown"),
-    ),
-    "enable": _Action(
-        consequential=True,
-        legal=lambda r: _requires("installation_status", "installed")(r)
-        or _requires("enablement_status", "disabled")(r),
-        apply=lambda r: replace(r, enablement_status="enabled"),
-    ),
-    "disable": _Action(
-        consequential=True,
-        legal=_requires("enablement_status", "enabled"),
-        apply=lambda r: replace(r, enablement_status="disabled", activation_scope=None),
-    ),
-    "update": _Action(
-        consequential=True,
-        legal=lambda r: _requires("installation_status", "installed")(r)
-        or _requires("update_status", "update_available")(r),
-        apply=lambda r: replace(r, update_status="up_to_date"),
-    ),
-    "suspend": _Action(
-        consequential=True,
-        legal=_requires("installation_status", "installed"),
-        apply=lambda r: replace(
-            r, installation_status="suspended", enablement_status="disabled", activation_scope=None
-        ),
-    ),
-    "retire": _Action(
-        consequential=True,
-        legal=lambda r: None if r.installation_status in {"installed", "suspended"} else "not installed",
-        apply=lambda r: replace(
-            r, installation_status="absent", enablement_status="disabled", activation_scope=None
-        ),
-    ),
+    "propose_install": _Action(False, _requires("installation_status", "absent"), lambda r: replace(r, installation_status="proposed")),
+    "install": _Action(True, _requires("installation_status", "proposed"), lambda r: replace(r, installation_status="installed", health_status="unknown")),
+    "enable": _Action(True, lambda r: _requires("installation_status", "installed")(r) or _requires("enablement_status", "disabled")(r), lambda r: replace(r, enablement_status="enabled")),
+    "disable": _Action(True, _requires("enablement_status", "enabled"), lambda r: replace(r, enablement_status="disabled", activation_scope=None)),
+    "update": _Action(True, lambda r: _requires("installation_status", "installed")(r) or _requires("update_status", "update_available")(r), lambda r: replace(r, update_status="up_to_date")),
+    "suspend": _Action(True, _requires("installation_status", "installed"), lambda r: replace(r, installation_status="suspended", enablement_status="disabled", activation_scope=None)),
+    "retire": _Action(True, lambda r: None if r.installation_status in {"installed", "suspended"} else "not installed", lambda r: replace(r, installation_status="absent", enablement_status="disabled", activation_scope=None)),
 }
 
 
@@ -133,12 +95,7 @@ def governed_execute(
     decision_payload: dict[str, Any] | None = None,
     candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Perform one lifecycle action under governance.
-
-    A consequential action routes through the chokepoint (preflight + valid human
-    decision) and runs `executor` only behind an allow verdict; on a block the
-    executor never runs and the record is unchanged. The executor performs the
-    native operation externally and returns a technical receipt."""
+    """Perform one lifecycle action under governance."""
     plan = plan_action(record, action)
     if not plan["legal"]:
         return {"status": "refused", "plan": plan, "observation": record, "receipt": None}
@@ -167,12 +124,12 @@ def governed_execute(
                 "receipt": None,
             }
 
-    receipt = executor(action, record)  # native op, external to this manager
+    receipt = executor(action, record)
     observation = ACTIONS[action].apply(record)
     return {
         "status": "applied",
         "plan": plan,
-        "receipt": receipt,  # technical receipt != evidence
+        "receipt": receipt,
         "observation": observation,
         "notes": [
             "installed != approved; enabled != activated for a scope.",
@@ -182,31 +139,41 @@ def governed_execute(
 
 
 class HermesCapabilityExecutor:
-    """Real native executor: asks the external runtime (Hermes) to perform one
-    capability operation and returns its technical receipt.
+    """Generic HTTP transport for one externally implemented capability operation.
 
-    It does NOT execute the capability itself. `governed_execute` calls it only
-    behind an allow verdict; here it sends exactly one bounded operation request
-    to a configured Hermes native-operations endpoint and returns the response as
-    a receipt. The exact Hermes native-op API is version-specific and remains to
-    verify against a real 0.19 install, so `operations_path` is configurable.
-    `httpx` is imported lazily; a transport can be injected for tests.
+    This class does **not** model the public Hermes Agent Runs API. It is retained
+    only as a transport seam for a separately verified native capability-operation
+    binding. The historical default ``/v1/capabilities:operate`` was a candidate
+    assumption and is not part of the verified Hermes Agent v0.19 stable API
+    surface, so callers must now provide an explicit reviewed ``operations_path``.
 
-    A returned receipt is a technical acknowledgement, not Evidence or approval;
-    an error surfaces as an exception the caller records as a failed operation."""
+    It does not execute the capability itself. `governed_execute` calls it only
+    behind an allow verdict. A returned receipt is a technical acknowledgement,
+    not Evidence or approval.
+    """
 
     def __init__(
         self,
         base_url: str,
         api_key: str,
         *,
-        operations_path: str = "/v1/capabilities:operate",
+        operations_path: str | None = None,
         timeout: float = 10.0,
         client: Any | None = None,
     ):
-        self._base_url = base_url.rstrip("/")
+        base_url = base_url.strip().rstrip("/")
+        if not base_url:
+            raise ValueError("base_url is required")
+        if not api_key:
+            raise ValueError("api_key is required")
+        if not operations_path or not operations_path.strip().startswith("/"):
+            raise ValueError(
+                "operations_path must be an explicitly verified native capability endpoint; "
+                "Hermes Agent v0.19 public Runs API is not a capability lifecycle endpoint"
+            )
+        self._base_url = base_url
         self._api_key = api_key
-        self._operations_path = operations_path
+        self._operations_path = operations_path.strip()
         self._timeout = timeout
         self._client = client
 
@@ -220,8 +187,7 @@ class HermesCapabilityExecutor:
         client = self._client
         owns = client is None
         if owns:
-            import httpx  # lazy: not a core dependency
-
+            import httpx
             client = httpx.Client(timeout=self._timeout)
         try:
             response = client.post(
