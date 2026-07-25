@@ -1,7 +1,8 @@
-"""Preview-only API for the Cockpit Hermes dock.
+"""Cockpit API for previewing and submitting a scoped Hermes handoff.
 
-The route prepares exact Task Contract and Context Pack candidates. It performs
-no runtime dispatch and persists no Work Issue.
+Preview prepares exact Task Contract / Context Pack candidates. Explicit human
+submission may persist those exact snapshots and create a Work Issue assigned to
+Hermes. This module never starts an Hermes run.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from typing import Callable
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import card_scope, hermes_handoff_preview
+from . import card_scope, hermes_handoff_preview, hermes_handoff_store
 
 
 class EntityRefBody(BaseModel):
@@ -35,10 +36,19 @@ class HermesHandoffPreviewBody(BaseModel):
     include_declared_descendants: bool = False
 
 
+class HermesHandoffSubmitBody(HermesHandoffPreviewBody):
+    expected_preview_digest: str = Field(min_length=32, max_length=128)
+    expected_task_contract_ref: str = Field(min_length=16, max_length=200)
+    expected_context_pack_ref: str = Field(min_length=16, max_length=200)
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+
 def install_hermes_handoff_preview_routes(
     app: FastAPI,
     *,
     require_read_key: Callable,
+    require_editor_key: Callable | None = None,
+    require_human_actor: Callable | None = None,
     with_connection: Callable | None = None,
 ) -> None:
     def use_connection(operation):
@@ -50,11 +60,7 @@ def install_hermes_handoff_preview_routes(
         finally:
             conn.close()
 
-    @app.post("/v1/cockpit/hermes-handoffs/preview")
-    def preview_hermes_handoff(
-        body: HermesHandoffPreviewBody,
-        _authorized: None = Depends(require_read_key),
-    ) -> dict:
+    def prepare(body: HermesHandoffPreviewBody) -> dict:
         if body.card_context_envelope.scope_widened_implicitly:
             raise HTTPException(
                 status_code=422,
@@ -103,4 +109,61 @@ def install_hermes_handoff_preview_routes(
             )
         except hermes_handoff_preview.HandoffPreviewError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {**preview, "scope_resolution": scope_resolution}
+        return {
+            **preview,
+            "scope_resolution": scope_resolution,
+            "resolved_card_context_envelope": envelope,
+        }
+
+    @app.post("/v1/cockpit/hermes-handoffs/preview")
+    def preview_hermes_handoff(
+        body: HermesHandoffPreviewBody,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        return prepare(body)
+
+    if require_editor_key is None or require_human_actor is None:
+        return
+
+    @app.post("/v1/cockpit/hermes-handoffs/submit", status_code=201)
+    def submit_hermes_handoff(
+        body: HermesHandoffSubmitBody,
+        _authorized: None = Depends(require_editor_key),
+        actor: str = Depends(require_human_actor),
+    ) -> dict:
+        preview_body = HermesHandoffPreviewBody(
+            question=body.question,
+            card_context_envelope=body.card_context_envelope,
+            selected_context=body.selected_context,
+            include_declared_descendants=body.include_declared_descendants,
+        )
+        current = prepare(preview_body)
+        stale = (
+            current["preview_digest"] != body.expected_preview_digest
+            or current["task_contract"]["task_contract_ref"] != body.expected_task_contract_ref
+            or current["context_pack"]["context_pack_ref"] != body.expected_context_pack_ref
+        )
+        if stale:
+            raise HTTPException(
+                status_code=409,
+                detail="Hermes handoff preview is stale; prepare the scope again before submission",
+            )
+
+        try:
+            result = use_connection(
+                lambda conn: hermes_handoff_store.submit_handoff(
+                    conn,
+                    actor=actor,
+                    idempotency_key=body.idempotency_key,
+                    question=body.question,
+                    preview=current,
+                    card_context_envelope=current["resolved_card_context_envelope"],
+                    selected_context=[item.model_dump() for item in body.selected_context],
+                    include_declared_descendants=body.include_declared_descendants,
+                )
+            )
+        except hermes_handoff_store.HandoffIdempotencyConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (hermes_handoff_store.HandoffSubmissionError, card_scope.CardScopeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return result
