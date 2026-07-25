@@ -8,6 +8,9 @@ The Context Pack authorizes identity/scope, not a frozen business-data snapshot.
 Each entity read therefore re-reads the current owner record and reports that
 freshness explicitly. Source references are provenance identifiers only in this
 slice; they cannot be dereferenced here.
+
+Returned fields are frozen by an explicit v1 projection. Adding a future column
+to an owner table must not silently widen what Hermes can read.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from . import (
 )
 
 MAX_RICH_TEXT_CHARS = 500_000
+FIELD_PROJECTION_VERSION = "scoped-context-v1"
 MATERIALIZABLE_TYPES = {
     "project",
     "person",
@@ -37,6 +41,111 @@ MATERIALIZABLE_TYPES = {
     "knowledge",
     "work_issue",
 }
+
+PROJECT_FIELDS = (
+    "project_id",
+    "code",
+    "display_name",
+    "description",
+    "status",
+    "phase",
+    "location",
+    "primary_client",
+    "tags",
+    "owner_system",
+    "revision",
+    "updated_at",
+)
+PERSON_FIELDS = (
+    "person_id",
+    "display_name",
+    "email",
+    "phone",
+    "address",
+    "owner_system",
+    "revision",
+    "updated_at",
+)
+ORGANIZATION_FIELDS = (
+    "organization_id",
+    "name",
+    "email",
+    "phone",
+    "address",
+    "siret",
+    "owner_system",
+    "revision",
+    "updated_at",
+)
+PARTICIPATION_FIELDS = (
+    "participation_id",
+    "project_id",
+    "person_id",
+    "organization_id",
+    "label",
+    "role",
+    "participation_type",
+    "owner_system",
+    "revision",
+    "updated_at",
+    "person_name",
+    "organization_name",
+    "project_name",
+    "project_code",
+)
+DOCUMENT_FIELDS = (
+    "card_type",
+    "card_id",
+    "document_id",
+    "parent_project_id",
+    "title",
+    "source_ref",
+    "source_digest",
+    "media_type",
+    "byte_size",
+    "analysis_status",
+    "naming",
+    "extraction",
+    "authority",
+)
+KNOWLEDGE_FIELDS = (
+    "card_type",
+    "card_id",
+    "knowledge_id",
+    "document_ref",
+    "parent_project_id",
+    "title",
+    "family",
+    "markdown_digest",
+    "source_chunk_refs",
+    "review_status",
+    "version",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "authority",
+)
+WORK_ISSUE_FIELDS = (
+    "issue_id",
+    "case_ref",
+    "title",
+    "description",
+    "origin",
+    "parent_issue_ref",
+    "primary_card_ref",
+    "issue_type",
+    "priority",
+    "assigned_to",
+    "requested_effect",
+    "status",
+    "close_reason",
+    "task_contract_ref",
+    "context_pack_ref",
+    "version",
+    "created_by",
+    "created_at",
+    "updated_at",
+)
 
 
 class HermesScopedContextError(ValueError):
@@ -66,6 +175,11 @@ def _strip_prefix(value: str, *prefixes: str) -> str:
     return value
 
 
+def _bounded_projection(record: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
+    """Project only reviewed v1 fields; schema growth cannot widen runtime access."""
+    return {field: record.get(field) for field in fields if field in record}
+
+
 def _runtime_scope(
     conn: psycopg.Connection,
     *,
@@ -82,12 +196,14 @@ def _runtime_scope(
                    a.requested_effect,
                    a.task_contract_ref AS admission_task_contract_ref,
                    a.context_pack_ref AS admission_context_pack_ref,
+                   h.requested_effect AS handoff_requested_effect,
                    h.task_contract,
                    h.context_pack,
                    h.preview_digest AS handoff_preview_digest,
                    a.preview_digest AS admission_preview_digest,
                    r.run_id,
                    r.status AS run_status,
+                   r.requested_effect AS run_requested_effect,
                    r.task_contract_ref AS run_task_contract_ref,
                    r.context_pack_ref AS run_context_pack_ref
               FROM hermes_execution_admissions a
@@ -105,9 +221,14 @@ def _runtime_scope(
         )
 
     scope = dict(row)
-    if scope["requested_effect"] != "read_only":
+    if not (
+        scope["requested_effect"]
+        == scope["handoff_requested_effect"]
+        == scope["run_requested_effect"]
+        == "read_only"
+    ):
         raise ScopedContextConflict(
-            "Scoped Hermes Data Access first slice accepts read_only admissions only"
+            "Scoped Hermes Data Access first slice requires read_only effect consistency"
         )
     if scope["run_status"] != "running":
         raise ScopedContextConflict(
@@ -184,30 +305,47 @@ def _materialize_entity(
     entity_id: str,
 ) -> dict[str, Any]:
     if entity_type == "project":
-        record = agency_data.get_project(conn, _strip_prefix(entity_id, "project:"))
-        return {"record": record, "representation": None, "record_owner_system": "postgres"}
+        raw = agency_data.get_project(conn, _strip_prefix(entity_id, "project:"))
+        return {
+            "record": _bounded_projection(raw, PROJECT_FIELDS),
+            "representation": None,
+            "record_owner_system": "postgres",
+        }
 
     if entity_type == "person":
-        record = agency_directory.get_person(conn, _strip_prefix(entity_id, "person:"))
-        return {"record": record, "representation": None, "record_owner_system": "postgres"}
+        raw = agency_directory.get_person(conn, _strip_prefix(entity_id, "person:"))
+        return {
+            "record": _bounded_projection(raw, PERSON_FIELDS),
+            "representation": None,
+            "record_owner_system": "postgres",
+        }
 
     if entity_type == "organization":
-        record = agency_directory.get_organization(
+        raw = agency_directory.get_organization(
             conn,
             _strip_prefix(entity_id, "organization:", "org:"),
         )
-        return {"record": record, "representation": None, "record_owner_system": "postgres"}
+        return {
+            "record": _bounded_projection(raw, ORGANIZATION_FIELDS),
+            "representation": None,
+            "record_owner_system": "postgres",
+        }
 
     if entity_type == "project_participation":
-        record = agency_directory.get_participation(
+        raw = agency_directory.get_participation(
             conn,
             _strip_prefix(entity_id, "participation:"),
         )
-        return {"record": record, "representation": None, "record_owner_system": "postgres"}
+        return {
+            "record": _bounded_projection(raw, PARTICIPATION_FIELDS),
+            "representation": None,
+            "record_owner_system": "postgres",
+        }
 
     if entity_type == "document":
         document_id = _strip_prefix(entity_id, "document:")
-        record = store.get_document_card_by_id(conn, document_id)
+        raw = store.get_document_card_by_id(conn, document_id)
+        record = _bounded_projection(raw, DOCUMENT_FIELDS)
         try:
             markdown = _bounded_text(
                 store.get_document_markdown(conn, document_id),
@@ -228,7 +366,8 @@ def _materialize_entity(
 
     if entity_type == "knowledge":
         knowledge_id = _strip_prefix(entity_id, "knowledge:")
-        record = knowledge.get_knowledge_card(conn, knowledge_id)
+        raw = knowledge.get_knowledge_card(conn, knowledge_id)
+        record = _bounded_projection(raw, KNOWLEDGE_FIELDS)
         markdown = _bounded_text(
             knowledge.get_knowledge_markdown(conn, knowledge_id),
             label="Knowledge Markdown",
@@ -245,8 +384,12 @@ def _materialize_entity(
 
     if entity_type == "work_issue":
         issue_id = _strip_prefix(entity_id, "work:")
-        record = work_issue_read.get_issue_record(conn, issue_id)
-        return {"record": record, "representation": None, "record_owner_system": "postgres"}
+        raw = work_issue_read.get_issue_record(conn, issue_id)
+        return {
+            "record": _bounded_projection(raw, WORK_ISSUE_FIELDS),
+            "representation": None,
+            "record_owner_system": "postgres",
+        }
 
     if entity_type == "cockpit_space":
         raise HermesScopedContextError(
@@ -284,6 +427,7 @@ def get_context_manifest(
         "task_contract_ref": scope["admission_task_contract_ref"],
         "requested_effect": scope["requested_effect"],
         "run_status": scope["run_status"],
+        "field_projection_version": FIELD_PROJECTION_VERSION,
         "entities": entities,
         "source_refs": list(context_pack.get("source_refs") or []),
         "source_dereference_available": False,
@@ -298,6 +442,7 @@ def get_context_manifest(
             "Context Pack inclusion != Evidence",
             "current owner read != admission-time snapshot",
             "source_ref != source dereference authority",
+            "field projection != full owner record",
             "read access != write authority",
             "runtime success != Evidence",
         ],
@@ -337,9 +482,7 @@ def get_context_entity(
         raise ScopedContextNotFound(str(exc)) from exc
 
     record = materialized["record"]
-    revision = None
-    if isinstance(record, dict):
-        revision = record.get("revision", record.get("version"))
+    revision = record.get("revision", record.get("version")) if isinstance(record, dict) else None
 
     return {
         "kind": "hermes_scoped_context_entity",
@@ -347,6 +490,7 @@ def get_context_entity(
         "run_id": run_id,
         "context_pack_ref": scope["admission_context_pack_ref"],
         "entity_ref": ref,
+        "field_projection_version": FIELD_PROJECTION_VERSION,
         "record_owner_system": materialized["record_owner_system"],
         "current_revision": revision,
         "record": record,
@@ -360,6 +504,7 @@ def get_context_entity(
         "non_equivalences": [
             "entity admitted != entity is Evidence",
             "current owner read != admission-time snapshot",
+            "field projection != full owner record",
             "derived representation != source binary",
             "read access != write authority",
         ],
