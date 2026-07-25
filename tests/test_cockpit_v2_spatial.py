@@ -119,9 +119,12 @@ def test_v2_handoff_never_dispatches_or_starts_hermes_from_spatial_ui() -> None:
 
     assert 'id="v2-handoff-submit"' in html
     assert 'id="v2-handoff-admit"' in html
-    assert "Admettre pour Hermes" in html
+    assert 'id="v2-handoff-revoke"' in html
+    assert ">Admettre</button>" in html
+    assert ">Révoquer</button>" in html
     assert '../v1/cockpit/hermes-handoffs/submit' in handoff
     assert '/admissions`' in handoff
+    assert '/revocations`' in handoff
     assert '/runs/start' not in handoff
     assert '/v1/hermes/execution-admissions' not in handoff
     assert "direct_database_credentials" not in app
