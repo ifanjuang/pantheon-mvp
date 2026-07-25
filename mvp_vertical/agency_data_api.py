@@ -98,6 +98,27 @@ def install_agency_data_routes(
             "participations": participations,
         }
 
+    @app.get("/v1/agency/participations")
+    def list_participations(
+        q: str | None = None,
+        project_id: str | None = None,
+        limit: int = 100,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        participations = agency_operation(
+            lambda conn: agency_directory.list_participations(
+                conn,
+                query=q,
+                project_id=project_id,
+                limit=limit,
+            )
+        )
+        return {
+            "system_of_record": "postgres",
+            "scope_match": "agency_project_participations",
+            "participations": participations,
+        }
+
     @app.get("/v1/agency/people")
     def list_people(
         q: str | None = None,
