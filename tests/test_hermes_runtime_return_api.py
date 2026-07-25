@@ -47,6 +47,8 @@ def test_only_hermes_can_report_normalized_return(monkeypatch) -> None:
             "outcome": "result_candidate",
             "summary": "Résultat à relire",
             "trace_refs": ["hermes://trace/123"],
+            "result_refs": [],
+            "evidence_candidate_refs": [],
         },
         "expected_issue_version": 2,
         "idempotency_key": "runtime-return-123",
@@ -77,7 +79,7 @@ def test_only_hermes_can_report_normalized_return(monkeypatch) -> None:
     assert payload["issue_closed"] is False
     assert observed["admission_id"] == "admission-1"
     assert observed["run_id"] == "run-1"
-    assert observed["normalized_return"]["outcome"] == "result_candidate"
+    assert observed["normalized_return"] == body["normalized_return"]
 
 
 def test_return_shape_requires_summary_and_trace_refs() -> None:
@@ -92,6 +94,28 @@ def test_return_shape_requires_summary_and_trace_refs() -> None:
             "normalized_return": {"outcome": "result_candidate"},
             "expected_issue_version": 2,
             "idempotency_key": "runtime-return-invalid",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_return_shape_rejects_unimplemented_rich_fields() -> None:
+    client = _client()
+    response = client.post(
+        "/v1/hermes/execution-admissions/admission-1/runs/run-1/return",
+        headers={
+            "Authorization": "Bearer hermes-key",
+            "X-Pantheon-Hermes-Actor": "hermes-adapter",
+        },
+        json={
+            "normalized_return": {
+                "outcome": "result_candidate",
+                "summary": "Résultat à relire",
+                "trace_refs": ["hermes://trace/123"],
+                "source_refs": ["nas://project/source.pdf"],
+            },
+            "expected_issue_version": 2,
+            "idempotency_key": "runtime-return-rich",
         },
     )
     assert response.status_code == 422
