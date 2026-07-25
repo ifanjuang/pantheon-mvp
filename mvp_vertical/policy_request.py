@@ -3,8 +3,8 @@
 Runtime adapters know the concrete effect being attempted (Paperless metadata
 update, project-document intake, capability action). The Pantheon HTTP API is
 intentionally generic. This module translates runtime facts into that generic
-contract without letting a caller redefine the object, digest or scope that the
-human decision must cover.
+contract without letting a caller redefine the object, digest, scope or known
+external-effect status that the human decision must cover.
 """
 
 from __future__ import annotations
@@ -43,12 +43,45 @@ _EXPECTATION_FIELDS = frozenset(
     }
 )
 
+_PAPERLESS_EXTERNAL_EFFECT_KINDS = frozenset(
+    {
+        "external_document_upload",
+        "external_document_metadata_update",
+    }
+)
+
 
 def _scope_from_decision(decision_payload: dict[str, Any]) -> dict[str, Any] | None:
     expectation = decision_payload.get("expectation") or {}
     decision = decision_payload.get("decision") or {}
     scope = expectation.get("required_scope") or decision.get("scope")
     return dict(scope) if isinstance(scope, dict) else None
+
+
+def _pep_owned_request_overrides(candidate: dict[str, Any]) -> dict[str, bool]:
+    """Return effect facts that a runtime caller is not allowed to downgrade.
+
+    The legacy Paperless helpers accept a caller-supplied candidate mapping for
+    trace/context. Their executor is nevertheless known by the PEP: upload and
+    root-document metadata mutation are external state writes. Recognize those
+    effects both by their normal effect kind and by the structural fields the
+    helper itself always adds, so a caller cannot hide the effect by replacing
+    ``effect_kind`` or a nested ``request.external_effect`` value.
+
+    False positives intentionally fail conservative: classifying an ambiguous
+    candidate as an external write is safer than silently allowing one.
+    """
+
+    kind = str(candidate.get("effect_kind") or "").strip()
+    paperless_upload_shape = "filename" in candidate and "content_hash" in candidate
+    paperless_metadata_shape = "document_id" in candidate and "changed_fields" in candidate
+    if (
+        kind in _PAPERLESS_EXTERNAL_EFFECT_KINDS
+        or paperless_upload_shape
+        or paperless_metadata_shape
+    ):
+        return {"external_effect": True, "writes_state": True}
+    return {}
 
 
 def bind_decision_payload(
@@ -115,9 +148,9 @@ def build_preflight_payload(
     Callers may provide an explicit ``request`` / ``gate_signals`` mapping. When
     they provide only runtime-specific fields, conservative defaults are used:
     a consequential effect is assumed to write state and affect an external
-    runtime unless the caller explicitly says otherwise. New adapters should
-    supply scope explicitly from their Task Contract/effect object; the fallback
-    inference exists only for earlier candidate seams.
+    runtime unless the caller explicitly says otherwise. PEP-owned facts for
+    known external executors are applied last and therefore cannot be downgraded
+    by caller-provided request fields.
     """
 
     explicit_request = candidate.get("request")
@@ -164,6 +197,11 @@ def build_preflight_payload(
             inferred_scope = _scope_from_decision(decision_payload)
             if inferred_scope is not None:
                 request["scope"] = inferred_scope
+
+    # Apply non-overridable executor facts only after caller/context values have
+    # been normalized. This closes the downgrade path where a Paperless write
+    # supplied request.external_effect=false.
+    request.update(_pep_owned_request_overrides(candidate))
 
     explicit_signals = candidate.get("gate_signals")
     if explicit_signals is not None and not isinstance(explicit_signals, dict):
