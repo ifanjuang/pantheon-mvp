@@ -35,7 +35,7 @@
       </label>
       <label>
         <span>Clé d’accès</span>
-        <input id="v2-token" type="password" autocomplete="off" placeholder="lecture">
+        <input id="v2-token" type="password" autocomplete="off" placeholder="lecture / édition">
       </label>
       <button id="v2-load" class="primary-action" type="button">Charger Agency Data</button>
     </section>
@@ -92,12 +92,17 @@
         <input id="v2-handoff-descendants" type="checkbox" checked>
         <span>Inclure les descendants déclarés de la carte (résolution serveur)</span>
       </label>
-      <div class="v2-handoff-actions">
-        <button id="v2-handoff-prepare" type="button">Préparer le handoff</button>
-        <button id="v2-handoff-execute" type="button" disabled title="Exécution non branchée">Exécuter</button>
+      <label class="v2-handoff-actor-field">
+        <span>Acteur humain</span>
+        <input id="v2-handoff-actor" autocomplete="name" placeholder="ex. IFan">
+      </label>
+      <div class="v2-handoff-actions v2-handoff-actions--three">
+        <button id="v2-handoff-prepare" type="button">Préparer</button>
+        <button id="v2-handoff-submit" type="button" disabled>Créer le Work Issue</button>
+        <button id="v2-handoff-admit" type="button" disabled>Admettre pour Hermes</button>
       </div>
-      <p id="v2-handoff-message" class="v2-handoff-message" aria-live="polite">Préparation uniquement : aucune exécution Hermes.</p>
-      <div id="v2-handoff-preview" class="v2-handoff-preview" aria-label="Aperçu du Task Contract et du Context Pack"></div>
+      <p id="v2-handoff-message" class="v2-handoff-message" aria-live="polite">Préparation uniquement : aucun run Hermes n’est lancé par le Cockpit.</p>
+      <div id="v2-handoff-preview" class="v2-handoff-preview" aria-label="Aperçu du Task Contract, du Context Pack et de l’admission"></div>
     </div>
   </aside>
 
