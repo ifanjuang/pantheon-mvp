@@ -7,9 +7,10 @@ Hermes. This module never starts an Hermes run.
 
 from __future__ import annotations
 
+import hmac
 from typing import Callable
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from . import card_scope, hermes_handoff_preview, hermes_handoff_store
@@ -43,6 +44,12 @@ class HermesHandoffSubmitBody(HermesHandoffPreviewBody):
     idempotency_key: str = Field(min_length=8, max_length=200)
 
 
+def _bearer_token(authorization: str | None) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        return ""
+    return authorization.removeprefix("Bearer ").strip()
+
+
 def install_hermes_handoff_preview_routes(
     app: FastAPI,
     *,
@@ -59,6 +66,45 @@ def install_hermes_handoff_preview_routes(
             return operation(conn)
         finally:
             conn.close()
+
+    if require_editor_key is None:
+        def require_editor_key(authorization: str | None = Header(default=None)) -> None:
+            expected = getattr(app.state, "editor_api_key", "")
+            if not expected:
+                raise HTTPException(status_code=503, detail="editor API key is not configured")
+            if not hmac.compare_digest(_bearer_token(authorization), expected):
+                raise HTTPException(status_code=401, detail="invalid editor API key")
+
+    if require_human_actor is None:
+        def require_human_actor(
+            x_pantheon_human_actor: str | None = Header(
+                default=None, alias="X-Pantheon-Human-Actor"
+            ),
+        ) -> str:
+            if not x_pantheon_human_actor or not x_pantheon_human_actor.strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail="X-Pantheon-Human-Actor is required for Hermes handoff submission",
+                )
+            return x_pantheon_human_actor.strip()
+
+    # The production Cockpit connector is raw and intentionally does not replay
+    # schema DDL on each request. Install the handoff snapshot table once at
+    # startup. Injected test connectors stay isolated.
+    connect_fn = getattr(app.state, "connect_fn", None)
+    if (
+        getattr(connect_fn, "__module__", "") == "mvp_vertical.cockpit_shell"
+        and getattr(connect_fn, "__name__", "") == "connect_cockpit"
+    ):
+        def initialize_handoff_schema() -> None:
+            conn = connect_fn()
+            try:
+                conn.execute(hermes_handoff_store.MIGRATION.read_text(encoding="utf-8"))
+                conn.commit()
+            finally:
+                conn.close()
+
+        app.add_event_handler("startup", initialize_handoff_schema)
 
     def prepare(body: HermesHandoffPreviewBody) -> dict:
         if body.card_context_envelope.scope_widened_implicitly:
@@ -121,9 +167,6 @@ def install_hermes_handoff_preview_routes(
         _authorized: None = Depends(require_read_key),
     ) -> dict:
         return prepare(body)
-
-    if require_editor_key is None or require_human_actor is None:
-        return
 
     @app.post("/v1/cockpit/hermes-handoffs/submit", status_code=201)
     def submit_hermes_handoff(
