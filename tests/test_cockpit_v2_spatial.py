@@ -112,11 +112,17 @@ def test_v2_route_exposes_five_spaces_and_live_agency_project_collection() -> No
     assert "La clé seule charge la collection Agency Data" in html
 
 
-def test_v2_keeps_hermes_handoff_disabled_until_scoped_adapter_is_connected() -> None:
+def test_v2_handoff_never_dispatches_or_starts_hermes_from_spatial_ui() -> None:
     html = (COCKPIT / "v2.html").read_text(encoding="utf-8")
-    javascript = (COCKPIT / "v2_app.js").read_text(encoding="utf-8")
+    handoff = (COCKPIT / "v2_handoff.js").read_text(encoding="utf-8")
+    app = (COCKPIT / "v2_app.js").read_text(encoding="utf-8")
 
-    assert "Handoff Hermes non branché" in html
-    assert 'disabled title="Handoff Hermes non branché' in html
-    assert "direct_database_credentials" not in javascript
-    assert "notion_token" not in javascript.lower()
+    assert 'id="v2-handoff-submit"' in html
+    assert 'id="v2-handoff-admit"' in html
+    assert "Admettre pour Hermes" in html
+    assert '../v1/cockpit/hermes-handoffs/submit' in handoff
+    assert '/admissions`' in handoff
+    assert '/runs/start' not in handoff
+    assert '/v1/hermes/execution-admissions' not in handoff
+    assert "direct_database_credentials" not in app
+    assert "notion_token" not in app.lower()
