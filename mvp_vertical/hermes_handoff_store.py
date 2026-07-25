@@ -121,7 +121,8 @@ def submit_handoff(
             assigned_to="hermes",
             task_contract_ref=preview["task_contract"]["task_contract_ref"],
             context_pack_ref=preview["context_pack"]["context_pack_ref"],
-            actor=actor.strip(),
+            created_by=actor.strip(),
+            idempotency_key=f"{idempotency_key}:work-issue",
         )
         conn.execute(
             """
