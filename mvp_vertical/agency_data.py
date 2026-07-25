@@ -32,10 +32,6 @@ PROJECT_MUTABLE_FIELDS = {
     "primary_client",
     "tags",
 }
-# Until a verifiable Pantheon gate is wired server-side, Hermes gets only the
-# reversible direct-write ceiling below. Consequential business fields remain
-# human-controlled rather than being implicitly approved by possession of a key.
-HERMES_DIRECT_PROJECT_FIELDS = {"description"}
 ACTOR_KINDS = {"human", "hermes", "system"}
 
 
@@ -248,7 +244,7 @@ def create_project(
     _validate_actor(actor, actor_kind)
     if actor_kind == "hermes":
         raise GovernanceGateRequired(
-            "Hermes project creation requires a verifiable Pantheon gate; direct creation is not admitted"
+            "Hermes project creation requires an admitted bounded capability; direct creation is not admitted"
         )
     project_id = project_id.strip()
     code = code.strip()
@@ -351,12 +347,9 @@ def update_project(
             raise AgencyDataError(f"{key} cannot be empty")
 
     if actor_kind == "hermes":
-        gated_fields = set(normalized) - HERMES_DIRECT_PROJECT_FIELDS
-        if gated_fields:
-            raise GovernanceGateRequired(
-                "Hermes Agency Data mutation requires a verifiable Pantheon gate for field(s): "
-                + ", ".join(sorted(gated_fields))
-            )
+        raise GovernanceGateRequired(
+            "Hermes direct Agency Data mutation is disabled; use an admitted bounded capability"
+        )
 
     payload = {
         "operation": "update_project",
