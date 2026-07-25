@@ -23,19 +23,19 @@
   <main class="v2-shell">
     <section class="v2-loader" aria-labelledby="v2-loader-title">
       <div>
-        <p class="eyebrow">AGENCY DATA / PROJECTION ACTUELLE</p>
-        <h1 id="v2-loader-title">Ouvrir une Affaire</h1>
-        <p class="supporting-copy">Cette tranche V2 réutilise les endpoints projet existants. La liste globale PostgreSQL Agency Data n’est pas encore branchée.</p>
+        <p class="eyebrow">AGENCY DATA / POSTGRESQL</p>
+        <h1 id="v2-loader-title">Ouvrir les Affaires</h1>
+        <p class="supporting-copy">La clé seule charge la collection Agency Data. Renseignez une Affaire pour charger aussi ses Documents, Knowledge et sujets de décision existants.</p>
       </div>
       <label>
-        <span>Projet</span>
-        <input id="v2-project" autocomplete="off" placeholder="project-maison-a">
+        <span>Affaire (optionnel)</span>
+        <input id="v2-project" autocomplete="off" placeholder="LIEUREY ou project-lieurey">
       </label>
       <label>
         <span>Clé d’accès</span>
         <input id="v2-token" type="password" autocomplete="off" placeholder="lecture">
       </label>
-      <button id="v2-load" class="primary-action" type="button">Charger</button>
+      <button id="v2-load" class="primary-action" type="button">Charger Agency Data</button>
     </section>
 
     <nav class="v2-space-rail" aria-label="Espaces principaux">
