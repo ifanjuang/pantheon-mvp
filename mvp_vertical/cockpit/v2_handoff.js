@@ -3,335 +3,195 @@
 
   const $ = id => document.getElementById(id);
   let selectedContext = [];
-  let previewGeneration = 0;
   let prepared = null;
   let submitted = null;
   let admitted = null;
+  let generation = 0;
 
-  function token() {
-    return $("v2-token")?.value || "";
-  }
+  const token = () => $("v2-token")?.value || "";
+  const actor = () => $("v2-handoff-actor")?.value.trim() || "";
+  const ttlSeconds = () => Number($("v2-handoff-ttl")?.value || 0);
+  const revokeReason = () => $("v2-handoff-revoke-reason")?.value.trim() || "";
+  const includeDescendants = () => Boolean($("v2-handoff-descendants")?.checked);
+  const key = prefix => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
-  function actor() {
-    return $("v2-handoff-actor")?.value.trim() || "";
-  }
-
-  function includeDeclaredDescendants() {
-    return Boolean($("v2-handoff-descendants")?.checked);
-  }
-
-  function idempotencyKey(prefix) {
-    if (globalThis.crypto?.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
-    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-
-  function currentCardRef() {
+  function currentCard() {
     const card = document.querySelector("#v2-stage .v2-card");
     if (!card) return null;
-    const entityId = card.querySelector(".v2-entity-id")?.textContent?.trim();
+    const entity_id = card.querySelector(".v2-entity-id")?.textContent?.trim();
     const kicker = card.querySelector(".v2-card-back .v2-card-kicker")?.textContent || "";
-    const parts = kicker.split("·").map(value => value.trim()).filter(Boolean);
-    const entityType = parts.at(-1) || "";
-    const title = card.querySelector(".v2-card-title")?.textContent?.trim() || entityId;
-    if (!entityId || !entityType) return null;
-    return { entity_id: entityId, entity_type: entityType, label: title };
-  }
-
-  function updateScopeLabel() {
-    const root = currentCardRef();
-    if (!root) {
-      $("v2-handoff-scope").textContent = "Aucune carte courante";
-      return;
-    }
-    const descendants = includeDeclaredDescendants() ? " + descendants déclarés" : "";
-    $("v2-handoff-scope").textContent = `${root.label}${descendants} + ${selectedContext.length} ajout(s) explicite(s)`;
-  }
-
-  function buildEnvelope() {
-    const root = currentCardRef();
-    if (!root) throw new Error("Aucune carte courante avec identité stable");
-    return {
-      root_entity: { entity_id: root.entity_id, entity_type: root.entity_type },
-      descendants: [],
-      source_refs: [],
-      explicit_additions: [],
-      explicit_exclusions: [],
-      scope_widened_implicitly: false,
-    };
+    const entity_type = kicker.split("·").map(x => x.trim()).filter(Boolean).at(-1) || "";
+    const label = card.querySelector(".v2-card-title")?.textContent?.trim() || entity_id;
+    return entity_id && entity_type ? { entity_id, entity_type, label } : null;
   }
 
   function baseRequest() {
+    const root = currentCard();
+    if (!root) throw new Error("Aucune carte courante avec identité stable");
     return {
       question: $("v2-handoff-question").value.trim(),
-      card_context_envelope: buildEnvelope(),
-      selected_context: selectedContext.map(item => ({
-        entity_id: item.entity_id,
-        entity_type: item.entity_type,
-      })),
-      include_declared_descendants: includeDeclaredDescendants(),
+      card_context_envelope: {
+        root_entity: { entity_id: root.entity_id, entity_type: root.entity_type },
+        descendants: [], source_refs: [], explicit_additions: [], explicit_exclusions: [],
+        scope_widened_implicitly: false,
+      },
+      selected_context: selectedContext.map(({ entity_id, entity_type }) => ({ entity_id, entity_type })),
+      include_declared_descendants: includeDescendants(),
     };
   }
 
-  function updateButtons() {
-    const human = actor();
-    const submit = $("v2-handoff-submit");
-    const admit = $("v2-handoff-admit");
-    if (submit) {
-      submit.disabled = !prepared || !human || Boolean(submitted);
-      submit.title = !prepared
-        ? "Préparez d’abord la portée"
-        : !human
-          ? "Renseignez l’acteur humain"
-          : submitted
-            ? "Work Issue déjà créé"
-            : "Créer un Work Issue sans lancer Hermes";
-    }
-    if (admit) {
-      admit.disabled = !submitted || !human || Boolean(admitted);
-      admit.title = !submitted
-        ? "Créez d’abord le Work Issue"
-        : !human
-          ? "Renseignez l’acteur humain"
-          : admitted
-            ? "Handoff déjà admis"
-            : "Autoriser ce Work Issue exact à être consommé par Hermes externe";
-    }
+  function scopeLabel() {
+    const root = currentCard();
+    $("v2-handoff-scope").textContent = root
+      ? `${root.label}${includeDescendants() ? " + descendants déclarés" : ""} + ${selectedContext.length} ajout(s)`
+      : "Aucune carte courante";
   }
 
-  function appendRows(host, rows) {
-    const refs = document.createElement("dl");
-    refs.className = "v2-handoff-refs";
-    for (const [term, value] of rows) {
-      const dt = document.createElement("dt");
-      dt.textContent = term;
-      const dd = document.createElement("dd");
-      dd.textContent = String(value ?? "—");
-      refs.append(dt, dd);
-    }
-    host.append(refs);
+  function buttons() {
+    const human = actor();
+    $("v2-handoff-submit").disabled = !prepared || !human || Boolean(submitted);
+    $("v2-handoff-admit").disabled = !submitted || !human || !ttlSeconds() || Boolean(admitted);
+    $("v2-handoff-revoke").disabled = !admitted || admitted.admission_state !== "admitted" || !human || revokeReason().length < 3;
+  }
+
+  function rows(host, values) {
+    const dl = document.createElement("dl");
+    dl.className = "v2-handoff-refs";
+    values.forEach(([name, value]) => {
+      const dt = document.createElement("dt"); dt.textContent = name;
+      const dd = document.createElement("dd"); dd.textContent = String(value ?? "—");
+      dl.append(dt, dd);
+    });
+    host.append(dl);
   }
 
   function renderPrepared(payload) {
-    const host = $("v2-handoff-preview");
-    host.replaceChildren();
-    const status = document.createElement("div");
-    status.className = "v2-handoff-preview-status";
-    const label = document.createElement("strong");
-    label.textContent = "Handoff candidate";
-    const effect = document.createElement("span");
-    effect.textContent = `${payload.requested_effect} · exécution non autorisée`;
-    status.append(label, effect);
-    host.append(status);
-
-    const resolution = payload.scope_resolution || {};
-    appendRows(host, [
+    const host = $("v2-handoff-preview"); host.replaceChildren();
+    const h = document.createElement("strong"); h.textContent = "Handoff candidate"; host.append(h);
+    rows(host, [
       ["Task Contract", payload.task_contract?.task_contract_ref],
       ["Context Pack", payload.context_pack?.context_pack_ref],
-      ["Politique scope", resolution.policy || "root_only"],
-      ["Descendants", resolution.descendants_added ?? 0],
-      ["Entités incluses", payload.context_pack?.included_entities?.length ?? 0],
+      ["Scope", payload.scope_resolution?.policy || "root_only"],
+      ["Entités", payload.context_pack?.included_entities?.length ?? 0],
       ["Sources", payload.context_pack?.source_refs?.length ?? 0],
     ]);
-
-    const warning = document.createElement("p");
-    warning.className = "v2-handoff-warning";
-    warning.textContent = "Candidate uniquement : ni Work Issue, ni admission, ni HermesRun à ce stade.";
-    host.append(warning);
+    const p = document.createElement("p"); p.className = "v2-handoff-warning";
+    p.textContent = "Candidate uniquement : aucune admission et aucun HermesRun."; host.append(p);
   }
 
   function renderSubmission(payload) {
-    const host = $("v2-handoff-preview");
-    const section = document.createElement("section");
-    section.className = "v2-handoff-receipt";
-    const title = document.createElement("strong");
-    title.textContent = "Work Issue créé";
-    section.append(title);
-    appendRows(section, [
-      ["Work Issue", payload.work_issue?.issue_id],
-      ["Assigné à", payload.work_issue?.assigned_to],
-      ["Statut", payload.work_issue?.status],
-      ["HermesRun", payload.hermes_run_created ? "créé" : "aucun"],
-    ]);
-    host.append(section);
+    const s = document.createElement("section"); s.className = "v2-handoff-receipt";
+    const h = document.createElement("strong"); h.textContent = "Work Issue créé"; s.append(h);
+    rows(s, [["Work Issue", payload.work_issue?.issue_id], ["Assigné à", payload.work_issue?.assigned_to], ["HermesRun", "aucun"]]);
+    $("v2-handoff-preview").append(s);
   }
 
-  function renderAdmission(payload) {
-    const host = $("v2-handoff-preview");
-    const section = document.createElement("section");
-    section.className = "v2-handoff-receipt v2-handoff-receipt--admission";
-    const title = document.createElement("strong");
-    title.textContent = "Admission créée";
-    section.append(title);
-    appendRows(section, [
-      ["Admission", payload.admission_id],
-      ["Décision", payload.decision],
-      ["Prêt pour Hermes externe", payload.ready_for_external_runtime ? "oui" : "non"],
-      ["Run consommateur", payload.consumed_by_run_id || "aucun"],
+  function renderAdmission(payload, title = "Admission créée") {
+    const s = document.createElement("section"); s.className = "v2-handoff-receipt v2-handoff-receipt--admission";
+    const h = document.createElement("strong"); h.textContent = title; s.append(h);
+    rows(s, [
+      ["Admission", payload.admission_id], ["État", payload.admission_state],
+      ["Version Work Issue", payload.work_issue_version], ["Expire", payload.expires_at],
+      ["Prêt Hermes", payload.ready_for_external_runtime ? "oui" : "non"],
+      ["Run", payload.consumed_by_run_id || "aucun"], ["Révocation", payload.revocation_reason || "—"],
     ]);
-    const note = document.createElement("p");
-    note.className = "v2-handoff-warning";
-    note.textContent = "Pantheon n’a rien dispatché : l’adapter Hermes externe doit consommer cet admission_id et déclarer son propre run.";
-    section.append(note);
-    host.append(section);
+    const p = document.createElement("p"); p.className = "v2-handoff-warning";
+    p.textContent = "Pantheon n’a rien dispatché. L’expiration est vérifiée à la demande, sans scheduler."; s.append(p);
+    $("v2-handoff-preview").append(s);
   }
 
-  async function previewHandoff() {
-    const question = $("v2-handoff-question").value.trim();
-    if (question.length < 3) {
-      $("v2-handoff-message").textContent = "Formulez une question avant de préparer le handoff.";
-      return;
-    }
-    if (!token()) {
-      $("v2-handoff-message").textContent = "Clé d’accès requise pour préparer le handoff.";
-      return;
-    }
+  async function request(url, body, humanActor = false) {
+    const headers = { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" };
+    if (humanActor) headers["X-Pantheon-Human-Actor"] = actor();
+    const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    const payload = await response.json().catch(() => ({ detail: response.statusText }));
+    if (!response.ok) throw new Error(payload.detail || response.statusText);
+    return payload;
+  }
 
-    let request;
+  async function prepare() {
+    if ($("v2-handoff-question").value.trim().length < 3 || !token()) return;
+    const mine = ++generation;
+    prepared = submitted = admitted = null; buttons();
+    $("v2-handoff-message").textContent = "Préparation…";
     try {
-      request = baseRequest();
-    } catch (error) {
-      $("v2-handoff-message").textContent = error.message;
-      return;
-    }
-
-    previewGeneration += 1;
-    const generation = previewGeneration;
-    prepared = null;
-    submitted = null;
-    admitted = null;
-    updateButtons();
-    $("v2-handoff-prepare").disabled = true;
-    $("v2-handoff-message").textContent = "Préparation du Task Contract et du Context Pack…";
-
-    try {
-      const response = await fetch("../v1/cockpit/hermes-handoffs/preview", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(request),
-      });
-      const payload = await response.json().catch(() => ({ detail: response.statusText }));
-      if (generation !== previewGeneration) return;
-      if (!response.ok) throw new Error(payload.detail || response.statusText);
-      prepared = {
-        request,
-        payload,
-        submit_idempotency_key: idempotencyKey("handoff-submit"),
-      };
+      const req = baseRequest();
+      const payload = await request("../v1/cockpit/hermes-handoffs/preview", req);
+      if (mine !== generation) return;
+      prepared = { req, payload, submitKey: key("handoff-submit") };
       renderPrepared(payload);
-      updateButtons();
-      $("v2-handoff-message").textContent = "Portée préparée. Vérifiez-la avant de créer le Work Issue.";
-    } catch (error) {
-      if (generation !== previewGeneration) return;
-      $("v2-handoff-preview").replaceChildren();
-      $("v2-handoff-message").textContent = `Préparation refusée : ${error.message}`;
-    } finally {
-      if (generation === previewGeneration) $("v2-handoff-prepare").disabled = false;
-    }
+      $("v2-handoff-message").textContent = "Portée préparée.";
+    } catch (e) { $("v2-handoff-message").textContent = `Préparation refusée : ${e.message}`; }
+    buttons();
   }
 
-  async function submitHandoff() {
+  async function submit() {
     if (!prepared || !actor()) return;
-    const button = $("v2-handoff-submit");
-    button.disabled = true;
-    $("v2-handoff-message").textContent = "Création du Work Issue à partir du preview exact…";
     try {
-      const response = await fetch("../v1/cockpit/hermes-handoffs/submit", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token()}`,
-          "Content-Type": "application/json",
-          "X-Pantheon-Human-Actor": actor(),
-        },
-        body: JSON.stringify({
-          ...prepared.request,
-          expected_preview_digest: prepared.payload.preview_digest,
-          expected_task_contract_ref: prepared.payload.task_contract.task_contract_ref,
-          expected_context_pack_ref: prepared.payload.context_pack.context_pack_ref,
-          idempotency_key: prepared.submit_idempotency_key,
-        }),
-      });
-      const payload = await response.json().catch(() => ({ detail: response.statusText }));
-      if (!response.ok) throw new Error(payload.detail || response.statusText);
-      submitted = {
-        payload,
-        admission_idempotency_key: idempotencyKey("execution-admit"),
-      };
+      const p = prepared.payload;
+      const payload = await request("../v1/cockpit/hermes-handoffs/submit", {
+        ...prepared.req,
+        expected_preview_digest: p.preview_digest,
+        expected_task_contract_ref: p.task_contract.task_contract_ref,
+        expected_context_pack_ref: p.context_pack.context_pack_ref,
+        idempotency_key: prepared.submitKey,
+      }, true);
+      submitted = { payload, admissionKey: key("execution-admit") };
       renderSubmission(payload);
       sessionStorage.setItem("pantheon-human-actor", actor());
-      $("v2-handoff-message").textContent = "Work Issue créé. Aucun HermesRun n’a démarré.";
-    } catch (error) {
-      $("v2-handoff-message").textContent = `Création refusée : ${error.message}`;
-    } finally {
-      updateButtons();
-    }
+      $("v2-handoff-message").textContent = "Work Issue créé. Aucun HermesRun.";
+    } catch (e) { $("v2-handoff-message").textContent = `Création refusée : ${e.message}`; }
+    buttons();
   }
 
-  async function admitHandoff() {
-    if (!submitted || !actor()) return;
-    const handoffId = submitted.payload.handoff_id;
-    const button = $("v2-handoff-admit");
-    button.disabled = true;
-    $("v2-handoff-message").textContent = "Création de l’admission d’exécution…";
+  async function admit() {
+    if (!submitted || !actor() || !ttlSeconds()) return;
     try {
-      const response = await fetch(`../v1/cockpit/hermes-handoffs/${encodeURIComponent(handoffId)}/admissions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token()}`,
-          "Content-Type": "application/json",
-          "X-Pantheon-Human-Actor": actor(),
-        },
-        body: JSON.stringify({
-          idempotency_key: submitted.admission_idempotency_key,
-        }),
-      });
-      const payload = await response.json().catch(() => ({ detail: response.statusText }));
-      if (!response.ok) throw new Error(payload.detail || response.statusText);
+      const payload = await request(`../v1/cockpit/hermes-handoffs/${encodeURIComponent(submitted.payload.handoff_id)}/admissions`, {
+        ttl_seconds: ttlSeconds(), idempotency_key: submitted.admissionKey,
+      }, true);
       admitted = payload;
       renderAdmission(payload);
-      $("v2-handoff-message").textContent = "Admission créée. Pantheon n’a pas lancé Hermes.";
-    } catch (error) {
-      $("v2-handoff-message").textContent = `Admission refusée : ${error.message}`;
-    } finally {
-      updateButtons();
-    }
+      $("v2-handoff-message").textContent = "Admission bornée créée. Pantheon n’a pas lancé Hermes.";
+    } catch (e) { $("v2-handoff-message").textContent = `Admission refusée : ${e.message}`; }
+    buttons();
+  }
+
+  async function revoke() {
+    if (!admitted || admitted.admission_state !== "admitted" || revokeReason().length < 3) return;
+    try {
+      const payload = await request(`../v1/cockpit/hermes-execution-admissions/${encodeURIComponent(admitted.admission_id)}/revocations`, {
+        reason: revokeReason(), idempotency_key: key("admission-revoke"),
+      }, true);
+      admitted = payload;
+      renderAdmission(payload, "Admission révoquée");
+      $("v2-handoff-message").textContent = "Admission révoquée avant consommation.";
+    } catch (e) { $("v2-handoff-message").textContent = `Révocation refusée : ${e.message}`; }
+    buttons();
   }
 
   function invalidate(message) {
-    previewGeneration += 1;
-    prepared = null;
-    submitted = null;
-    admitted = null;
+    generation += 1; prepared = submitted = admitted = null;
     $("v2-handoff-preview")?.replaceChildren();
     if (message) $("v2-handoff-message").textContent = message;
-    updateScopeLabel();
-    updateButtons();
+    scopeLabel(); buttons();
   }
 
-  document.addEventListener("pantheon:v2-context-changed", event => {
-    selectedContext = Array.isArray(event.detail?.selected) ? event.detail.selected : [];
-    invalidate("Contexte sélectionné modifié : préparez à nouveau la portée.");
+  document.addEventListener("pantheon:v2-context-changed", e => {
+    selectedContext = Array.isArray(e.detail?.selected) ? e.detail.selected : [];
+    invalidate("Contexte modifié : préparez à nouveau.");
   });
+  new MutationObserver(() => invalidate("Carte modifiée : préparez à nouveau.")).observe($("v2-stage"), { childList: true });
 
-  const stage = $("v2-stage");
-  if (stage) {
-    const observer = new MutationObserver(() => {
-      invalidate("Carte courante modifiée : préparez à nouveau la portée.");
-    });
-    observer.observe(stage, { childList: true, subtree: false });
-  }
+  $("v2-handoff-prepare")?.addEventListener("click", () => void prepare());
+  $("v2-handoff-submit")?.addEventListener("click", () => void submit());
+  $("v2-handoff-admit")?.addEventListener("click", () => void admit());
+  $("v2-handoff-revoke")?.addEventListener("click", () => void revoke());
+  $("v2-handoff-question")?.addEventListener("input", () => invalidate("Question modifiée : préparez à nouveau."));
+  $("v2-handoff-descendants")?.addEventListener("change", () => invalidate("Scope modifié : préparez à nouveau."));
+  ["v2-handoff-actor", "v2-handoff-ttl", "v2-handoff-revoke-reason"].forEach(id => $(id)?.addEventListener("input", buttons));
 
-  $("v2-handoff-prepare")?.addEventListener("click", () => void previewHandoff());
-  $("v2-handoff-submit")?.addEventListener("click", () => void submitHandoff());
-  $("v2-handoff-admit")?.addEventListener("click", () => void admitHandoff());
-  $("v2-handoff-question")?.addEventListener("input", () => invalidate("Question modifiée : préparez à nouveau la portée."));
-  $("v2-handoff-descendants")?.addEventListener("change", () => invalidate("Politique de descendants modifiée : préparez à nouveau la portée."));
-  $("v2-handoff-actor")?.addEventListener("input", updateButtons);
-
-  const rememberedActor = sessionStorage.getItem("pantheon-human-actor");
-  if (rememberedActor && $("v2-handoff-actor")) $("v2-handoff-actor").value = rememberedActor;
-  updateScopeLabel();
-  updateButtons();
+  const remembered = sessionStorage.getItem("pantheon-human-actor");
+  if (remembered && $("v2-handoff-actor")) $("v2-handoff-actor").value = remembered;
+  scopeLabel(); buttons();
 })();
