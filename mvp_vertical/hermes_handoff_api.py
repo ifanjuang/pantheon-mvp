@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from . import card_scope, hermes_handoff_preview, hermes_handoff_store
+from .hermes_execution_api import install_hermes_execution_routes
 
 
 class EntityRefBody(BaseModel):
@@ -210,3 +211,10 @@ def install_hermes_handoff_preview_routes(
         except (hermes_handoff_store.HandoffSubmissionError, card_scope.CardScopeError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return result
+
+    install_hermes_execution_routes(
+        app,
+        require_editor_key=require_editor_key,
+        require_human_actor=require_human_actor,
+        with_connection=use_connection,
+    )
