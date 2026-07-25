@@ -1,6 +1,6 @@
 """FastAPI route installer for native PostgreSQL Agency Data.
 
-The HTTP surface is deliberately narrow: normalized reads plus explicit project
+The HTTP surface is deliberately narrow: normalized reads plus explicit Project
 create/update commands with actor identity, idempotency and expected revision.
 It is not a generic SQL endpoint and does not grant governance approval.
 """
@@ -12,7 +12,7 @@ from typing import Callable, Literal
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import agency_data
+from . import agency_data, agency_directory
 
 
 class ProjectCreateBody(BaseModel):
@@ -52,13 +52,13 @@ def install_agency_data_routes(
     def agency_operation(operation):
         try:
             return with_connection(operation)
-        except agency_data.ProjectNotFound as exc:
+        except (agency_data.ProjectNotFound, agency_directory.PersonNotFound, agency_directory.OrganizationNotFound) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except agency_data.GovernanceGateRequired as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (agency_data.StaleProjectWrite, agency_data.IdempotencyConflict) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except agency_data.AgencyDataError as exc:
+        except (agency_data.AgencyDataError, agency_directory.AgencyDirectoryError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/v1/agency/projects")
@@ -90,13 +90,61 @@ def install_agency_data_routes(
         _authorized: None = Depends(require_read_key),
     ) -> dict:
         participations = agency_operation(
-            lambda conn: agency_data.list_project_participations(conn, project_id)
+            lambda conn: agency_directory.list_project_participations(conn, project_id)
         )
         return {
             "system_of_record": "postgres",
             "project_id": project_id,
             "participations": participations,
         }
+
+    @app.get("/v1/agency/people")
+    def list_people(
+        q: str | None = None,
+        limit: int = 100,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        people = agency_operation(
+            lambda conn: agency_directory.list_people(conn, query=q, limit=limit)
+        )
+        return {
+            "system_of_record": "postgres",
+            "scope_match": "agency_people",
+            "people": people,
+        }
+
+    @app.get("/v1/agency/people/{person_id}")
+    def get_person(
+        person_id: str,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        person = agency_operation(lambda conn: agency_directory.get_person(conn, person_id))
+        return {"system_of_record": "postgres", "person": person}
+
+    @app.get("/v1/agency/organizations")
+    def list_organizations(
+        q: str | None = None,
+        limit: int = 100,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        organizations = agency_operation(
+            lambda conn: agency_directory.list_organizations(conn, query=q, limit=limit)
+        )
+        return {
+            "system_of_record": "postgres",
+            "scope_match": "agency_organizations",
+            "organizations": organizations,
+        }
+
+    @app.get("/v1/agency/organizations/{organization_id}")
+    def get_organization(
+        organization_id: str,
+        _authorized: None = Depends(require_read_key),
+    ) -> dict:
+        organization = agency_operation(
+            lambda conn: agency_directory.get_organization(conn, organization_id)
+        )
+        return {"system_of_record": "postgres", "organization": organization}
 
     @app.post("/v1/agency/projects", status_code=201)
     def create_project(
