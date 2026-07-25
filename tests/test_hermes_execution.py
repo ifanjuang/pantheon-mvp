@@ -88,7 +88,7 @@ def test_issue_version_change_after_admission_makes_it_stale(conn) -> None:
     handoff = _submitted(conn)
     admission = _admit(conn, handoff)
     issue = handoff["work_issue"]
-    changed = work_issues.add_comment(
+    changed_projection = work_issues.add_comment(
         conn,
         issue_id=issue["issue_id"],
         comment_id=_id("comment"),
@@ -97,6 +97,7 @@ def test_issue_version_change_after_admission_makes_it_stale(conn) -> None:
         expected_version=issue["version"],
         idempotency_key=_id("issue-comment"),
     )
+    changed = changed_projection["work_issue"]
     assert changed["status"] == "open"
     assert changed["version"] == issue["version"] + 1
     observed = hermes_execution.get_admission(conn, admission["admission_id"])
