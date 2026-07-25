@@ -92,22 +92,6 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e ".[test]"
-      - name: Run pytest
-        id: full-tests
-        shell: bash
-        run: |
-          set +e
-          pytest -q --tb=short > /tmp/full-pytest.log 2>&1
-          status=$?
-          cat /tmp/full-pytest.log
-          exit $status
+      - run: pytest -q --tb=short
         env:
           MVP_PG_DSN: postgresql://mvp:mvp@localhost:5433/mvp
-      - name: Upload full pytest diagnostic
-        if: failure() && steps.full-tests.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: full-pytest-diagnostic
-          path: /tmp/full-pytest.log
-          if-no-files-found: error
-          retention-days: 1
