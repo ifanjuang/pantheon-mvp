@@ -21,8 +21,11 @@ from psycopg.types.json import Jsonb
 MIGRATION = Path(__file__).resolve().parent / "sql" / "006_hermes_result_candidates.sql"
 
 MAX_LIST_ITEMS = 500
+MAX_STRING_ITEM = 20_000
 MAX_SUMMARY = 20_000
 MAX_RESULT_TYPE = 200
+MAX_CONFIDENCE_NOTE = 10_000
+MAX_PAYLOAD_CHARS = 500_000
 
 
 class HermesResultCandidateError(ValueError):
@@ -34,7 +37,10 @@ class HermesResultCandidateConflict(HermesResultCandidateError):
 
 
 def _canonical(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    try:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise HermesResultCandidateError("candidate payload must be JSON serializable") from exc
 
 
 def _digest(value: Any) -> str:
@@ -52,6 +58,10 @@ def _string_list(values: list[Any] | None, *, field: str) -> list[str]:
         value = str(raw or "").strip()
         if not value:
             raise HermesResultCandidateError(f"{field} entries must be non-empty strings")
+        if len(value) > MAX_STRING_ITEM:
+            raise HermesResultCandidateError(
+                f"{field} entries must be at most {MAX_STRING_ITEM} characters"
+            )
         if value not in seen:
             seen.add(value)
             output.append(value)
@@ -79,9 +89,18 @@ def normalize_candidate(candidate: dict) -> dict:
     payload = candidate.get("candidate_payload", {})
     if not isinstance(payload, dict):
         raise HermesResultCandidateError("candidate_payload must be an object")
+    payload_raw = _canonical(payload)
+    if len(payload_raw) > MAX_PAYLOAD_CHARS:
+        raise HermesResultCandidateError(
+            f"candidate_payload exceeds {MAX_PAYLOAD_CHARS} serialized characters"
+        )
     confidence_note = candidate.get("confidence_note")
     if confidence_note is not None:
         confidence_note = str(confidence_note).strip() or None
+        if confidence_note and len(confidence_note) > MAX_CONFIDENCE_NOTE:
+            raise HermesResultCandidateError(
+                f"confidence_note must be at most {MAX_CONFIDENCE_NOTE} characters"
+            )
     return {
         "result_type": result_type,
         "candidate_payload": payload,
@@ -106,6 +125,16 @@ def _jsonable(value: Any) -> Any:
 def _row_by_run(conn: psycopg.Connection, run_id: str) -> dict | None:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT * FROM hermes_result_candidates WHERE run_id = %s", (run_id,))
+        row = cur.fetchone()
+    return _jsonable(dict(row)) if row else None
+
+
+def _row_by_idempotency(conn: psycopg.Connection, idempotency_key: str) -> dict | None:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT * FROM hermes_result_candidates WHERE idempotency_key = %s",
+            (idempotency_key,),
+        )
         row = cur.fetchone()
     return _jsonable(dict(row)) if row else None
 
@@ -162,6 +191,14 @@ def create_result_candidate(
         "created_by": actor.strip(),
     }
     result_digest = _digest(material)
+
+    replay = _row_by_idempotency(conn, idempotency_key)
+    if replay is not None:
+        if replay["run_id"] != run_id or replay["result_digest"] != result_digest:
+            raise HermesResultCandidateConflict(
+                "idempotency key already belongs to another Hermes result candidate"
+            )
+        return replay
 
     existing = _row_by_run(conn, run_id)
     if existing is not None:
