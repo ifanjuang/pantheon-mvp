@@ -1,9 +1,8 @@
 """API boundary for execution admission and external Hermes runtime callbacks.
 
-The Cockpit may admit one exact submitted handoff. Hermes may then fetch that
-admission by ID and report its own runtime start and normalized return. There is
-deliberately no pending-work listing, scheduler, queue, dispatch endpoint or
-provider routing.
+The Cockpit may admit/revoke one exact handoff. Hermes may fetch that admission
+by ID and report its own start/return. No pending-work listing, scheduler, queue,
+dispatch endpoint or provider routing exists here.
 """
 
 from __future__ import annotations
@@ -18,6 +17,12 @@ from . import hermes_execution, hermes_runtime_return, work_issues
 
 
 class ExecutionAdmissionBody(BaseModel):
+    ttl_seconds: int = Field(ge=hermes_execution.MIN_TTL_SECONDS, le=hermes_execution.MAX_TTL_SECONDS)
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+
+class ExecutionRevocationBody(BaseModel):
+    reason: str = Field(min_length=3, max_length=2000)
     idempotency_key: str = Field(min_length=8, max_length=200)
 
 
@@ -73,36 +78,25 @@ def install_hermes_execution_routes(
             raise HTTPException(status_code=401, detail="invalid Hermes API key")
 
     def require_hermes_actor(
-        x_pantheon_hermes_actor: str | None = Header(
-            default=None, alias="X-Pantheon-Hermes-Actor"
-        ),
+        x_pantheon_hermes_actor: str | None = Header(default=None, alias="X-Pantheon-Hermes-Actor"),
     ) -> str:
         if not x_pantheon_hermes_actor or not x_pantheon_hermes_actor.strip():
-            raise HTTPException(
-                status_code=422,
-                detail="X-Pantheon-Hermes-Actor is required for a runtime callback",
-            )
+            raise HTTPException(status_code=422, detail="X-Pantheon-Hermes-Actor is required for a runtime callback")
         return x_pantheon_hermes_actor.strip()
 
     connect_fn = getattr(app.state, "connect_fn", None)
-    if (
-        getattr(connect_fn, "__module__", "") == "mvp_vertical.cockpit_shell"
-        and getattr(connect_fn, "__name__", "") == "connect_cockpit"
-    ):
+    if getattr(connect_fn, "__module__", "") == "mvp_vertical.cockpit_shell" and getattr(connect_fn, "__name__", "") == "connect_cockpit":
         def initialize_execution_admission_schema() -> None:
             conn = connect_fn()
             try:
-                conn.execute(hermes_execution.MIGRATION.read_text(encoding="utf-8"))
+                for migration in hermes_execution.MIGRATIONS:
+                    conn.execute(migration.read_text(encoding="utf-8"))
                 conn.commit()
             finally:
                 conn.close()
-
         app.add_event_handler("startup", initialize_execution_admission_schema)
 
-    @app.post(
-        "/v1/cockpit/hermes-handoffs/{handoff_id}/admissions",
-        status_code=201,
-    )
+    @app.post("/v1/cockpit/hermes-handoffs/{handoff_id}/admissions", status_code=201)
     def admit_hermes_handoff(
         handoff_id: str,
         body: ExecutionAdmissionBody,
@@ -110,14 +104,39 @@ def install_hermes_execution_routes(
         actor: str = Depends(require_human_actor),
     ) -> dict:
         try:
-            return use_connection(
-                lambda conn: hermes_execution.admit_handoff(
-                    conn,
-                    handoff_id=handoff_id,
-                    actor=actor,
-                    idempotency_key=body.idempotency_key,
-                )
-            )
+            return use_connection(lambda conn: hermes_execution.admit_handoff(
+                conn, handoff_id=handoff_id, actor=actor,
+                idempotency_key=body.idempotency_key, ttl_seconds=body.ttl_seconds,
+            ))
+        except hermes_execution.AdmissionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except hermes_execution.AdmissionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except hermes_execution.HermesExecutionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/v1/cockpit/hermes-execution-admissions/{admission_id}")
+    def get_cockpit_admission(
+        admission_id: str,
+        _authorized: None = Depends(require_editor_key),
+    ) -> dict:
+        try:
+            return use_connection(lambda conn: hermes_execution.get_admission(conn, admission_id))
+        except hermes_execution.AdmissionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/v1/cockpit/hermes-execution-admissions/{admission_id}/revocations", status_code=201)
+    def revoke_hermes_admission(
+        admission_id: str,
+        body: ExecutionRevocationBody,
+        _authorized: None = Depends(require_editor_key),
+        actor: str = Depends(require_human_actor),
+    ) -> dict:
+        try:
+            return use_connection(lambda conn: hermes_execution.revoke_admission(
+                conn, admission_id=admission_id, actor=actor,
+                reason=body.reason, idempotency_key=body.idempotency_key,
+            ))
         except hermes_execution.AdmissionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except hermes_execution.AdmissionConflict as exc:
@@ -131,18 +150,13 @@ def install_hermes_execution_routes(
         _authorized: None = Depends(require_hermes_key),
     ) -> dict:
         try:
-            return use_connection(
-                lambda conn: hermes_execution.get_execution_envelope(conn, admission_id)
-            )
+            return use_connection(lambda conn: hermes_execution.get_execution_envelope(conn, admission_id))
         except hermes_execution.AdmissionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except hermes_execution.AdmissionConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    @app.post(
-        "/v1/hermes/execution-admissions/{admission_id}/runs/start",
-        status_code=201,
-    )
+    @app.post("/v1/hermes/execution-admissions/{admission_id}/runs/start", status_code=201)
     def record_hermes_runtime_start(
         admission_id: str,
         body: HermesRuntimeStartBody,
@@ -150,29 +164,18 @@ def install_hermes_execution_routes(
         actor: str = Depends(require_hermes_actor),
     ) -> dict:
         try:
-            return use_connection(
-                lambda conn: hermes_execution.record_external_runtime_start(
-                    conn,
-                    admission_id=admission_id,
-                    run_id=body.run_id,
-                    actor=actor,
-                    expected_issue_version=body.expected_issue_version,
-                    idempotency_key=body.idempotency_key,
-                )
-            )
+            return use_connection(lambda conn: hermes_execution.record_external_runtime_start(
+                conn, admission_id=admission_id, run_id=body.run_id, actor=actor,
+                expected_issue_version=body.expected_issue_version, idempotency_key=body.idempotency_key,
+            ))
         except hermes_execution.AdmissionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except (hermes_execution.AdmissionConflict, hermes_execution.RuntimeStartConflict) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except work_issues.StaleWrite as exc:
+        except (hermes_execution.AdmissionConflict, hermes_execution.RuntimeStartConflict, work_issues.StaleWrite) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (hermes_execution.HermesExecutionError, work_issues.WorkIssueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    @app.post(
-        "/v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/return",
-        status_code=200,
-    )
+    @app.post("/v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/return", status_code=200)
     def record_hermes_runtime_return(
         admission_id: str,
         run_id: str,
@@ -181,17 +184,11 @@ def install_hermes_execution_routes(
         actor: str = Depends(require_hermes_actor),
     ) -> dict:
         try:
-            return use_connection(
-                lambda conn: hermes_runtime_return.record_external_runtime_return(
-                    conn,
-                    admission_id=admission_id,
-                    run_id=run_id,
-                    normalized_return=body.normalized_return.model_dump(),
-                    actor=actor,
-                    expected_issue_version=body.expected_issue_version,
-                    idempotency_key=body.idempotency_key,
-                )
-            )
+            return use_connection(lambda conn: hermes_runtime_return.record_external_runtime_return(
+                conn, admission_id=admission_id, run_id=run_id,
+                normalized_return=body.normalized_return.model_dump(), actor=actor,
+                expected_issue_version=body.expected_issue_version, idempotency_key=body.idempotency_key,
+            ))
         except hermes_runtime_return.HermesRuntimeReturnConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except hermes_runtime_return.HermesRuntimeReturnError as exc:
