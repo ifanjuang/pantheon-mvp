@@ -44,6 +44,10 @@ def _bounded_limit(limit: int) -> int:
     return limit
 
 
+def _accent_like(column: str) -> str:
+    return f"unaccent(lower({column})) LIKE unaccent(lower(%s))"
+
+
 def list_people(
     conn: psycopg.Connection,
     *,
@@ -55,7 +59,9 @@ def list_people(
     where = ""
     if query and query.strip():
         needle = f"%{query.strip()}%"
-        where = "WHERE display_name ILIKE %s OR email ILIKE %s OR phone ILIKE %s"
+        where = "WHERE " + " OR ".join(
+            [_accent_like("display_name"), _accent_like("email"), _accent_like("phone")]
+        )
         params.extend([needle, needle, needle])
     params.append(limit)
     with conn.cursor(row_factory=dict_row) as cur:
@@ -93,7 +99,14 @@ def list_organizations(
     where = ""
     if query and query.strip():
         needle = f"%{query.strip()}%"
-        where = "WHERE name ILIKE %s OR email ILIKE %s OR phone ILIKE %s OR siret ILIKE %s"
+        where = "WHERE " + " OR ".join(
+            [
+                _accent_like("name"),
+                _accent_like("email"),
+                _accent_like("phone"),
+                _accent_like("siret"),
+            ]
+        )
         params.extend([needle, needle, needle, needle])
     params.append(limit)
     with conn.cursor(row_factory=dict_row) as cur:
@@ -139,8 +152,17 @@ def list_participations(
     if query and query.strip():
         needle = f"%{query.strip()}%"
         clauses.append(
-            "(p.role ILIKE %s OR p.participation_type ILIKE %s OR p.label ILIKE %s "
-            "OR person.display_name ILIKE %s OR org.name ILIKE %s OR project.display_name ILIKE %s OR project.code ILIKE %s)"
+            "(" + " OR ".join(
+                [
+                    _accent_like("p.role"),
+                    _accent_like("p.participation_type"),
+                    _accent_like("p.label"),
+                    _accent_like("person.display_name"),
+                    _accent_like("org.name"),
+                    _accent_like("project.display_name"),
+                    _accent_like("project.code"),
+                ]
+            ) + ")"
         )
         params.extend([needle, needle, needle, needle, needle, needle, needle])
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
