@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from mvp_vertical import hermes_handoff_store
+from mvp_vertical import card_scope, hermes_handoff_store
 from mvp_vertical.cockpit_shell import create_cockpit_app
 
 
@@ -41,8 +41,25 @@ def _submitted_body(preview: dict) -> dict:
     }
 
 
+def _patch_scope_validation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        card_scope,
+        "validate_entity_ref",
+        lambda _conn, *, entity_ref: {**entity_ref, "source_refs": []},
+    )
+    monkeypatch.setattr(
+        card_scope,
+        "resolve_explicit_context",
+        lambda _conn, *, entity_refs: {
+            "entities": list(entity_refs),
+            "source_refs": [],
+        },
+    )
+
+
 def test_exact_preview_can_create_work_issue_without_starting_hermes(monkeypatch) -> None:
     observed = {}
+    _patch_scope_validation(monkeypatch)
 
     def submit_handoff(_conn, **values):
         observed.update(values)
@@ -101,8 +118,68 @@ def test_exact_preview_can_create_work_issue_without_starting_hermes(monkeypatch
     ]
 
 
+def test_submit_uses_revalidated_context_not_untrusted_request_copy(monkeypatch) -> None:
+    observed = {}
+    monkeypatch.setattr(
+        card_scope,
+        "validate_entity_ref",
+        lambda _conn, *, entity_ref: {**entity_ref, "source_refs": []},
+    )
+    monkeypatch.setattr(
+        card_scope,
+        "resolve_explicit_context",
+        lambda _conn, *, entity_refs: {
+            "entities": [
+                {"entity_id": "person:canonical", "entity_type": "person"}
+            ] if entity_refs else [],
+            "source_refs": [],
+        },
+    )
+
+    def submit_handoff(_conn, **values):
+        observed.update(values)
+        return {
+            "handoff_id": "handoff-1",
+            "case_ref": "lieurey",
+            "task_contract_ref": values["preview"]["task_contract"]["task_contract_ref"],
+            "context_pack_ref": values["preview"]["context_pack"]["context_pack_ref"],
+            "preview_digest": values["preview"]["preview_digest"],
+            "work_issue": {"issue_id": "work-1", "assigned_to": "hermes"},
+            "execution_started": False,
+            "hermes_run_created": False,
+            "status": "submitted_work_issue",
+        }
+
+    monkeypatch.setattr(hermes_handoff_store, "submit_handoff", submit_handoff)
+    client = TestClient(
+        create_cockpit_app(
+            connect_fn=_Connection,
+            api_key="read-key",
+            editor_api_key="editor-key",
+        )
+    )
+    preview = client.post(
+        "/v1/cockpit/hermes-handoffs/preview",
+        headers={"Authorization": "Bearer read-key"},
+        json=_preview_body(),
+    ).json()
+    response = client.post(
+        "/v1/cockpit/hermes-handoffs/submit",
+        headers={
+            "Authorization": "Bearer editor-key",
+            "X-Pantheon-Human-Actor": "ifan",
+        },
+        json=_submitted_body(preview),
+    )
+    assert response.status_code == 201
+    assert observed["selected_context"] == [
+        {"entity_id": "person:canonical", "entity_type": "person"}
+    ]
+
+
 def test_stale_preview_is_refused_before_work_issue_creation(monkeypatch) -> None:
     called = False
+    _patch_scope_validation(monkeypatch)
 
     def submit_handoff(_conn, **_values):
         nonlocal called
@@ -138,7 +215,8 @@ def test_stale_preview_is_refused_before_work_issue_creation(monkeypatch) -> Non
     assert called is False
 
 
-def test_handoff_submission_requires_editor_key_and_human_actor() -> None:
+def test_handoff_submission_requires_editor_key_and_human_actor(monkeypatch) -> None:
+    _patch_scope_validation(monkeypatch)
     client = TestClient(
         create_cockpit_app(
             connect_fn=_Connection,
