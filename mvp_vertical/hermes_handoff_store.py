@@ -17,7 +17,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from . import card_scope, work_issues
+from . import card_scope, work_issue_read, work_issues
 
 MIGRATION = Path(__file__).resolve().parent / "sql" / "003_hermes_handoff_contracts.sql"
 
@@ -38,13 +38,6 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
-def _work_issue_record(projection: dict) -> dict:
-    issue = projection.get("work_issue")
-    if not isinstance(issue, dict):
-        raise HandoffSubmissionError("Work Issue projection is missing its work_issue record")
-    return issue
-
-
 def _existing_by_idempotency(conn: psycopg.Connection, idempotency_key: str) -> dict | None:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
@@ -56,7 +49,7 @@ def _existing_by_idempotency(conn: psycopg.Connection, idempotency_key: str) -> 
 
 
 def _result_from_row(conn: psycopg.Connection, row: dict) -> dict:
-    issue = _work_issue_record(work_issues.get_issue(conn, row["work_issue_id"]))
+    issue = work_issue_read.get_issue_record(conn, row["work_issue_id"])
     return {
         "handoff_id": row["handoff_id"],
         "case_ref": row["case_ref"],
@@ -117,7 +110,7 @@ def submit_handoff(
         handoff_id = f"handoff-{uuid.uuid4().hex}"
         title_seed = question.strip().replace("\n", " ")
         title = f"Hermes · {title_seed[:140]}" if title_seed else "Hermes · question Cockpit"
-        issue_projection = work_issues.create_issue(
+        work_issues.create_issue(
             conn,
             issue_id=issue_id,
             case_ref=case_ref,
@@ -131,7 +124,7 @@ def submit_handoff(
             created_by=actor.strip(),
             idempotency_key=f"{idempotency_key}:work-issue",
         )
-        issue = _work_issue_record(issue_projection)
+        issue = work_issue_read.get_issue_record(conn, issue_id)
         conn.execute(
             """
             INSERT INTO cockpit_hermes_handoffs (
