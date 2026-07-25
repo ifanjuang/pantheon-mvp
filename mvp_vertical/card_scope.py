@@ -8,7 +8,6 @@ for that expansion explicitly.
 from __future__ import annotations
 
 from typing import Any
-
 import psycopg
 
 from . import agency_data, agency_directory, knowledge, store, work_issues
@@ -128,7 +127,7 @@ def resolve_case_ref(
         issue_id = _strip_prefix(entity_id, "work:")
         try:
             return str(work_issues.get_issue(conn, issue_id)["case_ref"])
-        except work_issues.WorkIssueNotFound as exc:
+        except work_issues.IssueNotFound as exc:
             raise CardScopeError(str(exc)) from exc
 
     if entity_type == "project_participation":
