@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from mvp_vertical import agency_data
+from mvp_vertical import agency_data, agency_directory
 from mvp_vertical.cockpit_shell import create_cockpit_app
 
 
@@ -43,6 +43,50 @@ def test_agency_project_list_accepts_cockpit_and_hermes_read_keys(monkeypatch) -
     )
     assert hermes.status_code == 200
     assert observed == [("lie", 20), (None, 100)]
+
+
+def test_agency_directory_routes_are_normalized_and_read_only(monkeypatch) -> None:
+    monkeypatch.setattr(
+        agency_directory,
+        "list_people",
+        lambda _conn, *, query, limit: [
+            {"person_id": "person-helene", "display_name": "Hélène Leroux", "revision": 2}
+        ],
+    )
+    monkeypatch.setattr(
+        agency_directory,
+        "list_organizations",
+        lambda _conn, *, query, limit: [
+            {"organization_id": "org-bet", "name": "BET Exemple", "revision": 3}
+        ],
+    )
+    monkeypatch.setattr(
+        agency_directory,
+        "list_project_participations",
+        lambda _conn, project_id: [
+            {
+                "participation_id": "part-1",
+                "project_id": project_id,
+                "role": "BET STRUCTURE",
+                "person_name": "Hélène Leroux",
+                "organization_name": "BET Exemple",
+            }
+        ],
+    )
+    client = TestClient(create_cockpit_app(connect_fn=_Connection, api_key="read-key"))
+    headers = {"Authorization": "Bearer read-key"}
+
+    people = client.get("/v1/agency/people", params={"q": "hel", "limit": 25}, headers=headers)
+    organizations = client.get("/v1/agency/organizations", headers=headers)
+    participations = client.get("/v1/agency/projects/project-lieurey/participations", headers=headers)
+
+    assert people.status_code == 200
+    assert people.json()["scope_match"] == "agency_people"
+    assert people.json()["people"][0]["person_id"] == "person-helene"
+    assert organizations.status_code == 200
+    assert organizations.json()["scope_match"] == "agency_organizations"
+    assert participations.status_code == 200
+    assert participations.json()["participations"][0]["role"] == "BET STRUCTURE"
 
 
 def test_hermes_reversible_project_update_is_bounded_and_does_not_infer_approval(monkeypatch) -> None:
@@ -90,7 +134,9 @@ def test_hermes_reversible_project_update_is_bounded_and_does_not_infer_approval
 
 def test_hermes_consequential_field_surfaces_missing_governance_gate(monkeypatch) -> None:
     def update_project(_conn, **_values):
-        raise agency_data.GovernanceGateRequired("Hermes Agency Data mutation requires a verifiable Pantheon gate for field(s): phase")
+        raise agency_data.GovernanceGateRequired(
+            "Hermes Agency Data mutation requires a verifiable Pantheon gate for field(s): phase"
+        )
 
     monkeypatch.setattr(agency_data, "update_project", update_project)
     client = TestClient(
