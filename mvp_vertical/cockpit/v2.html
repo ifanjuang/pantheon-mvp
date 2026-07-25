@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#151618">
   <link rel="stylesheet" href="styles/index.css">
   <link rel="stylesheet" href="styles/v2.css">
+  <link rel="stylesheet" href="styles/v2_context.css">
   <title>Pantheon Cockpit V2</title>
 </head>
 <body class="v2-body">
@@ -46,6 +47,20 @@
       <button type="button" data-space="outils">Outils</button>
     </nav>
 
+    <section class="v2-context-panel" aria-labelledby="v2-context-title">
+      <div class="v2-context-heading">
+        <div>
+          <p class="eyebrow">PANTHEON · CONTEXTE</p>
+          <h2 id="v2-context-title">Context Resolver</h2>
+        </div>
+        <p>Résultat ≠ sélection · sélection ≠ Evidence</p>
+      </div>
+      <input id="v2-context-input" class="v2-context-input" autocomplete="off" placeholder="_LIE · @lebre · *charpente" aria-label="Rechercher un contexte">
+      <div id="v2-context-selected" class="v2-context-selected" aria-label="Contexte sélectionné"></div>
+      <p id="v2-context-message" class="v2-context-message" aria-live="polite">Utilisez _Affaire, @Personne ou *recherche globale.</p>
+      <div id="v2-context-results" class="v2-context-results" aria-label="Résultats du Context Resolver"></div>
+    </section>
+
     <section class="v2-location" aria-live="polite">
       <p id="v2-breadcrumb" class="v2-breadcrumb">Pantheon</p>
       <p id="v2-status" class="v2-status">Navigation spatiale active. ← → frères · ↑ enfants · ↓ parent · espace recto/verso.</p>
@@ -72,7 +87,10 @@
   </aside>
 
   <script src="structured_interface.js" defer></script>
+  <script src="context_resolver.js" defer></script>
+  <script src="agency_data_binding.js" defer></script>
   <script src="spatial_navigation.js" defer></script>
   <script src="v2_app.js" defer></script>
+  <script src="v2_context.js" defer></script>
 </body>
 </html>
