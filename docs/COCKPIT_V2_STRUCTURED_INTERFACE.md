@@ -1,8 +1,8 @@
 # Cockpit V2 — structured agency interface foundation
 
-Status: executable foundation implemented / spatial V2 route implemented candidate / PostgreSQL Agency Data seam implemented / Notion collaborative sync contract partial / not adopted or production-authorized.
+Status: executable foundation implemented / spatial V2 route implemented candidate / PostgreSQL Agency Data API and Project persistence implemented candidate / Notion collaborative sync contract partial / not adopted or production-authorized.
 
-This branch begins the Cockpit V2 implementation direction documented in Pantheon Next `PANTHEON_COCKPIT_STRUCTURED_AGENCY_INTERFACE.md`.
+This branch implements the Cockpit V2 direction documented in Pantheon Next `PANTHEON_COCKPIT_STRUCTURED_AGENCY_INTERFACE.md` and `AGENCY_DATA_SYSTEM_OF_RECORD.md`.
 
 ## Product direction
 
@@ -34,9 +34,11 @@ _  Affaires
 
 The resolver normalizes accents/case, composes multiple providers, isolates provider failures, explains matches with `matched_field` / `match_reason`, deduplicates by stable identity where available and never imports provider-side selection state into the active Context.
 
-### PostgreSQL Agency Data owner seam
+The generic provider seam is implemented. Direct wiring of the visible resolver interaction to the live Agency Data HTTP API remains a later UI slice.
 
-`mvp_vertical/cockpit/agency_data_binding.js` is now the default owner-facing projection seam for native agency records.
+### PostgreSQL Agency Data browser contract
+
+`mvp_vertical/cockpit/agency_data_binding.js` remains the browser-side owner-facing projection contract for native agency records.
 
 Conceptual resources:
 
@@ -55,11 +57,81 @@ The module:
 - provides `buildMutationIntent()` for a bounded Hermes/Agency Data mutation candidate with an expected revision;
 - never marks that candidate as execution-authorized.
 
-This does not implement a PostgreSQL migration, direct SQL access or a Hermes server-side write adapter.
+### PostgreSQL Agency Data persistence and API
+
+The server-side candidate is now partially implemented.
+
+```text
+mvp_vertical/sql/002_agency_data.sql
+mvp_vertical/agency_data.py
+mvp_vertical/agency_data_api.py
+```
+
+Implemented PostgreSQL structures:
+
+```text
+agency_projects
+agency_people
+agency_organizations
+agency_project_participations
+agency_project_events
+```
+
+`agency_project_events` is append-only and records actor identity, actor kind, expected/resulting revision, idempotency key, payload digest and result snapshot.
+
+Implemented API routes:
+
+```text
+GET   /v1/agency/projects
+GET   /v1/agency/projects/{project_id}
+GET   /v1/agency/projects/{project_id}/participations
+POST  /v1/agency/projects
+PATCH /v1/agency/projects/{project_id}
+```
+
+The read surface accepts bounded Cockpit/editor credentials and the Hermes execution credential. Writes require an explicit `X-Pantheon-Actor` plus a recognized writer identity.
+
+The API is not a generic SQL surface. Project updates use an explicit field allowlist, optimistic revision checks and idempotency. Responses retain:
+
+```text
+system_of_record = postgres
+approval_inferred = false
+```
+
+### Hermes Agency Data ceiling
+
+A Hermes API credential identifies the execution actor. It does not constitute Pantheon approval.
+
+Until a verifiable Pantheon gate is wired server-side, the direct Hermes Project write ceiling is deliberately narrow:
+
+```text
+Hermes direct Project write admitted candidate:
+  description
+
+Hermes direct Project write blocked pending gate:
+  project creation
+  code
+  display_name
+  status
+  phase
+  location
+  primary_client
+  tags
+```
+
+Blocked consequential mutations raise `GovernanceGateRequired` and surface as HTTP `409` rather than being silently accepted.
+
+Human/editor mutations remain bounded by the same field allowlist, actor trace, expected revision and idempotency controls.
+
+```text
+Hermes credential != approval
+bounded write capability != unrestricted mutation authority
+mutation persisted != professional validation
+```
 
 ### Optional Notion collaboration contract
 
-`mvp_vertical/cockpit/notion_agency_binding.js` no longer registers Notion as the primary owner/search source.
+`mvp_vertical/cockpit/notion_agency_binding.js` does not register Notion as the primary owner/search source.
 
 It models Notion as an optional collaborative projection over PostgreSQL-owned agency records.
 
@@ -120,13 +192,13 @@ basic Card model validation
 
 ### Executable spatial V2 route
 
-`mvp_vertical/cockpit/v2.html` is now an executable candidate route that makes the product grammar visible without replacing the legacy Cockpit route yet.
+`mvp_vertical/cockpit/v2.html` is an executable candidate route that makes the product grammar visible without replacing the legacy Cockpit route.
 
 The implementation is split into:
 
 ```text
 spatial_navigation.js  pure navigation state / depth / sibling boundaries
-v2_app.js               Card graph composition and existing project endpoint adapter
+v2_app.js               Card graph composition + Agency Data/project adapters
 styles/v2.css           universal Card skins, recto/verso, orbs and motion
 v2.html                 five-space interaction surface
 ```
@@ -157,26 +229,67 @@ Containers    same anatomy with quieter emphasis
 Status/Metric/Tag indicators share one bottom-right rail
 ```
 
-A fixed Hermes dock is rendered against the current Card but its action remains deliberately disabled in this tranche because the scoped Hermes handoff is not yet connected.
+A fixed Hermes dock is rendered against the current Card but its action remains deliberately disabled because the scoped Hermes handoff is not yet connected.
 
-The V2 route currently reuses the existing per-project endpoints for Documents, Knowledge and Work Issues. It therefore exposes one explicitly loaded Project at a time; it does not claim the future global PostgreSQL Agency Data project listing is live.
+### Live Affaires collection
 
-`Décisions` is already projected cross-object from review-relevant Work Issues, Documents and Knowledge while preserving the underlying entity identity/family.
-
-## Target data flow
-
-Normal operation:
+The V2 route now calls:
 
 ```text
-Cockpit / Hermes
-       ↓
-bounded Agency Data API
-       ↓
-PostgreSQL
-system of record
+GET /v1/agency/projects
 ```
 
-With optional Notion collaboration:
+and projects the returned PostgreSQL records as sibling Project Cards under `Affaires`.
+
+The user may therefore load the Agency Data collection with the read key alone and navigate horizontally among real persisted Affaires. An optional project code/name/id loads the deeper existing per-project projections.
+
+For the selected Project, the route still reuses the established endpoints:
+
+```text
+/v1/projects/{project_id}/documents
+/v1/projects/{project_id}/knowledge
+/v1/projects/{project_id}/work-issues
+```
+
+This preserves the existing Document/Knowledge/Work Issue persistence instead of copying those records into Agency Data.
+
+`Décisions` remains a cross-object projection from review-relevant Work Issues, Documents and Knowledge while preserving underlying identity.
+
+## Target and current data flow
+
+Implemented candidate read path:
+
+```text
+Cockpit V2
+    ↓ bounded HTTP read
+Agency Data API
+    ↓
+PostgreSQL agency_projects
+```
+
+Implemented candidate bounded write path:
+
+```text
+Human/editor or admitted Hermes adapter
+    ↓ explicit API command + actor + expected revision + idempotency
+Agency Data adapter
+    ↓
+PostgreSQL transaction + revision + append-only event
+```
+
+For consequential Hermes fields the current path intentionally stops before persistence:
+
+```text
+Hermes command
+    ↓
+GovernanceGateRequired
+    ↓
+no mutation
+```
+
+The missing next component is the verifiable Pantheon gate handoff that can authorize an exact consequential Agency Data mutation without making Pantheon the executor.
+
+With optional Notion collaboration, the target remains:
 
 ```text
                     PostgreSQL
@@ -188,7 +301,7 @@ With optional Notion collaboration:
                  optional UI
 ```
 
-The real synchronization mechanism remains external to these browser contracts.
+The real synchronization mechanism remains unimplemented and external to the browser contracts.
 
 ## Conflict rule
 
@@ -198,8 +311,8 @@ Example:
 
 ```text
 common base revision = 42
-PostgreSQL/Hermes -> phase EXE, revision 43
-Notion edit based on revision 42 -> phase ACT
+PostgreSQL/Hermes authorized mutation -> revision 43
+Notion edit based on revision 42
 
 result: conflict
 not automatic overwrite
@@ -214,35 +327,51 @@ When Notion is unavailable:
 ```text
 PostgreSQL Agency Data  remains available
 Cockpit                 remains available
-Hermes/Agency Data      remains available
+Hermes/Agency Data      remains available within admitted authority
 Notion collaboration    unavailable/degraded
 ```
 
 PostgreSQL remains the system of record. Recovery compares revisions before resuming synchronization; Notion unavailability does not transfer ownership or block native Agency Data writes.
 
-## Planned next slices
+## Implementation status
 
 ```text
-implemented candidate
-  universal Card front/back anatomy
-  standardized Tag/Status/Metric indicator rail
-  spatial navigation state + keyboard/pointer gestures
-  five-space V2 route
-  first cross-object Décisions projection
-  fixed Hermes dock presentation
+Universal Card front/back anatomy                         implemented candidate
+Tag/Status/Metric indicator rail                         implemented candidate
+Spatial navigation state + keyboard/pointer gestures     implemented candidate
+Five-space V2 route                                      implemented candidate
+PostgreSQL Agency Project schema                         implemented candidate
+Global Affaires read API                                 implemented candidate
+Global Affaires sibling Cards in V2                      implemented candidate
+Agency Project revision/idempotency/event adapter        implemented candidate
+Human/editor bounded Project writes                      implemented candidate
+Hermes Agency Project read                               implemented candidate
+Hermes reversible direct Project description write       implemented candidate
+Hermes consequential Project mutation                    blocked pending verifiable gate
+People/Organization tables                               schema implemented, API/UI partial
+ProjectParticipation table + read endpoint               implemented partial, UI not wired
+Context Resolver generic provider contract               implemented candidate
+Context Resolver live HTTP interaction                   not wired
+Cross-object Décisions projection                        implemented candidate
+Fixed Hermes dock presentation                           implemented candidate
+Scoped Hermes dock handoff                               not wired
+Notion field sync policy contract                        implemented candidate
+Live Notion synchronization adapter                      not implemented
+Production adoption                                      not authorized
+```
 
-next
-  Context Resolver interaction inside Pantheon dialogue
-  live bounded Agency Data API transport over PostgreSQL
-  all-project Affaires collection from Agency Data
-  real Project / Person / Organization / Participation projections
-  Hermes server-side Agency Data mutation adapter with revision checks
-  external Notion sync adapter for declared field policies
-  Tag Registry owner API + picker
-  Document revision/representation/issues Cards
-  Knowledge family hierarchy
-  Outils live Capability/RuntimeHost/model observations
-  scoped Hermes dock handoff + attached answer projections
+## Next slices
+
+```text
+1 wire People / Organization / Participation projections into Project hierarchy
+2 bind Context Resolver interaction to live Agency Data API
+3 connect scoped Hermes dock handoff to Card Context Envelope
+4 add verifiable Pantheon gate receipt for consequential Agency Data mutations
+5 Tag Registry owner API + picker
+6 external Notion sync adapter for declared field policies
+7 richer Document revision/representation/issues Cards
+8 Knowledge family hierarchy
+9 Outils live Capability/RuntimeHost/model observations
 ```
 
 ## Boundaries
@@ -251,6 +380,8 @@ next
 card != source of truth
 search result != selected context
 PostgreSQL Agency Data record != Pantheon governance Decision
+PostgreSQL system of record != Pantheon governance authority
+Hermes credential != approval
 Notion projection != system of record
 Notion editable != unrestricted write authority
 sync candidate != executed mutation
@@ -262,4 +393,4 @@ host observed != healthy/safe
 model discovered != task-authorized
 ```
 
-The existing visible Cockpit remains available while `v2.html` is introduced as a separate executable candidate route. No database migration, live Notion synchronization service, credential configuration, global Agency Data listing, Hermes handoff or production activation is claimed by this PR.
+The legacy Cockpit remains available while `v2.html` is introduced as a separate executable candidate route. No live Notion synchronization, scoped Hermes dock handoff, production credential configuration or production activation is claimed by this PR.
