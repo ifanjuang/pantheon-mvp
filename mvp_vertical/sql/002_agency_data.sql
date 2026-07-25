@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
 CREATE TABLE IF NOT EXISTS agency_projects (
     project_id TEXT PRIMARY KEY,
     code TEXT NOT NULL UNIQUE,
