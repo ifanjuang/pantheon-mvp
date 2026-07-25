@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import (
+    hermes_active_context,
     hermes_execution,
     hermes_launch_context,
     hermes_result_candidate,
@@ -311,6 +312,62 @@ def install_hermes_execution_routes(
         except hermes_scoped_context.ScopedContextNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except hermes_scoped_context.ScopedContextConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except hermes_scoped_context.ScopedContextContentTooLarge as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except hermes_scoped_context.HermesScopedContextError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/v1/hermes/execution-admissions/{admission_id}/active-context")
+    def get_hermes_active_context_manifest(
+        admission_id: str,
+        _authorized: None = Depends(require_hermes_key),
+        actor: str = Depends(require_hermes_actor),
+    ) -> dict:
+        try:
+            return use_connection(
+                lambda conn: hermes_active_context.get_active_context_manifest(
+                    conn,
+                    admission_id=admission_id,
+                    actor=actor,
+                )
+            )
+        except hermes_active_context.ActiveContextNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (
+            hermes_active_context.ActiveContextConflict,
+            hermes_scoped_context.ScopedContextConflict,
+        ) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except hermes_scoped_context.HermesScopedContextError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get(
+        "/v1/hermes/execution-admissions/{admission_id}/active-context/entities/{entity_type}/{entity_id}"
+    )
+    def get_hermes_active_context_entity(
+        admission_id: str,
+        entity_type: str,
+        entity_id: str,
+        _authorized: None = Depends(require_hermes_key),
+        actor: str = Depends(require_hermes_actor),
+    ) -> dict:
+        try:
+            return use_connection(
+                lambda conn: hermes_active_context.get_active_context_entity(
+                    conn,
+                    admission_id=admission_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    actor=actor,
+                )
+            )
+        except hermes_active_context.ActiveContextNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (
+            hermes_active_context.ActiveContextConflict,
+            hermes_scoped_context.ScopedContextConflict,
+        ) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except hermes_scoped_context.ScopedContextContentTooLarge as exc:
             raise HTTPException(status_code=413, detail=str(exc)) from exc
