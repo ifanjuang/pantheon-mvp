@@ -1,8 +1,17 @@
-"""Unit tests for server-side declared Card descendant resolution."""
+"""Unit tests for server-side declared Card scope and explicit context validation."""
 
 from __future__ import annotations
 
-from mvp_vertical import agency_data, agency_directory, card_scope, store
+import pytest
+
+from mvp_vertical import (
+    agency_data,
+    agency_directory,
+    card_scope,
+    knowledge,
+    store,
+    work_issue_read,
+)
 
 
 class _Connection:
@@ -64,7 +73,7 @@ def test_document_scope_adds_source_but_no_implicit_relations(monkeypatch) -> No
     assert resolved["source_refs"] == ["nas://lieurey/cctp.pdf"]
 
 
-def test_unknown_card_family_stays_root_only() -> None:
+def test_known_cockpit_space_stays_root_only() -> None:
     resolved = card_scope.resolve_declared_descendants(
         _Connection(),
         root_entity={"entity_id": "space:outils", "entity_type": "cockpit_space"},
@@ -76,3 +85,60 @@ def test_unknown_card_family_stays_root_only() -> None:
         "source_refs": [],
         "counts": {},
     }
+
+
+def test_unknown_cockpit_space_is_refused() -> None:
+    with pytest.raises(card_scope.CardScopeError, match="unknown Cockpit space"):
+        card_scope.resolve_declared_descendants(
+            _Connection(),
+            root_entity={"entity_id": "space:forged", "entity_type": "cockpit_space"},
+        )
+
+
+def test_explicit_document_and_knowledge_context_derives_sources_server_side(monkeypatch) -> None:
+    monkeypatch.setattr(
+        store,
+        "get_document_card_by_id",
+        lambda _conn, document_id: {
+            "document_id": document_id,
+            "source_ref": "nas://lieurey/cctp.pdf",
+        },
+    )
+    monkeypatch.setattr(
+        knowledge,
+        "get_knowledge_card",
+        lambda _conn, knowledge_id: {
+            "knowledge_id": knowledge_id,
+            "source_chunk_refs": ["chunk.extract.0001", "chunk.extract.0002"],
+        },
+    )
+
+    resolved = card_scope.resolve_explicit_context(
+        _Connection(),
+        entity_refs=[
+            {"entity_id": "document:cctp", "entity_type": "document"},
+            {"entity_id": "knowledge:structure", "entity_type": "knowledge"},
+        ],
+    )
+
+    assert resolved["entities"] == [
+        {"entity_id": "document:cctp", "entity_type": "document"},
+        {"entity_id": "knowledge:structure", "entity_type": "knowledge"},
+    ]
+    assert resolved["source_refs"] == [
+        "nas://lieurey/cctp.pdf",
+        "chunk.extract.0001",
+        "chunk.extract.0002",
+    ]
+
+
+def test_work_issue_case_resolution_uses_record_not_aggregate_projection(monkeypatch) -> None:
+    monkeypatch.setattr(
+        work_issue_read,
+        "get_issue_record",
+        lambda _conn, issue_id: {"issue_id": issue_id, "case_ref": "lieurey"},
+    )
+    assert card_scope.resolve_case_ref(
+        _Connection(),
+        root_entity={"entity_id": "work:123", "entity_type": "work_issue"},
+    ) == "lieurey"
