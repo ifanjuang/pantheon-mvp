@@ -3,7 +3,11 @@
 import httpx
 import pytest
 
-from mvp_vertical.capability_manager import CapabilityRecord, HermesCapabilityExecutor, governed_execute
+from mvp_vertical.capability_manager import (
+    CapabilityRecord,
+    HermesCapabilityExecutor,
+    governed_execute,
+)
 from mvp_vertical.policy_gate import StandInPolicyClient
 
 BASE = "http://hermes:8642"
@@ -38,13 +42,17 @@ def test_executor_posts_one_bounded_operation_to_explicit_path_and_returns_recei
 
     def handler(request: httpx.Request) -> httpx.Response:
         import json
+
         seen["path"] = request.url.path
         seen["auth"] = request.headers.get("authorization")
         seen["body"] = json.loads(request.content)
         return httpx.Response(200, json={"receipt_id": "rcpt-1", "status": "done"})
 
     executor = HermesCapabilityExecutor(
-        BASE, "hermes-key", operations_path=VERIFIED_TEST_PATH, client=_client(handler)
+        BASE,
+        "hermes-key",
+        operations_path=VERIFIED_TEST_PATH,
+        client=_client(handler),
     )
     receipt = executor("install", _record(installation_status="proposed"))
     assert receipt["receipt_id"] == "rcpt-1"
@@ -63,7 +71,10 @@ def test_governed_execute_runs_explicit_transport_only_behind_allow():
         return httpx.Response(200, json={"receipt_id": "rcpt-install"})
 
     executor = HermesCapabilityExecutor(
-        BASE, "k", operations_path=VERIFIED_TEST_PATH, client=_client(handler)
+        BASE,
+        "k",
+        operations_path=VERIFIED_TEST_PATH,
+        client=_client(handler),
     )
     out = governed_execute(
         _record(installation_status="proposed"),
@@ -86,7 +97,10 @@ def test_blocked_policy_never_calls_explicit_transport():
         return httpx.Response(200, json={"receipt_id": "should-not-happen"})
 
     executor = HermesCapabilityExecutor(
-        BASE, "k", operations_path=VERIFIED_TEST_PATH, client=_client(handler)
+        BASE,
+        "k",
+        operations_path=VERIFIED_TEST_PATH,
+        client=_client(handler),
     )
     out = governed_execute(
         _record(installation_status="proposed"),
