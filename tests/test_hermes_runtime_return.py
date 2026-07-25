@@ -49,7 +49,10 @@ def _running(conn, *, source_refs: list[str] | None = None) -> tuple[dict, dict,
         idempotency_key=_id("project-create"),
     )
     envelope = {
-        "root_entity": {"entity_id": f"project:{project['project_id']}", "entity_type": "project"},
+        "root_entity": {
+            "entity_id": f"project:{project['project_id']}",
+            "entity_type": "project",
+        },
         "descendants": [],
         "source_refs": list(source_refs or []),
         "explicit_additions": [],
@@ -105,15 +108,13 @@ def _rich_candidate(*, source_refs: list[str] | None = None) -> dict:
 def test_result_candidate_is_separate_immutable_record_and_issue_only_keeps_ref(conn) -> None:
     source_ref = "nas://project/cctp.pdf"
     admission, issue, run_id = _running(conn, source_refs=[source_ref])
-    key = _id("runtime-return")
-
     result = hermes_runtime_return.record_external_runtime_return(
         conn,
         admission_id=admission["admission_id"],
         run_id=run_id,
         actor="hermes-adapter",
         expected_issue_version=issue["version"],
-        idempotency_key=key,
+        idempotency_key=_id("runtime-return"),
         normalized_return={
             "outcome": "result_candidate",
             "summary": "Analyse terminée, à relire.",
@@ -131,7 +132,6 @@ def test_result_candidate_is_separate_immutable_record_and_issue_only_keeps_ref(
     assert result["result_status"] == "candidate"
     assert result["evidence_admitted"] is False
     assert result["issue_closed"] is False
-
     assert candidate["run_id"] == run_id
     assert candidate["admission_id"] == admission["admission_id"]
     assert candidate["governance_result_status"] == "candidate"
@@ -153,6 +153,9 @@ def test_result_candidate_is_separate_immutable_record_and_issue_only_keeps_ref(
     assert "open_questions" not in stored_return
     assert "candidate_payload" not in stored_return
 
+    # Isolate the following negative mutation checks from the implicit read
+    # transaction opened by the SELECT above.
+    conn.commit()
     with pytest.raises(psycopg.errors.RaiseException, match="immutable candidate snapshots"):
         conn.execute(
             "UPDATE hermes_result_candidates SET created_by = 'rewritten' WHERE result_candidate_id = %s",
@@ -170,14 +173,13 @@ def test_result_candidate_is_separate_immutable_record_and_issue_only_keeps_ref(
 def test_result_candidate_replay_returns_same_candidate(conn) -> None:
     source_ref = "nas://project/cctp.pdf"
     admission, issue, run_id = _running(conn, source_refs=[source_ref])
-    key = _id("runtime-return")
     values = dict(
         conn=conn,
         admission_id=admission["admission_id"],
         run_id=run_id,
         actor="hermes-adapter",
         expected_issue_version=issue["version"],
-        idempotency_key=key,
+        idempotency_key=_id("runtime-return"),
         normalized_return={
             "outcome": "result_candidate",
             "summary": "Analyse terminée, à relire.",
