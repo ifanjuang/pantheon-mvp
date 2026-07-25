@@ -45,14 +45,14 @@ def test_agency_project_list_accepts_cockpit_and_hermes_read_keys(monkeypatch) -
     assert observed == [("lie", 20), (None, 100)]
 
 
-def test_hermes_project_update_is_bounded_and_does_not_infer_approval(monkeypatch) -> None:
+def test_hermes_reversible_project_update_is_bounded_and_does_not_infer_approval(monkeypatch) -> None:
     observed = {}
 
     def update_project(_conn, **values):
         observed.update(values)
         return {
             "project_id": values["project_id"],
-            "phase": values["changes"]["phase"],
+            "description": values["changes"]["description"],
             "revision": values["expected_revision"] + 1,
             "owner_system": "postgres",
         }
@@ -75,7 +75,7 @@ def test_hermes_project_update_is_bounded_and_does_not_infer_approval(monkeypatc
         json={
             "expected_revision": 4,
             "idempotency_key": "idem-hermes-0001",
-            "phase": "DCE",
+            "description": "Description de travail enrichie.",
         },
     )
     assert response.status_code == 200
@@ -84,8 +84,36 @@ def test_hermes_project_update_is_bounded_and_does_not_infer_approval(monkeypatc
     assert payload["approval_inferred"] is False
     assert observed["actor_kind"] == "hermes"
     assert observed["actor"] == "hermes-agency-adapter"
-    assert observed["changes"] == {"phase": "DCE"}
+    assert observed["changes"] == {"description": "Description de travail enrichie."}
     assert observed["expected_revision"] == 4
+
+
+def test_hermes_consequential_field_surfaces_missing_governance_gate(monkeypatch) -> None:
+    def update_project(_conn, **_values):
+        raise agency_data.GovernanceGateRequired("Hermes Agency Data mutation requires a verifiable Pantheon gate for field(s): phase")
+
+    monkeypatch.setattr(agency_data, "update_project", update_project)
+    client = TestClient(
+        create_cockpit_app(
+            connect_fn=_Connection,
+            editor_api_key="editor-key",
+            hermes_api_key="hermes-key",
+        )
+    )
+    response = client.patch(
+        "/v1/agency/projects/project-lieurey",
+        headers={
+            "Authorization": "Bearer hermes-key",
+            "X-Pantheon-Actor": "hermes-agency-adapter",
+        },
+        json={
+            "expected_revision": 4,
+            "idempotency_key": "idem-hermes-phase",
+            "phase": "DCE",
+        },
+    )
+    assert response.status_code == 409
+    assert "verifiable Pantheon gate" in response.json()["detail"]
 
 
 def test_editor_project_create_is_recorded_as_human_actor(monkeypatch) -> None:
@@ -132,7 +160,7 @@ def test_agency_write_requires_actor_and_writer_key() -> None:
     body = {
         "expected_revision": 1,
         "idempotency_key": "idem-missing-actor",
-        "phase": "DCE",
+        "description": "Description bornée",
     }
     missing_actor = client.patch(
         "/v1/agency/projects/project-lieurey",
@@ -169,7 +197,7 @@ def test_same_editor_and_hermes_key_is_refused_as_ambiguous() -> None:
         json={
             "expected_revision": 1,
             "idempotency_key": "idem-ambiguous-key",
-            "phase": "DCE",
+            "description": "Description bornée",
         },
     )
     assert response.status_code == 503
