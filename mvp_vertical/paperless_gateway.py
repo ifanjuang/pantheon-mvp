@@ -120,6 +120,47 @@ def _load_task_contract_yaml(text: str) -> TaskContract:
             path.unlink(missing_ok=True)
 
 
+def _assert_capture_still_current(
+    client: PaperlessClient,
+    capture: PaperlessSourceCapture,
+) -> None:
+    """Fail closed if the source bytes changed before a root-metadata PATCH.
+
+    Paperless file versions carry version-specific bytes while non-content
+    metadata belongs to the root document. A decision derived from an exact
+    historical capture must therefore not be replayed after the live document
+    advances to different bytes.
+
+    First re-read the exact selected version to detect any replacement or
+    inconsistency. For the real Paperless client, also download the document
+    without a ``version`` query; Paperless defines that as the latest version.
+    Test doubles still exercise the exact-version re-read without needing the
+    private HTTP transport.
+    """
+
+    recaptured = client.capture_document(
+        capture.document_id,
+        version_id=capture.version_id,
+    )
+    if recaptured.content_hash != capture.content_hash:
+        raise PaperlessMutationError(
+            "exact Paperless source changed after decision capture; metadata mutation refused"
+        )
+
+    if isinstance(client, PaperlessClient):
+        response = client._request(  # internal adapter boundary; token remains server-side
+            "GET",
+            f"/api/documents/{capture.document_id}/download/",
+            headers={"Accept": "*/*"},
+        )
+        latest_hash = "sha256:" + hashlib.sha256(bytes(response.content)).hexdigest()
+        if latest_hash != capture.content_hash:
+            raise PaperlessMutationError(
+                "Paperless live document has a newer/different source version; "
+                "metadata mutation requires a new capture and human decision"
+            )
+
+
 def _required_project_scope(contract: TaskContract) -> dict[str, str]:
     raw_scope = contract.raw.get("scope") or {}
     scope_type = str(raw_scope.get("scope_type") or "project")
@@ -470,11 +511,16 @@ def create_app(
                 contract, capture, body.changes, body.classification_candidate
             )
             client = paperless()
+
+            def apply_metadata_update() -> dict[str, Any]:
+                _assert_capture_still_current(client, capture)
+                return client.update_document_metadata(document_id, body.changes)
+
             result = governed_effect(
                 app.state.policy_factory(),
                 candidate=candidate,
                 decision_payload=body.decision_payload,
-                effect=lambda: client.update_document_metadata(document_id, body.changes),
+                effect=apply_metadata_update,
             )
         except ContractError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
