@@ -39,8 +39,17 @@ def install_hermes_handoff_preview_routes(
     app: FastAPI,
     *,
     require_read_key: Callable,
-    with_connection: Callable,
+    with_connection: Callable | None = None,
 ) -> None:
+    def use_connection(operation):
+        if with_connection is not None:
+            return with_connection(operation)
+        conn = app.state.connect_fn()
+        try:
+            return operation(conn)
+        finally:
+            conn.close()
+
     @app.post("/v1/cockpit/hermes-handoffs/preview")
     def preview_hermes_handoff(
         body: HermesHandoffPreviewBody,
@@ -62,7 +71,7 @@ def install_hermes_handoff_preview_routes(
         }
         if body.include_declared_descendants:
             try:
-                resolved = with_connection(
+                resolved = use_connection(
                     lambda conn: card_scope.resolve_declared_descendants(
                         conn,
                         root_entity=envelope["root_entity"],
