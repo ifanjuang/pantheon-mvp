@@ -1,8 +1,9 @@
 """API boundary for execution admission and external Hermes runtime callbacks.
 
 The Cockpit may admit/revoke one exact handoff. Hermes may fetch that admission
-by ID and report its own start/return. No pending-work listing, scheduler, queue,
-dispatch endpoint or provider routing exists here.
+by ID, read only the exact admitted context after its run starts, and report its
+own start/return. No pending-work listing, scheduler, queue, dispatch endpoint,
+global Agency Data access or provider routing exists here.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from . import (
     hermes_execution,
     hermes_result_candidate,
     hermes_runtime_return,
+    hermes_scoped_context,
     work_issues,
 )
 from .app_lifecycle import install_post_start_initializer
@@ -102,7 +104,7 @@ def install_hermes_execution_routes(
         if not x_pantheon_hermes_actor or not x_pantheon_hermes_actor.strip():
             raise HTTPException(
                 status_code=422,
-                detail="X-Pantheon-Hermes-Actor is required for a runtime callback",
+                detail="X-Pantheon-Hermes-Actor is required for a Hermes runtime request",
             )
         return x_pantheon_hermes_actor.strip()
 
@@ -222,6 +224,60 @@ def install_hermes_execution_routes(
         ) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (hermes_execution.HermesExecutionError, work_issues.WorkIssueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/context")
+    def get_hermes_scoped_context_manifest(
+        admission_id: str,
+        run_id: str,
+        _authorized: None = Depends(require_hermes_key),
+        actor: str = Depends(require_hermes_actor),
+    ) -> dict:
+        try:
+            return use_connection(
+                lambda conn: hermes_scoped_context.get_context_manifest(
+                    conn,
+                    admission_id=admission_id,
+                    run_id=run_id,
+                    actor=actor,
+                )
+            )
+        except hermes_scoped_context.ScopedContextNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except hermes_scoped_context.ScopedContextConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except hermes_scoped_context.HermesScopedContextError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get(
+        "/v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/context/entities/{entity_type}/{entity_id}"
+    )
+    def get_hermes_scoped_context_entity(
+        admission_id: str,
+        run_id: str,
+        entity_type: str,
+        entity_id: str,
+        _authorized: None = Depends(require_hermes_key),
+        actor: str = Depends(require_hermes_actor),
+    ) -> dict:
+        try:
+            return use_connection(
+                lambda conn: hermes_scoped_context.get_context_entity(
+                    conn,
+                    admission_id=admission_id,
+                    run_id=run_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    actor=actor,
+                )
+            )
+        except hermes_scoped_context.ScopedContextNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except hermes_scoped_context.ScopedContextConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except hermes_scoped_context.ScopedContextContentTooLarge as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except hermes_scoped_context.HermesScopedContextError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/return", status_code=200)
