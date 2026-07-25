@@ -85,7 +85,28 @@ def _preview_body() -> dict:
     }
 
 
-def test_handoff_preview_api_requires_read_key_and_refuses_implicit_scope_widening() -> None:
+def _patch_scope_validation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        card_scope,
+        "validate_entity_ref",
+        lambda _conn, *, entity_ref: {**entity_ref, "source_refs": []},
+    )
+    monkeypatch.setattr(
+        card_scope,
+        "resolve_explicit_context",
+        lambda _conn, *, entity_refs: {
+            "entities": list(entity_refs),
+            "source_refs": [
+                "source:selected.pdf"
+                for item in entity_refs
+                if item.get("entity_type") == "document"
+            ],
+        },
+    )
+
+
+def test_handoff_preview_api_requires_read_key_and_refuses_implicit_scope_widening(monkeypatch) -> None:
+    _patch_scope_validation(monkeypatch)
     client = TestClient(
         create_cockpit_app(
             connect_fn=_Connection,
@@ -116,8 +137,59 @@ def test_handoff_preview_api_requires_read_key_and_refuses_implicit_scope_wideni
     assert "may not widen scope implicitly" in widened.json()["detail"]
 
 
+def test_handoff_preview_api_rejects_client_supplied_scope_material(monkeypatch) -> None:
+    _patch_scope_validation(monkeypatch)
+    client = TestClient(create_cockpit_app(connect_fn=_Connection, api_key="read-key"))
+    headers = {"Authorization": "Bearer read-key"}
+
+    for field, value in (
+        ("descendants", [{"entity_id": "document:forged", "entity_type": "document"}]),
+        ("source_refs", ["file:///forged-secret"]),
+        ("explicit_additions", [{"entity_id": "person:forged", "entity_type": "person"}]),
+    ):
+        body = _preview_body()
+        body["card_context_envelope"][field] = value
+        response = client.post(
+            "/v1/cockpit/hermes-handoffs/preview",
+            headers=headers,
+            json=body,
+        )
+        assert response.status_code == 422
+        assert "server-controlled" in response.json()["detail"]
+
+
+def test_selected_context_is_server_validated_and_can_add_resolved_sources(monkeypatch) -> None:
+    calls = []
+    _patch_scope_validation(monkeypatch)
+
+    def resolve_explicit_context(_conn, *, entity_refs):
+        calls.append(list(entity_refs))
+        return {
+            "entities": list(entity_refs),
+            "source_refs": ["nas://lieurey/selected.pdf"] if entity_refs else [],
+        }
+
+    monkeypatch.setattr(card_scope, "resolve_explicit_context", resolve_explicit_context)
+    client = TestClient(create_cockpit_app(connect_fn=_Connection, api_key="read-key"))
+    body = _preview_body()
+    body["selected_context"] = [
+        {"entity_id": "document:selected", "entity_type": "document"}
+    ]
+    response = client.post(
+        "/v1/cockpit/hermes-handoffs/preview",
+        headers={"Authorization": "Bearer read-key"},
+        json=body,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert calls[0] == [{"entity_id": "document:selected", "entity_type": "document"}]
+    assert payload["scope_resolution"]["selected_entities_validated"] == 1
+    assert payload["context_pack"]["source_refs"] == ["nas://lieurey/selected.pdf"]
+
+
 def test_declared_descendants_are_added_only_when_explicitly_requested(monkeypatch) -> None:
     calls = []
+    _patch_scope_validation(monkeypatch)
 
     def resolve_declared_descendants(_conn, *, root_entity):
         calls.append(root_entity)
