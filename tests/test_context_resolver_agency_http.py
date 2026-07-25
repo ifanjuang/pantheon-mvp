@@ -24,6 +24,19 @@ def _run_node(script: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_v2_context_javascript_parses() -> None:
+    node = shutil.which("node")
+    if node is None:  # pragma: no cover
+        pytest.skip("Node.js is unavailable; JavaScript syntax check skipped")
+    result = subprocess.run(
+        [node, "--check", str(ROOT / "mvp_vertical" / "cockpit" / "v2_context.js")],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_agency_http_payloads_keep_stable_identity_and_project_code_ranking() -> None:
     script = r'''
       global.window = {};
