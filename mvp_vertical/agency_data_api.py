@@ -54,6 +54,8 @@ def install_agency_data_routes(
             return with_connection(operation)
         except agency_data.ProjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except agency_data.GovernanceGateRequired as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (agency_data.StaleProjectWrite, agency_data.IdempotencyConflict) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except agency_data.AgencyDataError as exc:
