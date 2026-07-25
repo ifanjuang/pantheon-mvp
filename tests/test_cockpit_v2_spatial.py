@@ -106,6 +106,9 @@ def test_v2_route_exposes_five_spaces_and_live_agency_project_collection() -> No
     assert 'PostgreSQL Agency Data' in javascript
     assert '../v1/agency/projects?limit=200' in javascript
     assert 'state.projects = payload.projects || []' in javascript
+    assert '../v1/agency/projects/${encodeURIComponent(state.project)}/participations' in javascript
+    assert 'title: "Intervenants"' in javascript
+    assert 'entity_type: "project_participation"' in javascript
     assert "La clé seule charge la collection Agency Data" in html
 
 
