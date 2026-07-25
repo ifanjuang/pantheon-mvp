@@ -42,10 +42,12 @@ class CapabilityRecord:
     source_ref: str | None = None
 
 
+# Each action: whether it is consequential (must route through the chokepoint),
+# a legality predicate over the current record, and the record transition.
 @dataclass(frozen=True)
 class _Action:
     consequential: bool
-    legal: Callable[[CapabilityRecord], str | None]
+    legal: Callable[[CapabilityRecord], str | None]  # None = legal, else reason
     apply: Callable[[CapabilityRecord], CapabilityRecord]
 
 
@@ -54,17 +56,53 @@ def _requires(status_field: str, value: str):
         if getattr(record, status_field) != value:
             return f"{status_field} must be {value!r} (is {getattr(record, status_field)!r})"
         return None
+
     return check
 
 
 ACTIONS: dict[str, _Action] = {
-    "propose_install": _Action(False, _requires("installation_status", "absent"), lambda r: replace(r, installation_status="proposed")),
-    "install": _Action(True, _requires("installation_status", "proposed"), lambda r: replace(r, installation_status="installed", health_status="unknown")),
-    "enable": _Action(True, lambda r: _requires("installation_status", "installed")(r) or _requires("enablement_status", "disabled")(r), lambda r: replace(r, enablement_status="enabled")),
-    "disable": _Action(True, _requires("enablement_status", "enabled"), lambda r: replace(r, enablement_status="disabled", activation_scope=None)),
-    "update": _Action(True, lambda r: _requires("installation_status", "installed")(r) or _requires("update_status", "update_available")(r), lambda r: replace(r, update_status="up_to_date")),
-    "suspend": _Action(True, _requires("installation_status", "installed"), lambda r: replace(r, installation_status="suspended", enablement_status="disabled", activation_scope=None)),
-    "retire": _Action(True, lambda r: None if r.installation_status in {"installed", "suspended"} else "not installed", lambda r: replace(r, installation_status="absent", enablement_status="disabled", activation_scope=None)),
+    # Authoring a candidate is not consequential: nothing is installed.
+    "propose_install": _Action(
+        consequential=False,
+        legal=_requires("installation_status", "absent"),
+        apply=lambda r: replace(r, installation_status="proposed"),
+    ),
+    "install": _Action(
+        consequential=True,
+        legal=_requires("installation_status", "proposed"),
+        apply=lambda r: replace(r, installation_status="installed", health_status="unknown"),
+    ),
+    "enable": _Action(
+        consequential=True,
+        legal=lambda r: _requires("installation_status", "installed")(r)
+        or _requires("enablement_status", "disabled")(r),
+        apply=lambda r: replace(r, enablement_status="enabled"),
+    ),
+    "disable": _Action(
+        consequential=True,
+        legal=_requires("enablement_status", "enabled"),
+        apply=lambda r: replace(r, enablement_status="disabled", activation_scope=None),
+    ),
+    "update": _Action(
+        consequential=True,
+        legal=lambda r: _requires("installation_status", "installed")(r)
+        or _requires("update_status", "update_available")(r),
+        apply=lambda r: replace(r, update_status="up_to_date"),
+    ),
+    "suspend": _Action(
+        consequential=True,
+        legal=_requires("installation_status", "installed"),
+        apply=lambda r: replace(
+            r, installation_status="suspended", enablement_status="disabled", activation_scope=None
+        ),
+    ),
+    "retire": _Action(
+        consequential=True,
+        legal=lambda r: None if r.installation_status in {"installed", "suspended"} else "not installed",
+        apply=lambda r: replace(
+            r, installation_status="absent", enablement_status="disabled", activation_scope=None
+        ),
+    ),
 }
 
 
@@ -95,7 +133,12 @@ def governed_execute(
     decision_payload: dict[str, Any] | None = None,
     candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Perform one lifecycle action under governance."""
+    """Perform one lifecycle action under governance.
+
+    A consequential action routes through the chokepoint (preflight + valid human
+    decision) and runs `executor` only behind an allow verdict; on a block the
+    executor never runs and the record is unchanged. The executor performs the
+    native operation externally and returns a technical receipt."""
     plan = plan_action(record, action)
     if not plan["legal"]:
         return {"status": "refused", "plan": plan, "observation": record, "receipt": None}
@@ -124,12 +167,12 @@ def governed_execute(
                 "receipt": None,
             }
 
-    receipt = executor(action, record)
+    receipt = executor(action, record)  # native op, external to this manager
     observation = ACTIONS[action].apply(record)
     return {
         "status": "applied",
         "plan": plan,
-        "receipt": receipt,
+        "receipt": receipt,  # technical receipt != evidence
         "observation": observation,
         "notes": [
             "installed != approved; enabled != activated for a scope.",
@@ -187,7 +230,8 @@ class HermesCapabilityExecutor:
         client = self._client
         owns = client is None
         if owns:
-            import httpx
+            import httpx  # lazy: not a core dependency
+
             client = httpx.Client(timeout=self._timeout)
         try:
             response = client.post(
