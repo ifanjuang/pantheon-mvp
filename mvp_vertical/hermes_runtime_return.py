@@ -90,10 +90,10 @@ def record_external_runtime_return(
     admission_id: str,
     run_id: str,
     normalized_return: dict,
-    result_candidate: dict | None,
     actor: str,
     expected_issue_version: int,
     idempotency_key: str,
+    result_candidate: dict | None = None,
 ) -> dict:
     if not actor.strip():
         raise HermesRuntimeReturnError("Hermes actor is required")
