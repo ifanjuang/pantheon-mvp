@@ -1,19 +1,26 @@
 """API boundary for execution admission and external Hermes runtime callbacks.
 
 The Cockpit may admit/revoke one exact handoff. Hermes may fetch that admission
-by ID and report its own start/return. No pending-work listing, scheduler, queue,
-dispatch endpoint or provider routing exists here.
+by ID, read only the exact admitted context after its run starts, and report its
+own start/return. No pending-work listing, scheduler, queue, dispatch endpoint,
+global Agency Data access or provider routing exists here.
 """
 
 from __future__ import annotations
 
 import hmac
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import hermes_execution, hermes_runtime_return, work_issues
+from . import (
+    hermes_execution,
+    hermes_result_candidate,
+    hermes_runtime_return,
+    hermes_scoped_context,
+    work_issues,
+)
 from .app_lifecycle import install_post_start_initializer
 
 
@@ -43,8 +50,21 @@ class HermesNormalizedReturn(BaseModel):
     evidence_candidate_refs: list[str] = Field(default_factory=list, max_length=500)
 
 
+class HermesResultCandidateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_type: str = Field(min_length=1, max_length=200)
+    candidate_payload: dict[str, Any] = Field(default_factory=dict)
+    confidence_note: str | None = Field(default=None, max_length=10_000)
+    known_limits: list[str] = Field(default_factory=list, max_length=500)
+    open_questions: list[str] = Field(default_factory=list, max_length=500)
+    source_refs: list[str] = Field(default_factory=list, max_length=500)
+    missing_evidence: list[str] = Field(default_factory=list, max_length=500)
+
+
 class HermesRuntimeReturnBody(BaseModel):
     normalized_return: HermesNormalizedReturn
+    result_candidate: HermesResultCandidateBody | None = None
     expected_issue_version: int = Field(ge=1)
     idempotency_key: str = Field(min_length=8, max_length=200)
 
@@ -84,7 +104,7 @@ def install_hermes_execution_routes(
         if not x_pantheon_hermes_actor or not x_pantheon_hermes_actor.strip():
             raise HTTPException(
                 status_code=422,
-                detail="X-Pantheon-Hermes-Actor is required for a runtime callback",
+                detail="X-Pantheon-Hermes-Actor is required for a Hermes runtime request",
             )
         return x_pantheon_hermes_actor.strip()
 
@@ -98,6 +118,7 @@ def install_hermes_execution_routes(
             try:
                 for migration in hermes_execution.MIGRATIONS:
                     conn.execute(migration.read_text(encoding="utf-8"))
+                conn.execute(hermes_result_candidate.MIGRATION.read_text(encoding="utf-8"))
                 conn.commit()
             finally:
                 conn.close()
@@ -205,6 +226,60 @@ def install_hermes_execution_routes(
         except (hermes_execution.HermesExecutionError, work_issues.WorkIssueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    @app.get("/v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/context")
+    def get_hermes_scoped_context_manifest(
+        admission_id: str,
+        run_id: str,
+        _authorized: None = Depends(require_hermes_key),
+        actor: str = Depends(require_hermes_actor),
+    ) -> dict:
+        try:
+            return use_connection(
+                lambda conn: hermes_scoped_context.get_context_manifest(
+                    conn,
+                    admission_id=admission_id,
+                    run_id=run_id,
+                    actor=actor,
+                )
+            )
+        except hermes_scoped_context.ScopedContextNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except hermes_scoped_context.ScopedContextConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except hermes_scoped_context.HermesScopedContextError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get(
+        "/v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/context/entities/{entity_type}/{entity_id}"
+    )
+    def get_hermes_scoped_context_entity(
+        admission_id: str,
+        run_id: str,
+        entity_type: str,
+        entity_id: str,
+        _authorized: None = Depends(require_hermes_key),
+        actor: str = Depends(require_hermes_actor),
+    ) -> dict:
+        try:
+            return use_connection(
+                lambda conn: hermes_scoped_context.get_context_entity(
+                    conn,
+                    admission_id=admission_id,
+                    run_id=run_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    actor=actor,
+                )
+            )
+        except hermes_scoped_context.ScopedContextNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except hermes_scoped_context.ScopedContextConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except hermes_scoped_context.ScopedContextContentTooLarge as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except hermes_scoped_context.HermesScopedContextError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @app.post("/v1/hermes/execution-admissions/{admission_id}/runs/{run_id}/return", status_code=200)
     def record_hermes_runtime_return(
         admission_id: str,
@@ -220,6 +295,11 @@ def install_hermes_execution_routes(
                     admission_id=admission_id,
                     run_id=run_id,
                     normalized_return=body.normalized_return.model_dump(),
+                    result_candidate=(
+                        body.result_candidate.model_dump()
+                        if body.result_candidate is not None
+                        else None
+                    ),
                     actor=actor,
                     expected_issue_version=body.expected_issue_version,
                     idempotency_key=body.idempotency_key,
