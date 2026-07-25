@@ -11,7 +11,7 @@ import hmac
 from typing import Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from . import hermes_execution, hermes_runtime_return, work_issues
 from .app_lifecycle import install_post_start_initializer
@@ -34,13 +34,13 @@ class HermesRuntimeStartBody(BaseModel):
 
 
 class HermesNormalizedReturn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     outcome: Literal["result_candidate", "partial", "failed", "capability_gap"]
     summary: str = Field(min_length=1, max_length=20_000)
     trace_refs: list[str] = Field(min_length=1, max_length=500)
-    source_refs: list[str] = Field(default_factory=list, max_length=500)
+    result_refs: list[str] = Field(default_factory=list, max_length=500)
     evidence_candidate_refs: list[str] = Field(default_factory=list, max_length=500)
-    limitations: list[str] = Field(default_factory=list, max_length=200)
-    open_questions: list[str] = Field(default_factory=list, max_length=200)
 
 
 class HermesRuntimeReturnBody(BaseModel):
