@@ -9,6 +9,10 @@
     return $("v2-token")?.value || "";
   }
 
+  function includeDeclaredDescendants() {
+    return Boolean($("v2-handoff-descendants")?.checked);
+  }
+
   function currentCardRef() {
     const card = document.querySelector("#v2-stage .v2-card");
     if (!card) return null;
@@ -28,7 +32,8 @@
       $("v2-handoff-scope").textContent = "Aucune carte courante";
       return;
     }
-    $("v2-handoff-scope").textContent = `${root.label} · carte seule + ${selectedCount} ajout(s) explicite(s)`;
+    const descendants = includeDeclaredDescendants() ? " + descendants déclarés" : "";
+    $("v2-handoff-scope").textContent = `${root.label}${descendants} + ${selectedCount} ajout(s) explicite(s)`;
   }
 
   function buildEnvelope() {
@@ -58,9 +63,12 @@
 
     const refs = document.createElement("dl");
     refs.className = "v2-handoff-refs";
+    const resolution = payload.scope_resolution || {};
     const rows = [
       ["Task Contract", payload.task_contract?.task_contract_ref],
       ["Context Pack", payload.context_pack?.context_pack_ref],
+      ["Politique scope", resolution.policy || "root_only"],
+      ["Descendants ajoutés", resolution.descendants_added ?? 0],
       ["Entités incluses", payload.context_pack?.included_entities?.length ?? 0],
       ["Sources", payload.context_pack?.source_refs?.length ?? 0],
     ];
@@ -120,6 +128,7 @@
             entity_id: item.entity_id,
             entity_type: item.entity_type,
           })),
+          include_declared_descendants: includeDeclaredDescendants(),
         }),
       });
       const payload = await response.json().catch(() => ({ detail: response.statusText }));
@@ -136,28 +145,32 @@
     }
   }
 
-  document.addEventListener("pantheon:v2-context-changed", event => {
-    selectedContext = Array.isArray(event.detail?.selected) ? event.detail.selected : [];
+  function invalidatePreview(message) {
     previewGeneration += 1;
     $("v2-handoff-preview")?.replaceChildren();
+    if (message) $("v2-handoff-message").textContent = message;
     updateScopeLabel();
+  }
+
+  document.addEventListener("pantheon:v2-context-changed", event => {
+    selectedContext = Array.isArray(event.detail?.selected) ? event.detail.selected : [];
+    invalidatePreview("Contexte sélectionné modifié : préparez à nouveau la portée.");
   });
 
   const stage = $("v2-stage");
   if (stage) {
     const observer = new MutationObserver(() => {
-      previewGeneration += 1;
-      $("v2-handoff-preview")?.replaceChildren();
-      updateScopeLabel();
+      invalidatePreview("Carte courante modifiée : préparez à nouveau la portée.");
     });
     observer.observe(stage, { childList: true, subtree: false });
   }
 
   $("v2-handoff-prepare")?.addEventListener("click", () => void previewHandoff());
   $("v2-handoff-question")?.addEventListener("input", () => {
-    previewGeneration += 1;
-    $("v2-handoff-preview")?.replaceChildren();
-    $("v2-handoff-message").textContent = "Question modifiée : préparez à nouveau la portée.";
+    invalidatePreview("Question modifiée : préparez à nouveau la portée.");
+  });
+  $("v2-handoff-descendants")?.addEventListener("change", () => {
+    invalidatePreview("Politique de descendants modifiée : préparez à nouveau la portée.");
   });
 
   updateScopeLabel();
