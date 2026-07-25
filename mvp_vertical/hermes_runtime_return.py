@@ -11,6 +11,14 @@ from psycopg.rows import dict_row
 
 from . import work_issues
 
+ALLOWED_RETURN_FIELDS = {
+    "outcome",
+    "summary",
+    "result_refs",
+    "evidence_candidate_refs",
+    "trace_refs",
+}
+
 
 class HermesRuntimeReturnError(ValueError):
     pass
@@ -26,6 +34,14 @@ def _work_issue_record(conn: psycopg.Connection, issue_id: str) -> dict:
     if not isinstance(issue, dict):
         raise HermesRuntimeReturnError("Work Issue projection is missing its work_issue record")
     return issue
+
+
+def _validate_normalized_return_shape(normalized_return: dict) -> None:
+    unsupported = sorted(set(normalized_return) - ALLOWED_RETURN_FIELDS)
+    if unsupported:
+        raise HermesRuntimeReturnError(
+            "unsupported normalized Hermes return field(s): " + ", ".join(unsupported)
+        )
 
 
 def _run_for_admission(
@@ -67,6 +83,7 @@ def record_external_runtime_return(
         raise HermesRuntimeReturnError("Hermes actor is required")
     if not run_id.strip():
         raise HermesRuntimeReturnError("external Hermes run_id is required")
+    _validate_normalized_return_shape(normalized_return)
 
     with conn.transaction():
         run = _run_for_admission(conn, admission_id=admission_id, run_id=run_id)
