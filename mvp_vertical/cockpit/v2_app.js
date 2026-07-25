@@ -38,6 +38,7 @@
     project: "",
     token: "",
     projects: [],
+    participations: [],
     documents: [],
     knowledge: [],
     workIssues: [],
@@ -172,7 +173,7 @@
       item.location,
     ].filter(Boolean).join(" · ");
     const selectedSummary = selected
-      ? `${state.documents.length} document(s) · ${state.knowledge.length} connaissance(s) · ${state.workIssues.length} sujet(s)`
+      ? `${state.documents.length} document(s) · ${state.participations.length} intervenant(s) · ${state.workIssues.length} sujet(s)`
       : businessSummary || "Affaire Agency Data";
     return card({
       entity_id: projectEntityId(item),
@@ -187,7 +188,7 @@
       metrics: selected
         ? [
             { value: state.documents.length, label: "documents" },
-            { value: state.workIssues.length, label: "attention" },
+            { value: state.participations.length, label: "intervenants" },
           ]
         : item.revision
           ? [{ value: item.revision, label: "révision" }]
@@ -203,6 +204,33 @@
         ...(selected ? [["Connaissances liées", `${state.knowledge.length} item(s) exposé(s) dans l’espace Connaissances.`]] : []),
       ],
       source_project_id: String(projectId || ""),
+    });
+  }
+
+  function normalizeParticipation(item, projectId) {
+    const id = item.participation_id || crypto.randomUUID();
+    const person = item.person_name || null;
+    const organization = item.organization_name || item.label || null;
+    const title = item.role || "Intervenant";
+    const summary = [person, organization, item.participation_type].filter(Boolean).join(" · ") || "Relation projet";
+    return card({
+      entity_id: `participation:${id}`,
+      entity_type: "project_participation",
+      role: "entity",
+      family: "project",
+      title,
+      summary,
+      status: "neutral",
+      identity_accent: stableAccent(projectId),
+      metrics: item.revision ? [{ value: item.revision, label: "révision" }] : [],
+      back: [
+        ["Projet", projectId],
+        ["Personne", text(person, "Non renseignée")],
+        ["Société", text(organization, "Non renseignée")],
+        ["Rôle", text(item.role, "Non renseigné")],
+        ["Type", text(item.participation_type, "Non renseigné")],
+        ["System of record", "PostgreSQL Agency Data"],
+      ],
     });
   }
 
@@ -330,7 +358,32 @@
       projectIds.push(putCard(fallback, "space:affaires"));
     }
 
-    if (selectedCardId && state.cards.has(selectedCardId)) setChildren(selectedCardId, documentIds);
+    const selectedChildren = [];
+    if (selectedCardId && state.cards.has(selectedCardId)) {
+      const participationContainerId = `${selectedCardId}:participations`;
+      const participationContainer = card({
+        entity_id: participationContainerId,
+        entity_type: "project_participation_collection",
+        role: "container",
+        family: "project",
+        title: "Intervenants",
+        summary: `${state.participations.length} relation(s) projet · personnes et sociétés restent identifiables`,
+        status: "neutral",
+        identity_accent: stableAccent(selectedProjectId),
+        metrics: [{ value: state.participations.length, label: "relations" }],
+        back: [
+          ["Propriétaire", "PostgreSQL Agency Data"],
+          ["Principe", "ProjectParticipation qualifie une relation ; elle ne fusionne ni Personne ni Société avec le Projet."],
+        ],
+      });
+      putCard(participationContainer, selectedCardId);
+      const participationIds = state.participations.map(item =>
+        putCard(normalizeParticipation(item, selectedProjectId), participationContainerId),
+      );
+      setChildren(participationContainerId, participationIds);
+      selectedChildren.push(participationContainerId, ...documentIds);
+      setChildren(selectedCardId, selectedChildren);
+    }
 
     const reviewDocuments = state.documents
       .filter(item => (item.analysis_status || "partial") !== "ready")
@@ -376,7 +429,9 @@
       const name = typeof tag === "string" ? tag : tag.name;
       rail.append(orb((name || "T").slice(0, 2).toUpperCase(), name, "tag"));
     }
-    if ((model.tags || []).length > 3) rail.append(orb(`+${model.tags.length - 3}`, "Tags supplémentaires", "tag"));
+    if ((model.tags || []).length > 3) {
+      rail.append(orb(`+${model.tags.length - 3}`, "Tags supplémentaires", "tag"));
+    }
   }
 
   function renderFront(model) {
@@ -415,7 +470,9 @@
     const rail = document.createElement("div");
     rail.className = "v2-indicator-rail";
     renderTags(model, rail);
-    for (const metric of (model.metrics || []).slice(0, 2)) rail.append(orb(metric.value, metric.label, "metric"));
+    for (const metric of (model.metrics || []).slice(0, 2)) {
+      rail.append(orb(metric.value, metric.label, "metric"));
+    }
     footer.append(mark, rail);
     face.append(top, body, footer);
     return face;
@@ -609,6 +666,7 @@
       }
 
       if (!state.project) {
+        state.participations = [];
         state.documents = [];
         state.knowledge = [];
         state.workIssues = [];
@@ -620,14 +678,19 @@
       }
 
       setMessage(`Chargement des projections de ${state.project}…`);
-      const [documents, knowledge, workIssues] = await Promise.all([
+      const participationPromise = matched?.project_id
+        ? api(`../v1/agency/projects/${encodeURIComponent(state.project)}/participations`)
+        : Promise.resolve({ participations: [] });
+      const [documents, knowledge, workIssues, participations] = await Promise.all([
         api(`../v1/projects/${encodeURIComponent(state.project)}/documents`),
         api(`../v1/projects/${encodeURIComponent(state.project)}/knowledge`),
         api(`../v1/projects/${encodeURIComponent(state.project)}/work-issues`),
+        participationPromise,
       ]);
       state.documents = documents.documents || [];
       state.knowledge = knowledge.knowledge || [];
       state.workIssues = workIssues.work_issues || [];
+      state.participations = participations.participations || [];
       rebuildGraph();
       state.navigator.returnToRoot("space:affaires");
       if (focusProject || state.project) {
@@ -645,6 +708,7 @@
       render();
       setMessage(`Affaire ${matched?.display_name || matched?.code || state.project} chargée dans la hiérarchie V2.`);
     } catch (error) {
+      state.participations = [];
       state.documents = [];
       state.knowledge = [];
       state.workIssues = [];
