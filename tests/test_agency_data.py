@@ -70,24 +70,24 @@ def test_project_create_list_and_human_revision_checked_update(conn) -> None:
     assert updated["updated_by"] == "human-reviewer"
 
 
-def test_hermes_direct_write_ceiling_allows_reversible_description_update(conn) -> None:
+def test_hermes_direct_description_update_requires_admitted_bounded_capability(conn) -> None:
     created = _create(conn)
-    updated = agency_data.update_project(
-        conn,
-        project_id=created["project_id"],
-        changes={"description": "Description de travail enrichie par Hermes."},
-        actor="hermes-agency-adapter",
-        actor_kind="hermes",
-        expected_revision=1,
-        idempotency_key=_id("hermes-description"),
-    )
-    assert updated["revision"] == 2
-    assert "enrichie" in updated["description"]
+    with pytest.raises(agency_data.GovernanceGateRequired, match="admitted bounded capability"):
+        agency_data.update_project(
+            conn,
+            project_id=created["project_id"],
+            changes={"description": "Description de travail enrichie par Hermes."},
+            actor="hermes-agency-adapter",
+            actor_kind="hermes",
+            expected_revision=1,
+            idempotency_key=_id("hermes-description"),
+        )
+    assert agency_data.get_project(conn, created["project_id"])["description"] == "Maison individuelle"
 
 
-def test_hermes_consequential_project_field_requires_governance_gate(conn) -> None:
+def test_hermes_consequential_project_field_requires_admitted_bounded_capability(conn) -> None:
     created = _create(conn)
-    with pytest.raises(agency_data.GovernanceGateRequired, match="phase"):
+    with pytest.raises(agency_data.GovernanceGateRequired, match="admitted bounded capability"):
         agency_data.update_project(
             conn,
             project_id=created["project_id"],
@@ -100,8 +100,8 @@ def test_hermes_consequential_project_field_requires_governance_gate(conn) -> No
     assert agency_data.get_project(conn, created["project_id"])["phase"] == "PRO"
 
 
-def test_hermes_project_creation_requires_governance_gate(conn) -> None:
-    with pytest.raises(agency_data.GovernanceGateRequired, match="creation"):
+def test_hermes_project_creation_requires_admitted_bounded_capability(conn) -> None:
+    with pytest.raises(agency_data.GovernanceGateRequired, match="admitted bounded capability"):
         agency_data.create_project(
             conn,
             project_id=_id("project"),
@@ -129,11 +129,11 @@ def test_stale_write_is_refused_without_overwrite(conn) -> None:
         agency_data.update_project(
             conn,
             project_id=created["project_id"],
-            changes={"description": "Version Hermes obsolète"},
-            actor="hermes-agency-adapter",
-            actor_kind="hermes",
+            changes={"description": "Version humaine obsolète"},
+            actor="second-human-reviewer",
+            actor_kind="human",
             expected_revision=1,
-            idempotency_key=_id("stale-hermes-update"),
+            idempotency_key=_id("stale-human-update"),
         )
 
     assert agency_data.get_project(conn, created["project_id"])["description"] == "Version humaine courante"
@@ -146,8 +146,8 @@ def test_idempotent_replay_returns_original_snapshot(conn) -> None:
         conn,
         project_id=created["project_id"],
         changes={"description": "Une description stable"},
-        actor="hermes-agency-adapter",
-        actor_kind="hermes",
+        actor="human-reviewer",
+        actor_kind="human",
         expected_revision=1,
         idempotency_key=key,
     )
@@ -155,8 +155,8 @@ def test_idempotent_replay_returns_original_snapshot(conn) -> None:
         conn,
         project_id=created["project_id"],
         changes={"description": "Une description stable"},
-        actor="hermes-agency-adapter",
-        actor_kind="hermes",
+        actor="human-reviewer",
+        actor_kind="human",
         expected_revision=1,
         idempotency_key=key,
     )
@@ -170,8 +170,8 @@ def test_idempotency_key_cannot_be_reused_for_different_payload(conn) -> None:
         conn,
         project_id=created["project_id"],
         changes={"description": "Première description"},
-        actor="hermes-agency-adapter",
-        actor_kind="hermes",
+        actor="human-reviewer",
+        actor_kind="human",
         expected_revision=1,
         idempotency_key=key,
     )
@@ -180,8 +180,8 @@ def test_idempotency_key_cannot_be_reused_for_different_payload(conn) -> None:
             conn,
             project_id=created["project_id"],
             changes={"description": "Autre description"},
-            actor="hermes-agency-adapter",
-            actor_kind="hermes",
+            actor="human-reviewer",
+            actor_kind="human",
             expected_revision=1,
             idempotency_key=key,
         )
@@ -208,8 +208,8 @@ def test_unknown_project_fields_are_refused(conn) -> None:
             conn,
             project_id=created["project_id"],
             changes={"evidence_status": "approved"},
-            actor="hermes-agency-adapter",
-            actor_kind="hermes",
+            actor="human-reviewer",
+            actor_kind="human",
             expected_revision=1,
             idempotency_key=_id("forbidden"),
         )
