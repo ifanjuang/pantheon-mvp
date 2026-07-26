@@ -86,6 +86,10 @@ def test_project_attributes_round_trip_through_postgres_when_available() -> None
         assert updated["revision"] == created["revision"] + 1
         assert updated["attributes"] == {"budget": 375000, "erp_type": "5e catégorie"}
     finally:
+        # Agency events are deliberately RESTRICT-linked and append-only in normal
+        # operation. Test cleanup removes the fixture history explicitly before
+        # deleting its fixture Project.
+        conn.execute("DELETE FROM agency_project_events WHERE project_id = %s", (project_id,))
         conn.execute("DELETE FROM agency_projects WHERE project_id = %s", (project_id,))
         conn.commit()
         conn.close()
