@@ -1,12 +1,14 @@
 """Read-only Work Issue projections for the cards-first cockpit.
 
-The adapter reads the existing Work Issue aggregate and append-only events. It
-creates no card record, changes no issue status and grants no Hermes authority.
+The adapter reads the governed Work Issue aggregate plus optional Work Card
+presentation metadata. It creates no card record, changes no issue status and
+grants no Hermes authority.
 """
 
 from __future__ import annotations
 
 import psycopg
+from psycopg.rows import dict_row
 
 from . import work_issues
 
@@ -21,13 +23,31 @@ _STATUS_ORDER = {
 }
 
 
-def _card_projection(issue: dict) -> dict:
-    """Expose workflow metadata without turning it into an execution engine."""
+def _metadata(conn: psycopg.Connection, issue_id: str) -> dict:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT workflow, information_ref, result_ref, decision_request "
+            "FROM work_card_metadata WHERE issue_id = %s",
+            (issue_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return {
+            "workflow": {},
+            "information_ref": None,
+            "result_ref": None,
+            "decision_request": {},
+        }
+    return dict(row)
+
+
+def _card_projection(issue: dict, metadata: dict) -> dict:
+    """Expose workflow metadata without changing the governed Work Issue object."""
     projected = dict(issue)
-    workflow = issue.get("workflow") if isinstance(issue.get("workflow"), dict) else {}
+    workflow = metadata.get("workflow") if isinstance(metadata.get("workflow"), dict) else {}
     decision = (
-        issue.get("decision_request")
-        if isinstance(issue.get("decision_request"), dict)
+        metadata.get("decision_request")
+        if isinstance(metadata.get("decision_request"), dict)
         else {}
     )
 
@@ -37,8 +57,8 @@ def _card_projection(issue: dict) -> dict:
     projected["skills"] = workflow.get("skills") or []
     projected["functions"] = workflow.get("functions") or []
     projected["tools"] = workflow.get("tools") or []
-    projected["information_ref"] = issue.get("information_ref")
-    projected["result_ref"] = issue.get("result_ref")
+    projected["information_ref"] = metadata.get("information_ref")
+    projected["result_ref"] = metadata.get("result_ref")
     projected["decision_title"] = decision.get("title")
     projected["decision_question"] = decision.get("question")
     projected["result_summary"] = decision.get("result_summary")
@@ -47,14 +67,14 @@ def _card_projection(issue: dict) -> dict:
 
 
 def get_issue_record(conn: psycopg.Connection, issue_id: str) -> dict:
-    """Return the Work Issue record with read-only card projection fields."""
+    """Return the Work Issue record with read-only Card metadata projected on top."""
     projection = work_issues.get_issue(conn, issue_id)
     issue = projection.get("work_issue")
     if not isinstance(issue, dict):
         raise work_issues.WorkIssueError(
             "stored Work Issue projection is missing its work_issue record"
         )
-    return _card_projection(issue)
+    return _card_projection(issue, _metadata(conn, issue_id))
 
 
 def list_issue_projections(
@@ -67,8 +87,8 @@ def list_issue_projections(
     """Return governed Work Issue aggregates for one exact case reference.
 
     `case_ref` is matched exactly. The function does not infer project identity,
-    traverse parents or broaden scope. Workflow metadata is exposed only as a
-    read projection for the Cockpit; it does not schedule, dispatch or authorize.
+    traverse parents or broaden scope. Work Card metadata is joined only for the
+    Cockpit read projection; it does not schedule, dispatch or authorize.
     """
     if not case_ref.strip():
         raise work_issues.WorkIssueError("case_ref is required")
@@ -94,7 +114,10 @@ def list_issue_projections(
     for projection in projections:
         issue = projection.get("work_issue")
         if isinstance(issue, dict):
-            projection["work_issue"] = _card_projection(issue)
+            projection["work_issue"] = _card_projection(
+                issue,
+                _metadata(conn, issue["issue_id"]),
+            )
 
     projections.sort(
         key=lambda projection: _STATUS_ORDER.get(
