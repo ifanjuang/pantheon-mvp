@@ -347,6 +347,8 @@ def get_information_context(conn: psycopg.Connection, information_id: str) -> di
         "current": current,
         "last_acted": acted,
         "working_assumptions_are_not_acted": current["status"] in WORKING_STATUSES,
+        "edit_schema": agency_schema.get_information_schema("edit"),
+        "schema_authorization_inferred": False,
     }
 
 
