@@ -31,7 +31,7 @@
   };
 
   const state = {
-    project: "", token: "", projects: [], participations: [], documents: [], knowledge: [], workIssues: [],
+    project: "", token: "", projects: [], documents: [], knowledge: [], workIssues: [],
     cards: new Map(), children: new Map(), parent: new Map(), flipped: new Set(), navigator: null, lastMove: "none",
   };
 
@@ -100,10 +100,11 @@
   function normalizeProject(item, { selected = false } = {}) {
     const projectId = item.project_id || item.entity_id || item.code || item.display_name;
     const title = item.display_name || item.code || projectId || "Affaire";
+    const contactCount = Array.isArray(item.contacts) ? item.contacts.length : 0;
     return card({
       entity_id: projectEntityId(item), entity_type: "project", role: "entity", family: "project", presentation_family: "project",
       category: "Projet", title,
-      summary: selected ? `${state.documents.length} information(s) · ${state.participations.length} contact(s) · ${state.workIssues.length} travail(aux)` : [item.code && item.code !== title ? item.code : null, item.phase, item.location].filter(Boolean).join(" · ") || "Affaire Agency Data",
+      summary: selected ? `${state.documents.length} information(s) · ${contactCount} contact(s) · ${state.workIssues.length} travail(aux)` : [item.code && item.code !== title ? item.code : null, item.phase, item.location].filter(Boolean).join(" · ") || "Affaire Agency Data",
       status: item.status || "active", subject_tags: Array.isArray(item.tags) ? item.tags : [],
       identity_accent: stableAccent(projectId), index: item.display_index || item.index || null, date: item.updated_at || null,
       front: { issuer: item.primary_client || null },
@@ -151,33 +152,28 @@
     });
   }
 
-  function contactGroup(item) {
-    const source = slug([item.participation_type, item.role, item.label].filter(Boolean).join(" "));
-    if (/maitrise-d-ouvrage|client|moa/.test(source)) return "Maîtrise d’ouvrage";
-    if (/bureau-de-controle|controle-technique|controle/.test(source)) return "Bureau de contrôle";
-    if (/ssi|securite-incendie/.test(source)) return "SSI";
-    if (/architecte|maitrise-d-oeuvre|moe/.test(source)) return "Équipe de maîtrise d’œuvre";
-    if (/bureau-d-etudes|bet|structure|fluides|thermique|acoustique|geotechnique/.test(source)) return "Bureaux d’études";
-    if (/entreprise|travaux|lot-/.test(source)) return "Entreprises de travaux";
-    return "Autres intervenants";
-  }
-
   function contactDisplay(item) {
-    return [item.person_name, item.organization_name || item.label, item.role || item.participation_type].filter(Boolean).join(" · ") || "Contact non renseigné";
+    const identity = [item.name, item.organization].filter(Boolean).join(" · ");
+    const role = item.role ? ` — ${item.role}` : "";
+    const details = [item.email, item.phone].filter(Boolean).join(" · ");
+    return `${identity || "Contact non renseigné"}${role}${details ? `\n${details}` : ""}`;
   }
 
-  function normalizeContacts(projectId) {
+  function normalizeContacts(projectId, contacts = []) {
     const groups = new Map(CONTACT_GROUPS.map(name => [name, []]));
-    for (const item of state.participations) groups.get(contactGroup(item)).push(item);
+    for (const item of Array.isArray(contacts) ? contacts : []) {
+      const group = CONTACT_GROUPS.includes(item.group) ? item.group : "Autres intervenants";
+      groups.get(group).push(item);
+    }
     const back = [];
     for (const group of CONTACT_GROUPS) {
-      const contacts = groups.get(group) || [];
-      if (!contacts.length) continue;
-      back.push([group, contacts.map(contactDisplay).join("\n")]);
+      const values = groups.get(group) || [];
+      if (!values.length) continue;
+      back.push([group, values.map(contactDisplay).join("\n")]);
     }
     return card({
       entity_id: `project:${projectId}:contacts`, entity_type: "project_contacts", role: "entity", family: "contact", presentation_family: "contact",
-      category: "Contacts", title: "Contacts", summary: `${state.participations.length} contact(s) classé(s) par rôle projet`, status: "neutral",
+      category: "Contacts", title: "Contacts", summary: `${Array.isArray(contacts) ? contacts.length : 0} contact(s) classé(s) par groupe projet`, status: "neutral",
       identity_accent: stableAccent(projectId), back: back.length ? back : [["Contacts", "Aucun contact renseigné pour cette affaire."]],
       source_project_id: projectId,
     });
@@ -211,10 +207,10 @@
 
     const projectIds = [];
     for (const item of state.projects) projectIds.push(putCard(normalizeProject(item, { selected: item.project_id === selectedProjectId }), "space:affaires"));
-    if (selectedProjectId && !projectIds.includes(selectedCardId)) projectIds.push(putCard(normalizeProject({ project_id: selectedProjectId, code: selectedProjectId, display_name: selectedProjectId, status: "active" }, { selected: true }), "space:affaires"));
+    if (selectedProjectId && !projectIds.includes(selectedCardId)) projectIds.push(putCard(normalizeProject({ project_id: selectedProjectId, code: selectedProjectId, display_name: selectedProjectId, status: "active", contacts: [] }, { selected: true }), "space:affaires"));
 
     if (selectedCardId && state.cards.has(selectedCardId)) {
-      const contacts = normalizeContacts(selectedProjectId);
+      const contacts = normalizeContacts(selectedProjectId, selected?.contacts || []);
       const contactsId = putCard(contacts, selectedCardId);
       setChildren(contactsId, []);
       setChildren(selectedCardId, [contactsId, ...documentIds]);
@@ -383,18 +379,19 @@
     try {
       await loadAgencyProjects(); state.project = requested; const matched = projectLookup();
       if (matched?.project_id) { state.project = matched.project_id; $("v2-project").value = matched.code || matched.display_name || matched.project_id; }
-      if (!state.project) { state.participations = []; state.documents = []; state.knowledge = []; state.workIssues = []; rebuildGraph(); state.navigator.returnToRoot("space:affaires"); render(); setMessage(`${state.projects.length} affaire(s) Agency Data chargée(s). ↑ pour ouvrir la collection.`); return; }
+      if (!state.project) { state.documents = []; state.knowledge = []; state.workIssues = []; rebuildGraph(); state.navigator.returnToRoot("space:affaires"); render(); setMessage(`${state.projects.length} affaire(s) Agency Data chargée(s). ↑ pour ouvrir la collection.`); return; }
       setMessage(`Chargement des projections de ${state.project}…`);
-      const participationPromise = matched?.project_id ? api(`../v1/agency/projects/${encodeURIComponent(state.project)}/participations`) : Promise.resolve({ participations: [] });
-      const [documents, knowledge, workIssues, participations] = await Promise.all([
-        api(`../v1/projects/${encodeURIComponent(state.project)}/documents`), api(`../v1/projects/${encodeURIComponent(state.project)}/knowledge`), api(`../v1/projects/${encodeURIComponent(state.project)}/work-issues`), participationPromise,
+      const [documents, knowledge, workIssues] = await Promise.all([
+        api(`../v1/projects/${encodeURIComponent(state.project)}/documents`),
+        api(`../v1/projects/${encodeURIComponent(state.project)}/knowledge`),
+        api(`../v1/projects/${encodeURIComponent(state.project)}/work-issues`),
       ]);
-      state.documents = documents.documents || []; state.knowledge = knowledge.knowledge || []; state.workIssues = workIssues.work_issues || []; state.participations = participations.participations || [];
+      state.documents = documents.documents || []; state.knowledge = knowledge.knowledge || []; state.workIssues = workIssues.work_issues || [];
       rebuildGraph(); state.navigator.returnToRoot("space:affaires");
       if (focusProject || state.project) { const projectIds = state.children.get("space:affaires") || []; const target = projectIds.find(id => state.cards.get(id)?.source_project_id === state.project); if (target) state.navigator.descend({ parent_entity_id: "space:affaires", collection_id: "children:space:affaires", item_ids: projectIds, initial_entity_id: target }); }
       render(); setMessage(`Affaire ${matched?.display_name || matched?.code || state.project} chargée dans la hiérarchie V2.`);
     } catch (error) {
-      state.participations = []; state.documents = []; state.knowledge = []; state.workIssues = []; rebuildGraph(); render(); setMessage(`Chargement refusé : ${error.message}`);
+      state.documents = []; state.knowledge = []; state.workIssues = []; rebuildGraph(); render(); setMessage(`Chargement refusé : ${error.message}`);
     } finally { $("v2-load").disabled = false; }
   }
 
