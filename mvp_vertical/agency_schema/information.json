@@ -26,7 +26,7 @@
     {"key":"details","label":"Informations détaillées","storage":"core","type":"string","required":false,"mutable":true,"hermes_mode":"bounded","group":"content","editor":{"widget":"textarea"}},
     {"key":"author","label":"Auteur","storage":"core","type":"string","required":false,"nullable":true,"mutable":true,"hermes_mode":"bounded","group":"content"},
 
-    {"key":"status","label":"Statut","storage":"core","type":"enum","values":["draft","in_progress","acted","superseded"],"required":true,"mutable":true,"hermes_mode":"bounded","group":"state","lifecycle":"information_status"},
+    {"key":"status","label":"Statut","storage":"core","type":"enum","values":["draft","in_progress","acted","superseded"],"required":true,"mutable":true,"hermes_mode":"bounded","group":"state","lifecycle":"information_status","editor":{"values":["draft","in_progress"]}},
     {"key":"limits","label":"Limites","storage":"core","type":"string_list","required":false,"mutable":true,"hermes_mode":"bounded","group":"state"},
     {"key":"type_tags","label":"Types","storage":"core","type":"string_list","required":false,"mutable":true,"hermes_mode":"bounded","group":"classification"},
     {"key":"subject_tags","label":"Sujets","storage":"core","type":"string_list","required":false,"mutable":true,"hermes_mode":"bounded","group":"classification"},
