@@ -13,14 +13,32 @@ def test_v2_uses_native_renderer_without_presentation_adapter():
     assert 'src="v2_card_presentation.js"' not in html
 
 
+def test_v2_loads_one_consolidated_v2_stylesheet():
+    html = (COCKPIT / "v2.html").read_text(encoding="utf-8")
+    css = (COCKPIT / "styles" / "v2.css").read_text(encoding="utf-8")
+
+    assert 'href="styles/v2.css"' in html
+    assert "v2_card_shell.css" not in html
+    assert "v2_context.css" not in html
+    assert "v2_handoff.css" not in html
+    for layer in ("layout", "components", "variants", "states", "motion", "accessibility"):
+        assert layer in css
+    assert "flex-direction: column" in css
+    assert ".v2-card-back .v2-card-footer" in css
+
+
 def test_native_renderer_exposes_one_contacts_card_per_project():
     renderer = (COCKPIT / "v2_app_native.js").read_text(encoding="utf-8")
 
     assert 'entity_type: "project_contacts"' in renderer
     assert 'title: "Contacts"' in renderer
     assert 'setChildren(contactsId, [])' in renderer
+    assert "selected?.contacts" in renderer
     assert "normalizeParticipation" not in renderer
     assert "participationContainerId" not in renderer
+    assert "state.participations" not in renderer
+    assert "/participations" not in renderer
+    assert "participationPromise" not in renderer
 
 
 def test_native_renderer_uses_unified_card_projection_fields():
