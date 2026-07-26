@@ -52,8 +52,8 @@
       "fields": ["code","display_name","description","status","phase","location","tags","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
     },
     "notion": {
-      "purpose": "Definitive collaborative projection; archives and ChangeCandidates stay outside Notion.",
-      "fields": ["code","display_name","status","phase","location","contacts","tags","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
+      "purpose": "Definitive collaborative projection plus PostgreSQL revision for sync conflict detection; archives and ChangeCandidates stay outside Notion.",
+      "fields": ["code","display_name","status","phase","location","contacts","tags","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type","revision"]
     },
     "hermes_context": {
       "purpose": "Project business context eligible for scoped runtime materialization; inclusion is not mutation authority.",
