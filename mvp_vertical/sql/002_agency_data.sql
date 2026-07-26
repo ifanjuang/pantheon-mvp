@@ -19,6 +19,12 @@ CREATE TABLE IF NOT EXISTS agency_projects (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Existing development databases predate project-owned contacts. CREATE TABLE
+-- IF NOT EXISTS does not evolve an existing table, so keep this upgrade explicit
+-- and idempotent in the single Agency Data initializer.
+ALTER TABLE agency_projects
+    ADD COLUMN IF NOT EXISTS contacts JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 CREATE INDEX IF NOT EXISTS agency_projects_code_lookup
     ON agency_projects (lower(code));
 CREATE INDEX IF NOT EXISTS agency_projects_name_lookup
