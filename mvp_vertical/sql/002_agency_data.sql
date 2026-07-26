@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS agency_projects (
     location TEXT,
     primary_client TEXT,
     tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    contacts JSONB NOT NULL DEFAULT '[]'::jsonb,
     owner_system TEXT NOT NULL DEFAULT 'postgres' CHECK (owner_system = 'postgres'),
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     created_by TEXT NOT NULL,
@@ -23,6 +24,9 @@ CREATE INDEX IF NOT EXISTS agency_projects_code_lookup
 CREATE INDEX IF NOT EXISTS agency_projects_name_lookup
     ON agency_projects (lower(display_name));
 
+-- People and Organizations remain optional directory sources. They are not
+-- related to projects by a participation table; each Project owns its current
+-- contacts snapshot in agency_projects.contacts.
 CREATE TABLE IF NOT EXISTS agency_people (
     person_id TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
@@ -51,26 +55,6 @@ CREATE TABLE IF NOT EXISTS agency_organizations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TABLE IF NOT EXISTS agency_project_participations (
-    participation_id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL REFERENCES agency_projects(project_id) ON DELETE CASCADE,
-    person_id TEXT REFERENCES agency_people(person_id) ON DELETE SET NULL,
-    organization_id TEXT REFERENCES agency_organizations(organization_id) ON DELETE SET NULL,
-    label TEXT,
-    role TEXT NOT NULL,
-    participation_type TEXT,
-    owner_system TEXT NOT NULL DEFAULT 'postgres' CHECK (owner_system = 'postgres'),
-    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
-    created_by TEXT NOT NULL,
-    updated_by TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (person_id IS NOT NULL OR organization_id IS NOT NULL OR label IS NOT NULL)
-);
-
-CREATE INDEX IF NOT EXISTS agency_participations_project_lookup
-    ON agency_project_participations (project_id, role);
 
 CREATE TABLE IF NOT EXISTS agency_project_events (
     event_id TEXT PRIMARY KEY,
