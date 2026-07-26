@@ -9,8 +9,9 @@ Each entity read therefore re-reads the current owner record and reports that
 freshness explicitly. Source references are provenance identifiers only in this
 slice; they cannot be dereferenced here.
 
-Returned fields are frozen by an explicit v1 projection. Adding a future column
-to an owner table must not silently widen what Hermes can read.
+Returned fields are frozen by explicit projections. Project fields come from the
+named agency.project `hermes_context` view; adding a future owner column therefore
+cannot silently widen what Hermes can read.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from . import (
     agency_data,
     agency_directory,
     agency_information,
+    agency_schema,
     knowledge,
     store,
     work_issue_read,
@@ -43,20 +45,6 @@ MATERIALIZABLE_TYPES = {
     "work_issue",
 }
 
-PROJECT_FIELDS = (
-    "project_id",
-    "code",
-    "display_name",
-    "description",
-    "status",
-    "phase",
-    "location",
-    "primary_client",
-    "tags",
-    "owner_system",
-    "revision",
-    "updated_at",
-)
 PERSON_FIELDS = (
     "person_id",
     "display_name",
@@ -316,7 +304,7 @@ def _materialize_entity(
     if entity_type == "project":
         raw = agency_data.get_project(conn, _strip_prefix(entity_id, "project:"))
         return {
-            "record": _bounded_projection(raw, PROJECT_FIELDS),
+            "record": agency_schema.project_record_for_view(raw, "hermes_context"),
             "representation": None,
             "record_owner_system": "postgres",
         }
@@ -492,6 +480,7 @@ def get_context_entity(
         agency_data.ProjectNotFound,
         agency_directory.AgencyDirectoryError,
         agency_information.AgencyInformationError,
+        agency_schema.AgencySchemaError,
         knowledge.KnowledgeNotFound,
         work_issues.WorkIssueError,
         KeyError,
