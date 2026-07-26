@@ -23,10 +23,14 @@ from mvp_vertical.hermes_live_acceptance import (
 )
 from mvp_vertical.hermes_run_binding import (
     ExternalHermesRunBinding,
+    HermesRunBindingError,
     HermesRunsHttpClient,
     PantheonRunBridgeClient,
 )
-from mvp_vertical.hermes_runs_observer import HermesRunsApiObserver
+from mvp_vertical.hermes_runs_observer import (
+    HermesRunsApiObserver,
+    HermesRunsObservationError,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -158,7 +162,11 @@ def main() -> int:
         if status == "inconclusive":
             return 2
         return 1
-    except HermesLiveAcceptanceError as exc:
+    except (
+        HermesLiveAcceptanceError,
+        HermesRunsObservationError,
+        HermesRunBindingError,
+    ) as exc:
         print(
             json.dumps(
                 {
