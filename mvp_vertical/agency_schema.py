@@ -15,6 +15,7 @@ from typing import Any
 
 SCHEMA_ROOT = Path(__file__).resolve().parent / "agency_schema"
 PROJECT_SCHEMA_PATH = SCHEMA_ROOT / "project.json"
+DEFAULT_PROJECT_VIEW = "cockpit_back"
 
 
 class AgencySchemaError(ValueError):
@@ -75,14 +76,21 @@ def _project_schema_cached() -> dict[str, Any]:
                     f"Project schema view {view_name} repeats field {field_key}"
                 )
             view_seen.add(field_key)
+    if DEFAULT_PROJECT_VIEW not in views:
+        raise AgencySchemaError(f"Project schema must declare default view {DEFAULT_PROJECT_VIEW}")
     return raw
 
 
-def get_project_schema(view_name: str | None = None) -> dict[str, Any]:
-    """Return the full registry or a named projection copy.
+def get_project_registry() -> dict[str, Any]:
+    """Return the complete Project registry, including every declared field and view."""
+    return deepcopy(_project_schema_cached())
 
-    A named view narrows and orders the exposed fields. It never changes field
-    mutability or grants authorization; those remain enforced by server routes and
+
+def get_project_schema(view_name: str | None = DEFAULT_PROJECT_VIEW) -> dict[str, Any]:
+    """Return a named Project projection; pass None for the complete registry.
+
+    Named views narrow and order exposed fields only. They do not change field
+    mutability or grant authorization; those remain enforced by server routes and
     Pantheon gates.
     """
     schema = deepcopy(_project_schema_cached())
