@@ -6,6 +6,7 @@ import pytest
 
 from mvp_vertical import (
     agency_data,
+    agency_information,
     card_scope,
     knowledge,
     store,
@@ -36,6 +37,16 @@ def test_project_scope_resolves_contacts_card_and_direct_documents(monkeypatch) 
             {"document_id": "cctp", "source_ref": f"nas://{project_id}/cctp.pdf"},
         ],
     )
+    monkeypatch.setattr(
+        agency_information,
+        "list_project_information",
+        lambda _conn, _project_id: [],
+    )
+    monkeypatch.setattr(
+        work_issue_read,
+        "list_issue_projections",
+        lambda _conn, _project_id, limit=500: [],
+    )
 
     resolved = card_scope.resolve_declared_descendants(
         _Connection(),
@@ -48,7 +59,12 @@ def test_project_scope_resolves_contacts_card_and_direct_documents(monkeypatch) 
         {"entity_id": "document:cctp", "entity_type": "document"},
     ]
     assert resolved["source_refs"] == ["nas://lieurey/cctp.pdf"]
-    assert resolved["counts"] == {"contacts": 2, "documents": 1}
+    assert resolved["counts"] == {
+        "contacts": 2,
+        "information": 0,
+        "documents": 1,
+        "work": 0,
+    }
 
 
 def test_contacts_card_scope_is_project_owned_and_root_only(monkeypatch) -> None:
