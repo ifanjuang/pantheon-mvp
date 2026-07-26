@@ -24,7 +24,7 @@ def test_legacy_project_participation_model_is_retired():
     api = (MVP / "agency_data_api.py").read_text(encoding="utf-8")
     binding = (COCKPIT / "agency_data_binding.js").read_text(encoding="utf-8")
     context = (COCKPIT / "v2_context.js").read_text(encoding="utf-8")
-    renderer = (COCKPIT / "v2_app_native.js").read_text(encoding="utf-8")
+    renderer = (COCKPIT / "v2_app_schema.js").read_text(encoding="utf-8")
 
     assert "DROP TABLE IF EXISTS agency_project_participations" in sql
     assert "CREATE TABLE IF NOT EXISTS agency_project_participations" not in sql
