@@ -1,20 +1,20 @@
 """FastAPI route installer for native PostgreSQL Agency Data.
 
 The HTTP surface is deliberately narrow: normalized reads plus explicit human
-Project create/update commands with actor identity, idempotency and expected
-revision. Hermes must use an admitted scoped capability instead of these global
-Agency Data routes.
+Project and Information writes with actor identity and optimistic revisions.
+Hermes must use an admitted scoped capability instead of these global routes.
 """
 
 from __future__ import annotations
 
 import hmac
+from datetime import date
 from typing import Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from . import agency_data, agency_directory
+from . import agency_data, agency_directory, agency_information
 
 
 class ProjectContactBody(BaseModel):
@@ -57,6 +57,49 @@ class ProjectUpdateBody(BaseModel):
     contacts: list[ProjectContactBody] | None = Field(default=None, max_length=500)
 
 
+class InformationCreateBody(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    category: str = Field(min_length=1, max_length=200)
+    source_type: str = Field(min_length=1, max_length=120)
+    source_ref: str | None = Field(default=None, max_length=2000)
+    source_note: str | None = Field(default=None, max_length=500_000)
+    source_version: str | None = Field(default=None, max_length=200)
+    index_label: str = Field(min_length=1, max_length=40)
+    information_date: date | None = None
+    summary: str = Field(default="", max_length=20_000)
+    details: str = Field(default="", max_length=500_000)
+    limits: list[str] = Field(default_factory=list, max_length=20)
+    type_tags: list[str] = Field(default_factory=list, max_length=50)
+    subject_tags: list[str] = Field(default_factory=list, max_length=100)
+    author: str | None = Field(default=None, max_length=500)
+    status: Literal["draft", "in_progress"] = "draft"
+
+
+class InformationDeriveBody(BaseModel):
+    new_index_label: str = Field(min_length=1, max_length=40)
+    source_ref: str | None = Field(default=None, max_length=2000)
+    source_note: str | None = Field(default=None, max_length=500_000)
+    source_version: str | None = Field(default=None, max_length=200)
+
+
+class InformationUpdateBody(BaseModel):
+    expected_revision: int = Field(ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    category: str | None = Field(default=None, min_length=1, max_length=200)
+    information_date: date | None = None
+    summary: str | None = Field(default=None, max_length=20_000)
+    details: str | None = Field(default=None, max_length=500_000)
+    limits: list[str] | None = Field(default=None, max_length=20)
+    type_tags: list[str] | None = Field(default=None, max_length=50)
+    subject_tags: list[str] | None = Field(default=None, max_length=100)
+    author: str | None = Field(default=None, max_length=500)
+    status: Literal["draft", "in_progress"] | None = None
+
+
+class InformationActBody(BaseModel):
+    expected_revision: int = Field(ge=1)
+
+
 def _bearer_token(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         return ""
@@ -78,13 +121,25 @@ def install_agency_data_routes(
             agency_data.ProjectNotFound,
             agency_directory.PersonNotFound,
             agency_directory.OrganizationNotFound,
+            agency_information.InformationNotFound,
         ) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except agency_data.GovernanceGateRequired as exc:
+        except (
+            agency_data.GovernanceGateRequired,
+            agency_information.InformationGateRequired,
+        ) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (agency_data.StaleProjectWrite, agency_data.IdempotencyConflict) as exc:
+        except (
+            agency_data.StaleProjectWrite,
+            agency_data.IdempotencyConflict,
+            agency_information.StaleInformationWrite,
+        ) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (agency_data.AgencyDataError, agency_directory.AgencyDirectoryError) as exc:
+        except (
+            agency_data.AgencyDataError,
+            agency_directory.AgencyDirectoryError,
+            agency_information.AgencyInformationError,
+        ) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     def require_global_agency_read(
@@ -153,6 +208,33 @@ def install_agency_data_routes(
     ) -> dict:
         project = agency_operation(lambda conn: agency_data.get_project(conn, project_id))
         return {"system_of_record": "postgres", "project": project}
+
+    @app.get("/v1/agency/projects/{project_id}/information")
+    def list_project_information(
+        project_id: str,
+        _authorized: None = Depends(require_global_agency_read),
+    ) -> dict:
+        information = agency_operation(
+            lambda conn: agency_information.list_project_information(conn, project_id)
+        )
+        return {
+            "system_of_record": "postgres",
+            "project_id": project_id,
+            "information": information,
+        }
+
+    @app.get("/v1/agency/information/{information_id}/context")
+    def get_information_context(
+        information_id: str,
+        _authorized: None = Depends(require_global_agency_read),
+    ) -> dict:
+        context = agency_operation(
+            lambda conn: agency_information.get_information_context(conn, information_id)
+        )
+        return {
+            "system_of_record": "postgres",
+            "information_context": context,
+        }
 
     @app.get("/v1/agency/people")
     def list_people(
@@ -258,4 +340,96 @@ def install_agency_data_routes(
             "effect": "internal_agency_data_write",
             "approval_inferred": False,
             "project": project,
+        }
+
+    @app.post("/v1/agency/projects/{project_id}/information", status_code=201)
+    def create_information(
+        project_id: str,
+        body: InformationCreateBody,
+        writer_kind: Literal["human"] = Depends(require_human_agency_writer),
+        _actor: str = Depends(require_actor),
+    ) -> dict:
+        values = body.model_dump()
+        information = agency_operation(
+            lambda conn: agency_information.create_information(
+                conn,
+                project_id=project_id,
+                actor_kind=writer_kind,
+                **values,
+            )
+        )
+        return {
+            "system_of_record": "postgres",
+            "effect": "internal_agency_information_write",
+            "approval_inferred": False,
+            "information": information,
+        }
+
+    @app.post("/v1/agency/information/{information_id}/working-version", status_code=201)
+    def derive_information_working_version(
+        information_id: str,
+        body: InformationDeriveBody,
+        writer_kind: Literal["human"] = Depends(require_human_agency_writer),
+        _actor: str = Depends(require_actor),
+    ) -> dict:
+        information = agency_operation(
+            lambda conn: agency_information.derive_working_version(
+                conn,
+                acted_information_id=information_id,
+                actor_kind=writer_kind,
+                **body.model_dump(),
+            )
+        )
+        return {
+            "system_of_record": "postgres",
+            "effect": "internal_agency_information_write",
+            "approval_inferred": False,
+            "information": information,
+        }
+
+    @app.patch("/v1/agency/information/{information_id}")
+    def update_information(
+        information_id: str,
+        body: InformationUpdateBody,
+        writer_kind: Literal["human"] = Depends(require_human_agency_writer),
+        _actor: str = Depends(require_actor),
+    ) -> dict:
+        supplied = body.model_dump(exclude_unset=True)
+        expected_revision = supplied.pop("expected_revision")
+        information = agency_operation(
+            lambda conn: agency_information.update_working_information(
+                conn,
+                information_id=information_id,
+                changes=supplied,
+                expected_revision=expected_revision,
+                actor_kind=writer_kind,
+            )
+        )
+        return {
+            "system_of_record": "postgres",
+            "effect": "internal_agency_information_write",
+            "approval_inferred": False,
+            "information": information,
+        }
+
+    @app.post("/v1/agency/information/{information_id}/act")
+    def act_information(
+        information_id: str,
+        body: InformationActBody,
+        writer_kind: Literal["human"] = Depends(require_human_agency_writer),
+        _actor: str = Depends(require_actor),
+    ) -> dict:
+        information = agency_operation(
+            lambda conn: agency_information.act_working_information(
+                conn,
+                information_id=information_id,
+                expected_revision=body.expected_revision,
+                actor_kind=writer_kind,
+            )
+        )
+        return {
+            "system_of_record": "postgres",
+            "effect": "agency_information_acted",
+            "approval_inferred": False,
+            "information": information,
         }
