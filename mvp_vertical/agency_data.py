@@ -18,6 +18,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from . import agency_schema
 from .store import dsn_from_env
 
 MIGRATION = Path(__file__).resolve().parent / "sql" / "002_agency_data.sql"
@@ -32,6 +33,7 @@ PROJECT_MUTABLE_FIELDS = {
     "primary_client",
     "tags",
     "contacts",
+    "attributes",
 }
 ACTOR_KINDS = {"human", "hermes", "system"}
 CONTACT_FIELDS = {
@@ -158,6 +160,13 @@ def _normalize_contacts(contacts: list[dict] | None) -> list[dict]:
     return normalized
 
 
+def _normalize_attributes(attributes: dict[str, Any] | None) -> dict[str, Any]:
+    try:
+        return agency_schema.normalize_project_attributes(attributes)
+    except agency_schema.AgencySchemaError as exc:
+        raise AgencyDataError(str(exc)) from exc
+
+
 def _replayed_snapshot(
     conn: psycopg.Connection,
     *,
@@ -268,6 +277,7 @@ def create_project(
     primary_client: str | None = None,
     tags: list[str] | None = None,
     contacts: list[dict] | None = None,
+    attributes: dict[str, Any] | None = None,
 ) -> dict:
     _validate_actor(actor, actor_kind)
     if actor_kind == "hermes":
@@ -292,6 +302,7 @@ def create_project(
         "primary_client": primary_client,
         "tags": _normalize_tags(tags),
         "contacts": _normalize_contacts(contacts),
+        "attributes": _normalize_attributes(attributes),
         "actor": actor,
         "actor_kind": actor_kind,
     }
@@ -315,8 +326,8 @@ def create_project(
                 """
                 INSERT INTO agency_projects (
                     project_id, code, display_name, description, status, phase,
-                    location, primary_client, tags, contacts, created_by, updated_by
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    location, primary_client, tags, contacts, attributes, created_by, updated_by
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     project_id,
@@ -329,6 +340,7 @@ def create_project(
                     primary_client,
                     Jsonb(payload["tags"]),
                     Jsonb(payload["contacts"]),
+                    Jsonb(payload["attributes"]),
                     actor,
                     actor,
                 ),
@@ -373,6 +385,8 @@ def update_project(
         normalized["tags"] = _normalize_tags(normalized["tags"])
     if "contacts" in normalized:
         normalized["contacts"] = _normalize_contacts(normalized["contacts"])
+    if "attributes" in normalized:
+        normalized["attributes"] = _normalize_attributes(normalized["attributes"])
     for key in {"code", "display_name"} & normalized.keys():
         normalized[key] = str(normalized[key]).strip()
         if not normalized[key]:
@@ -414,7 +428,9 @@ def update_project(
         for field in sorted(normalized):
             assignments.append(f"{field} = %s")
             values.append(
-                Jsonb(normalized[field]) if field in {"tags", "contacts"} else normalized[field]
+                Jsonb(normalized[field])
+                if field in {"tags", "contacts", "attributes"}
+                else normalized[field]
             )
         assignments.extend([
             "revision = revision + 1",
