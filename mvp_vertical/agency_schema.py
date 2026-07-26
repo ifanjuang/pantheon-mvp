@@ -123,6 +123,28 @@ def get_project_view(view_name: str) -> dict[str, Any]:
     return deepcopy(view)
 
 
+def project_record_for_view(record: dict[str, Any], view_name: str) -> dict[str, Any]:
+    """Project one Project record through a declared view.
+
+    Attribute-backed fields are flattened into the returned record so consumers do
+    not need to know PostgreSQL storage layout. This is a projection helper only;
+    it grants no read scope or mutation authority.
+    """
+    schema = get_project_schema(view_name)
+    attributes = record.get("attributes") or {}
+    if not isinstance(attributes, dict):
+        attributes = {}
+
+    projected: dict[str, Any] = {}
+    for field in schema["fields"]:
+        key = field["key"]
+        if field.get("storage") == "attributes":
+            projected[key] = attributes.get(key)
+        else:
+            projected[key] = record.get(key)
+    return projected
+
+
 def _attribute_fields() -> dict[str, dict[str, Any]]:
     return {
         field["key"]: field
