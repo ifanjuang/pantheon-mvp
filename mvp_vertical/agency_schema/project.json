@@ -11,7 +11,7 @@
     {"key":"project_id","label":"Identifiant","storage":"core","type":"string","required":true,"mutable":false,"hermes_mode":"no","group":"identity"},
     {"key":"code","label":"Code affaire","storage":"core","type":"string","required":true,"mutable":true,"hermes_mode":"candidate","group":"identity"},
     {"key":"display_name","label":"Nom du projet","storage":"core","type":"string","required":true,"mutable":true,"hermes_mode":"candidate","group":"identity"},
-    {"key":"description","label":"Description","storage":"core","type":"string","required":false,"mutable":true,"hermes_mode":"candidate","group":"business"},
+    {"key":"description","label":"Description","storage":"core","type":"string","required":false,"mutable":true,"hermes_mode":"candidate","group":"business","editor":{"widget":"textarea"}},
     {"key":"status","label":"Statut","storage":"core","type":"string","required":false,"mutable":true,"hermes_mode":"candidate","group":"business"},
     {"key":"phase","label":"Phase","storage":"core","type":"enum","values":["ESQ","APS","APD","PRO","DCE","ACT","DET","AOR"],"required":false,"mutable":true,"hermes_mode":"candidate","group":"business"},
     {"key":"location","label":"Lieu","storage":"core","type":"string","required":false,"mutable":true,"hermes_mode":"candidate","group":"business"},
@@ -48,8 +48,8 @@
       "fields": ["code","phase","location","primary_client","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
     },
     "edit": {
-      "purpose": "Human editor surface; inclusion is not write authorization.",
-      "fields": ["code","display_name","description","status","phase","location","contacts","tags","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
+      "purpose": "Generic human Project editor surface; Contacts use their dedicated grouped-card editor. Inclusion is not write authorization.",
+      "fields": ["code","display_name","description","status","phase","location","tags","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
     },
     "notion": {
       "purpose": "Definitive collaborative projection; archives and ChangeCandidates stay outside Notion.",
