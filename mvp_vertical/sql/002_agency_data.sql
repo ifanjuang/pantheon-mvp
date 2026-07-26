@@ -126,12 +126,58 @@ CREATE TABLE IF NOT EXISTS agency_project_events (
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- A ChangeCandidate is an envelope around a proposed Project-attributes change.
+-- The Project keeps its own business status; candidate status never replaces it.
+CREATE TABLE IF NOT EXISTS agency_change_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL CHECK (entity_type = 'project'),
+    entity_id TEXT NOT NULL REFERENCES agency_projects(project_id) ON DELETE RESTRICT,
+    base_revision INTEGER NOT NULL CHECK (base_revision >= 1),
+    proposer TEXT NOT NULL,
+    proposer_kind TEXT NOT NULL CHECK (proposer_kind IN ('human', 'hermes', 'system')),
+    changes JSONB NOT NULL,
+    reason TEXT,
+    source_refs JSONB NOT NULL DEFAULT '[]'::jsonb,
+    proposal_digest TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('pending_review', 'applied', 'rejected', 'stale')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    decided_at TIMESTAMPTZ,
+    decided_by TEXT,
+    applied_revision INTEGER,
+    CHECK (jsonb_typeof(changes) = 'array'),
+    CHECK (jsonb_typeof(source_refs) = 'array')
+);
+
+CREATE INDEX IF NOT EXISTS agency_change_candidates_project_lookup
+    ON agency_change_candidates (entity_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agency_change_candidate_events (
+    event_id TEXT PRIMARY KEY,
+    candidate_id TEXT NOT NULL REFERENCES agency_change_candidates(candidate_id) ON DELETE RESTRICT,
+    event_type TEXT NOT NULL CHECK (event_type IN ('proposed', 'applied', 'rejected', 'stale')),
+    actor TEXT NOT NULL,
+    actor_kind TEXT NOT NULL CHECK (actor_kind IN ('human', 'hermes', 'system')),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE OR REPLACE FUNCTION reject_agency_project_event_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RAISE EXCEPTION 'agency_project_events are append-only';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION reject_agency_change_candidate_event_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'agency_change_candidate_events are append-only';
 END;
 $$;
 
@@ -154,6 +200,24 @@ BEGIN
         CREATE TRIGGER agency_project_events_no_delete
         BEFORE DELETE ON agency_project_events
         FOR EACH ROW EXECUTE FUNCTION reject_agency_project_event_mutation();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'agency_change_candidate_events_no_update'
+          AND tgrelid = 'agency_change_candidate_events'::regclass
+    ) THEN
+        CREATE TRIGGER agency_change_candidate_events_no_update
+        BEFORE UPDATE ON agency_change_candidate_events
+        FOR EACH ROW EXECUTE FUNCTION reject_agency_change_candidate_event_mutation();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'agency_change_candidate_events_no_delete'
+          AND tgrelid = 'agency_change_candidate_events'::regclass
+    ) THEN
+        CREATE TRIGGER agency_change_candidate_events_no_delete
+        BEFORE DELETE ON agency_change_candidate_events
+        FOR EACH ROW EXECUTE FUNCTION reject_agency_change_candidate_event_mutation();
     END IF;
 END;
 $$;
