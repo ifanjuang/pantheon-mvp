@@ -9,9 +9,9 @@ Each entity read therefore re-reads the current owner record and reports that
 freshness explicitly. Source references are provenance identifiers only in this
 slice; they cannot be dereferenced here.
 
-Returned fields are frozen by explicit projections. Project fields come from the
-named agency.project `hermes_context` view; adding a future owner column therefore
-cannot silently widen what Hermes can read.
+Returned Agency fields are frozen by explicit named schema projections. Project
+and Information use their respective `hermes_context` views; adding future owner
+columns therefore cannot silently widen what Hermes can read.
 """
 
 from __future__ import annotations
@@ -65,30 +65,6 @@ ORGANIZATION_FIELDS = (
     "owner_system",
     "revision",
     "updated_at",
-)
-INFORMATION_FIELDS = (
-    "information_id",
-    "series_id",
-    "project_id",
-    "title",
-    "category",
-    "source_type",
-    "source_ref",
-    "source_version",
-    "index_label",
-    "information_date",
-    "summary",
-    "status",
-    "limits",
-    "type_tags",
-    "subject_tags",
-    "author",
-    "base_acted_id",
-    "previous_source_id",
-    "revision",
-    "created_at",
-    "updated_at",
-    "acted_at",
 )
 DOCUMENT_FIELDS = (
     "card_type",
@@ -331,7 +307,7 @@ def _materialize_entity(
     if entity_type == "information":
         information_id = _strip_prefix(entity_id, "information:")
         raw = agency_information.get_information_context(conn, information_id)["current"]
-        record = _bounded_projection(raw, INFORMATION_FIELDS)
+        record = agency_schema.information_record_for_view(raw, "hermes_context")
         details = _bounded_text(str(raw.get("details") or ""), label="Information details")
         source_note = _bounded_text(str(raw.get("source_note") or ""), label="Information source note")
         return {
@@ -381,137 +357,59 @@ def _materialize_entity(
             "representation": {
                 "kind": "knowledge_markdown",
                 "content": markdown,
-                "source_binary_included": False,
             },
-            "record_owner_system": "postgres_knowledge_projection",
+            "record_owner_system": "postgres_knowledge",
         }
 
     if entity_type == "work_issue":
-        issue_id = _strip_prefix(entity_id, "work:")
-        raw = work_issue_read.get_issue_record(conn, issue_id)
+        issue_id = _strip_prefix(entity_id, "work:", "work_issue:")
+        projection = work_issue_read.get_issue_projection(conn, issue_id)
+        raw = projection.get("work_issue") or projection
         return {
             "record": _bounded_projection(raw, WORK_ISSUE_FIELDS),
             "representation": None,
-            "record_owner_system": "postgres",
+            "record_owner_system": "postgres_work_issue",
         }
 
-    if entity_type == "cockpit_space":
-        raise HermesScopedContextError(
-            "Cockpit spaces may appear in a Context Pack but are not materializable business data"
-        )
-
-    raise HermesScopedContextError(
-        f"unsupported scoped Hermes context entity type: {entity_type}"
-    )
+    raise ScopedContextConflict(f"unsupported admitted entity type: {entity_type}")
 
 
-def get_context_manifest(
-    conn: psycopg.Connection,
-    *,
-    admission_id: str,
-    run_id: str,
-    actor: str,
-) -> dict[str, Any]:
-    if not actor.strip():
-        raise HermesScopedContextError("Hermes actor is required for scoped context access")
-    scope = _runtime_scope(conn, admission_id=admission_id, run_id=run_id)
-    context_pack = scope["context_pack"]
-    entities = [
-        {
-            **ref,
-            "materializable": ref["entity_type"] in MATERIALIZABLE_TYPES,
-        }
-        for ref in _entity_refs(context_pack)
-    ]
-    return {
-        "kind": "hermes_scoped_context_manifest",
-        "admission_id": admission_id,
-        "run_id": run_id,
-        "context_pack_ref": scope["admission_context_pack_ref"],
-        "task_contract_ref": scope["admission_task_contract_ref"],
-        "requested_effect": scope["requested_effect"],
-        "run_status": scope["run_status"],
-        "field_projection_version": FIELD_PROJECTION_VERSION,
-        "entities": entities,
-        "source_refs": list(context_pack.get("source_refs") or []),
-        "source_dereference_available": False,
-        "global_search_available": False,
-        "global_listing_available": False,
-        "write_effect": False,
-        "read_semantics": "current_owner_read",
-        "context_pack_authorizes_identity_not_snapshot": True,
-        "observed_at": _now(),
-        "requested_by": actor.strip(),
-        "non_equivalences": [
-            "Context Pack inclusion != Evidence",
-            "current owner read != admission-time snapshot",
-            "source_ref != source dereference authority",
-            "field projection != full owner record",
-            "read access != write authority",
-            "runtime success != Evidence",
-        ],
-    }
-
-
-def get_context_entity(
+def get_scoped_entity(
     conn: psycopg.Connection,
     *,
     admission_id: str,
     run_id: str,
     entity_type: str,
     entity_id: str,
-    actor: str,
 ) -> dict[str, Any]:
-    if not actor.strip():
-        raise HermesScopedContextError("Hermes actor is required for scoped context access")
+    """Return one freshly re-read owner record inside one admitted running scope."""
     scope = _runtime_scope(conn, admission_id=admission_id, run_id=run_id)
     ref = _admitted_entity(
         scope["context_pack"],
         entity_type=entity_type,
         entity_id=entity_id,
     )
-    try:
-        materialized = _materialize_entity(
-            conn,
-            entity_type=ref["entity_type"],
-            entity_id=ref["entity_id"],
-        )
-    except (
-        agency_data.ProjectNotFound,
-        agency_directory.AgencyDirectoryError,
-        agency_information.AgencyInformationError,
-        agency_schema.AgencySchemaError,
-        knowledge.KnowledgeNotFound,
-        work_issues.WorkIssueError,
-        KeyError,
-    ) as exc:
-        raise ScopedContextNotFound(str(exc)) from exc
-
+    materialized = _materialize_entity(
+        conn,
+        entity_type=ref["entity_type"],
+        entity_id=ref["entity_id"],
+    )
     record = materialized["record"]
-    revision = record.get("revision", record.get("version")) if isinstance(record, dict) else None
-
     return {
-        "kind": "hermes_scoped_context_entity",
-        "admission_id": admission_id,
-        "run_id": run_id,
-        "context_pack_ref": scope["admission_context_pack_ref"],
-        "entity_ref": ref,
-        "field_projection_version": FIELD_PROJECTION_VERSION,
-        "record_owner_system": materialized["record_owner_system"],
-        "current_revision": revision,
+        "admission_id": scope["admission_id"],
+        "run_id": scope["run_id"],
+        "requested_effect": scope["requested_effect"],
+        "entity_type": ref["entity_type"],
+        "entity_id": ref["entity_id"],
         "record": record,
         "representation": materialized["representation"],
-        "read_semantics": "current_owner_read",
-        "context_pack_authorizes_identity_not_snapshot": True,
-        "source_binary_included": False,
-        "write_effect": False,
+        "record_owner_system": materialized["record_owner_system"],
+        "current_revision": record.get("revision") or record.get("version"),
+        "read_semantics": "current_owner_reread_within_admitted_identity_scope",
         "observed_at": _now(),
-        "requested_by": actor.strip(),
-        "non_equivalences": [
-            "entity admitted != entity is Evidence",
-            "current owner read != admission-time snapshot",
-            "field projection != full owner record",
-            "derived representation != source binary",
-            "read access != write authority",
-        ],
+        "field_projection_version": FIELD_PROJECTION_VERSION,
+        "source_refs_are_provenance_only": True,
+        "global_search_available": False,
+        "implicit_related_object_expansion": False,
+        "write_available": False,
     }
