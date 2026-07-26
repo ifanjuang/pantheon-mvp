@@ -22,10 +22,6 @@ CREATE TABLE IF NOT EXISTS work_issues (
     ),
     task_contract_ref TEXT,
     context_pack_ref TEXT,
-    workflow JSONB NOT NULL DEFAULT '{}'::jsonb,
-    information_ref TEXT,
-    result_ref TEXT,
-    decision_request JSONB NOT NULL DEFAULT '{}'::jsonb,
     version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
     created_by TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -36,11 +32,22 @@ CREATE TABLE IF NOT EXISTS work_issues (
     )
 );
 
--- Idempotent upgrade for existing development databases.
-ALTER TABLE work_issues ADD COLUMN IF NOT EXISTS workflow JSONB NOT NULL DEFAULT '{}'::jsonb;
-ALTER TABLE work_issues ADD COLUMN IF NOT EXISTS information_ref TEXT;
-ALTER TABLE work_issues ADD COLUMN IF NOT EXISTS result_ref TEXT;
-ALTER TABLE work_issues ADD COLUMN IF NOT EXISTS decision_request JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- Work Card presentation metadata is deliberately separate from the governed
+-- Work Issue contract. It describes the visible workflow without turning the
+-- Work Issue aggregate into a workflow engine.
+ALTER TABLE work_issues DROP COLUMN IF EXISTS workflow;
+ALTER TABLE work_issues DROP COLUMN IF EXISTS information_ref;
+ALTER TABLE work_issues DROP COLUMN IF EXISTS result_ref;
+ALTER TABLE work_issues DROP COLUMN IF EXISTS decision_request;
+
+CREATE TABLE IF NOT EXISTS work_card_metadata (
+    issue_id TEXT PRIMARY KEY REFERENCES work_issues(issue_id) ON DELETE CASCADE,
+    workflow JSONB NOT NULL DEFAULT '{}'::jsonb,
+    information_ref TEXT,
+    result_ref TEXT,
+    decision_request JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS issue_comments (
     comment_id TEXT PRIMARY KEY,
