@@ -4,6 +4,7 @@
   "tags": [
     {"slug":"email","title":"Email","description":"Message électronique reçu, préparé ou archivé.","icon_key":"EnvelopeClosedIcon","color":"blue"},
     {"slug":"dossier","title":"Dossier","description":"Ensemble documentaire ou dossier reçu/transmis.","icon_key":"ArchiveIcon","color":"slate"},
+    {"slug":"dce","title":"DCE","description":"Dossier de consultation des entreprises.","icon_key":"LayersIcon","color":"violet"},
     {"slug":"etude","title":"Étude","description":"Étude technique, réglementaire ou professionnelle.","icon_key":"FileTextIcon","color":"violet"},
     {"slug":"compte-rendu","title":"Compte rendu","description":"Compte rendu de réunion, rendez-vous ou chantier.","icon_key":"ReaderIcon","color":"cyan"},
     {"slug":"note","title":"Note","description":"Note interne, brouillon ou synthèse sans source documentaire externe obligatoire.","icon_key":"Pencil2Icon","color":"amber"},
