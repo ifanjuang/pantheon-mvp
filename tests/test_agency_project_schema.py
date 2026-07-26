@@ -11,19 +11,61 @@ def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
 
 
-def test_project_schema_declares_registry_without_granting_authority() -> None:
-    schema = agency_schema.get_project_schema()
-    assert schema["entity_type"] == "project"
-    assert schema["version"] == 1
-    assert schema["authority"]["system_of_record"] == "postgres"
-    assert schema["authority"]["field_posture_is_authorization"] is False
+def test_project_registry_declares_fields_and_named_views_without_granting_authority() -> None:
+    registry = agency_schema.get_project_registry()
+    assert registry["entity_type"] == "project"
+    assert registry["version"] == 1
+    assert registry["authority"]["system_of_record"] == "postgres"
+    assert registry["authority"]["field_posture_is_authorization"] is False
 
-    fields = {field["key"]: field for field in schema["fields"]}
+    fields = {field["key"]: field for field in registry["fields"]}
     assert fields["budget"]["storage"] == "attributes"
     assert fields["budget"]["type"] == "number"
     assert fields["budget"]["hermes_mode"] == "candidate"
     assert fields["revision"]["storage"] == "system"
     assert fields["revision"]["hermes_mode"] == "system"
+
+    assert set(registry["views"]) >= {
+        "cockpit_front",
+        "cockpit_back",
+        "edit",
+        "notion",
+        "hermes_context",
+    }
+    assert "revision" not in registry["views"]["cockpit_back"]["fields"]
+    assert "revision" in registry["views"]["hermes_context"]["fields"]
+
+
+def test_project_schema_defaults_to_named_cockpit_back_projection() -> None:
+    schema = agency_schema.get_project_schema()
+    registry = agency_schema.get_project_registry()
+
+    assert schema["resolved_view"]["name"] == "cockpit_back"
+    assert schema["resolved_view"]["authorization_inferred"] is False
+    assert [field["key"] for field in schema["fields"]] == registry["views"]["cockpit_back"]["fields"]
+    assert "project_id" not in [field["key"] for field in schema["fields"]]
+    assert "budget" in [field["key"] for field in schema["fields"]]
+
+
+def test_project_named_views_are_distinct_projections_not_authorization() -> None:
+    edit = agency_schema.get_project_schema("edit")
+    notion = agency_schema.get_project_schema("notion")
+    hermes = agency_schema.get_project_schema("hermes_context")
+
+    assert edit["resolved_view"]["name"] == "edit"
+    assert notion["resolved_view"]["name"] == "notion"
+    assert hermes["resolved_view"]["name"] == "hermes_context"
+    assert all(view["authority"]["field_posture_is_authorization"] is False for view in (edit, notion, hermes))
+
+    edit_keys = [field["key"] for field in edit["fields"]]
+    notion_keys = [field["key"] for field in notion["fields"]]
+    hermes_keys = [field["key"] for field in hermes["fields"]]
+    assert "description" in edit_keys
+    assert "description" not in notion_keys
+    assert "revision" in hermes_keys
+
+    with pytest.raises(agency_schema.AgencySchemaError, match="unknown Project schema view"):
+        agency_schema.get_project_schema("invented")
 
 
 def test_project_attributes_are_normalized_by_registry() -> None:
@@ -101,3 +143,4 @@ def test_project_schema_is_exposed_by_agency_api_and_packaged() -> None:
     assert '@app.get("/v1/agency/schema/project")' in api
     assert "attributes: dict[str, Any]" in api
     assert '"agency_schema/*.json"' in pyproject
+    assert agency_schema.DEFAULT_PROJECT_VIEW == "cockpit_back"
