@@ -11,7 +11,6 @@
     {"slug":"zone-naturelle","title":"Zone naturelle","description":"Zone naturelle ou contrainte d’urbanisme associée.","icon_key":"GlobeIcon","color":"green"},
     {"slug":"structure","title":"Structure","description":"Structure porteuse et études structurelles.","icon_key":"CubeIcon","color":"orange"},
     {"slug":"electricite","title":"Électricité","description":"Installations et études électriques.","icon_key":"LightningBoltIcon","color":"amber"},
-    {"slug":"dce","title":"DCE","description":"Dossier de consultation des entreprises.","icon_key":"LayersIcon","color":"violet"},
     {"slug":"urbanisme","title":"Urbanisme","description":"Urbanisme, PLU, autorisations et règles d’implantation.","icon_key":"DrawingPinIcon","color":"blue"},
     {"slug":"chantier","title":"Chantier","description":"Exécution, suivi de chantier et réception.","icon_key":"RulerSquareIcon","color":"slate"}
   ]
