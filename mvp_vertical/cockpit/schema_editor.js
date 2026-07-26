@@ -10,6 +10,10 @@
     urbanisme: "Urbanisme",
     chantier: "Chantier",
     reglementaire: "Réglementaire",
+    content: "Contenu",
+    state: "État",
+    source: "Source",
+    lineage: "Historique",
   });
 
   const state = {
@@ -17,8 +21,9 @@
     form: null,
     title: null,
     message: null,
-    project: null,
+    entity: null,
     schema: null,
+    profile: null,
     fields: [],
   };
 
@@ -27,7 +32,7 @@
   function credentials() {
     const token = $("v2-token")?.value?.trim() || "";
     const actor = $("v2-handoff-actor")?.value?.trim() || "";
-    if (!token) throw new Error("Clé éditeur requise pour modifier le Projet.");
+    if (!token) throw new Error("Clé éditeur requise pour cette modification.");
     if (!actor) throw new Error("Renseignez l’acteur humain dans le dock Hermès.");
     return { token, actor };
   }
@@ -49,20 +54,12 @@
     return payload;
   }
 
-  function projectIdFromEntity(entityId) {
-    const prefix = "project:";
-    if (!String(entityId || "").startsWith(prefix) || String(entityId).includes(":contacts")) {
-      throw new Error("Cette action exige une Carte Projet.");
-    }
-    return String(entityId).slice(prefix.length);
+  function currentCard() {
+    return document.querySelector("#v2-stage .v2-card");
   }
 
   function currentEntityId() {
-    return document.querySelector("#v2-stage .v2-entity-id")?.textContent?.trim() || "";
-  }
-
-  function fieldValue(project, field) {
-    return field.storage === "attributes" ? project.attributes?.[field.key] : project[field.key];
+    return currentCard()?.querySelector(".v2-entity-id")?.textContent?.trim() || "";
   }
 
   function sameValue(a, b) {
@@ -143,7 +140,7 @@
         empty.textContent = "—";
         select.append(empty);
       }
-      for (const optionValue of field.values || []) {
+      for (const optionValue of field.editor?.values || field.values || []) {
         const option = document.createElement("option");
         option.value = String(optionValue);
         option.textContent = String(optionValue);
@@ -186,6 +183,102 @@
     },
     read(_field, input) { return parseStringList(input.value); },
   });
+
+  function projectId(entityId) {
+    if (!entityId.startsWith("project:") || entityId.includes(":contacts")) throw new Error("Cette action exige une Carte Projet.");
+    return entityId.slice("project:".length);
+  }
+
+  function informationId(entityId) {
+    if (!entityId.startsWith("information:")) throw new Error("Cette action exige une Carte Information.");
+    return entityId.slice("information:".length);
+  }
+
+  const PROFILES = Object.freeze({
+    project: Object.freeze({
+      matches(entityId) {
+        return entityId.startsWith("project:") && !entityId.includes(":contacts");
+      },
+      editable() { return true; },
+      async load(entityId) {
+        const id = projectId(entityId);
+        const [schemaPayload, projectPayload] = await Promise.all([
+          request("../v1/agency/schema/project?view=edit"),
+          request(`../v1/agency/projects/${encodeURIComponent(id)}`),
+        ]);
+        return { entity: projectPayload.project, schema: schemaPayload.schema };
+      },
+      title(entity) { return entity.display_name || entity.code || entity.project_id; },
+      value(entity, field) {
+        return field.storage === "attributes" ? entity.attributes?.[field.key] : entity[field.key];
+      },
+      serialize(entity, changes) {
+        const core = {};
+        const attributes = { ...(entity.attributes || {}) };
+        let attributesChanged = false;
+        for (const [key, change] of Object.entries(changes)) {
+          if (change.field.storage === "attributes") {
+            attributes[key] = change.value;
+            attributesChanged = true;
+          } else if (change.field.storage === "core") {
+            core[key] = change.value;
+          }
+        }
+        if (attributesChanged) core.attributes = attributes;
+        return {
+          expected_revision: entity.revision,
+          idempotency_key: key("schema-edit"),
+          ...core,
+        };
+      },
+      async save(entity, payload) {
+        const result = await request(`../v1/agency/projects/${encodeURIComponent(entity.project_id)}`, {
+          method: "PATCH",
+          body: payload,
+        });
+        return result.project;
+      },
+      message(entity) { return `Révision ${entity.revision} · PostgreSQL reste la source de vérité.`; },
+    }),
+    information: Object.freeze({
+      matches(entityId) { return entityId.startsWith("information:"); },
+      editable(card) { return ["draft", "in_progress"].includes(card?.dataset.status || ""); },
+      async load(entityId) {
+        const id = informationId(entityId);
+        const payload = await request(`../v1/agency/information/${encodeURIComponent(id)}/context`);
+        const context = payload.information_context || {};
+        const entity = context.current;
+        if (!entity || !["draft", "in_progress"].includes(entity.status)) {
+          throw new Error("Une Information ACTÉE est immuable. Créez d’abord une nouvelle version.");
+        }
+        if (!context.edit_schema) throw new Error("Le schéma d’édition Information n’est pas disponible.");
+        return { entity, schema: context.edit_schema };
+      },
+      title(entity) { return entity.title || entity.information_id; },
+      value(entity, field) { return entity[field.key]; },
+      serialize(entity, changes) {
+        const payload = { expected_revision: entity.revision };
+        for (const [key, change] of Object.entries(changes)) {
+          if (change.field.storage === "core") payload[key] = change.value;
+        }
+        return payload;
+      },
+      async save(entity, payload) {
+        const result = await request(`../v1/agency/information/${encodeURIComponent(entity.information_id)}`, {
+          method: "PATCH",
+          body: payload,
+        });
+        return result.information;
+      },
+      message(entity) {
+        return `${entity.index_label || ""} · révision ${entity.revision} · source et indice se modifient uniquement par Nouvelle version.`;
+      },
+    }),
+  });
+
+  function profileFor(entityId, card = currentCard()) {
+    return Object.values(PROFILES).find(profile => profile.matches(entityId) && profile.editable(card)) || null;
+  }
 
   function ensureDialog() {
     if (state.dialog) return state.dialog;
@@ -250,7 +343,7 @@
     state.message.dataset.error = error ? "true" : "false";
   }
 
-  function fieldControl(field, project) {
+  function fieldControl(field) {
     const renderer = renderers.get(field.type);
     if (!renderer) return null;
     const wrapper = document.createElement("label");
@@ -258,7 +351,7 @@
     const label = document.createElement("span");
     label.className = "v2-schema-field-label";
     label.textContent = field.label || field.key;
-    const value = fieldValue(project, field);
+    const value = state.profile.value(state.entity, field);
     const input = renderer.render(field, value);
     input.name = field.key;
     input.dataset.fieldKey = field.key;
@@ -280,7 +373,7 @@
     const groups = new Map();
     for (const field of state.schema?.fields || []) {
       if (field.mutable === false) continue;
-      const control = fieldControl(field, state.project);
+      const control = fieldControl(field);
       if (!control) continue;
       const group = field.group || "business";
       if (!groups.has(group)) groups.set(group, []);
@@ -299,27 +392,18 @@
     }
   }
 
-  function changedPayload() {
-    const coreChanges = {};
-    const attributes = { ...(state.project.attributes || {}) };
-    let attributesChanged = false;
-
+  function changedFields() {
+    const changes = {};
     for (const control of state.fields) {
       const next = control.renderer.read(control.field, control.input);
       if (sameValue(next, control.original)) continue;
-      if (control.field.storage === "attributes") {
-        attributes[control.field.key] = next;
-        attributesChanged = true;
-      } else if (control.field.storage === "core") {
-        coreChanges[control.field.key] = next;
-      }
+      changes[control.field.key] = { field: control.field, value: next };
     }
-    if (attributesChanged) coreChanges.attributes = attributes;
-    return coreChanges;
+    return changes;
   }
 
   async function save() {
-    const changes = changedPayload();
+    const changes = changedFields();
     if (!Object.keys(changes).length) {
       setMessage("Aucune modification à enregistrer.");
       return;
@@ -328,17 +412,9 @@
     submit.disabled = true;
     setMessage("Enregistrement…");
     try {
-      const projectId = state.project.project_id;
-      const payload = await request(`../v1/agency/projects/${encodeURIComponent(projectId)}`, {
-        method: "PATCH",
-        body: {
-          expected_revision: state.project.revision,
-          idempotency_key: key("schema-edit"),
-          ...changes,
-        },
-      });
-      state.project = payload.project;
-      setMessage(`Enregistré · révision ${state.project.revision}.`);
+      const payload = state.profile.serialize(state.entity, changes);
+      state.entity = await state.profile.save(state.entity, payload);
+      setMessage(`Enregistré · révision ${state.entity.revision}.`);
       state.dialog.close();
       $("v2-load")?.click();
     } finally {
@@ -346,32 +422,32 @@
     }
   }
 
-  async function openProject(projectId) {
+  async function openEntity(entityId) {
+    const profile = profileFor(entityId, currentCard());
+    if (!profile) throw new Error("Cette carte n’expose pas d’édition schema-driven dans son état courant.");
     const dialog = ensureDialog();
     setMessage("Chargement…");
-    const [schemaPayload, projectPayload] = await Promise.all([
-      request("../v1/agency/schema/project?view=edit"),
-      request(`../v1/agency/projects/${encodeURIComponent(projectId)}`),
-    ]);
-    state.schema = schemaPayload.schema;
-    state.project = projectPayload.project;
-    state.title.textContent = state.project.display_name || state.project.code || projectId;
+    const loaded = await profile.load(entityId);
+    state.profile = profile;
+    state.schema = loaded.schema;
+    state.entity = loaded.entity;
+    state.title.textContent = profile.title(state.entity);
     buildForm();
-    setMessage(`Révision ${state.project.revision} · PostgreSQL reste la source de vérité.`);
+    setMessage(profile.message(state.entity));
     dialog.showModal();
   }
 
-  function openCurrentProject() {
-    return openProject(projectIdFromEntity(currentEntityId()));
+  function openCurrent() {
+    return openEntity(currentEntityId());
   }
 
-  function ensureProjectEditAction() {
+  function ensureEditAction() {
     const entityId = currentEntityId();
     const actions = document.querySelector("#v2-stage .v2-card-actions");
     if (!actions) return;
-    const existing = actions.querySelector('[data-schema-edit="project"]');
-    const isProject = entityId.startsWith("project:") && !entityId.includes(":contacts");
-    if (!isProject) {
+    const existing = actions.querySelector('[data-schema-edit="entity"]');
+    const profile = profileFor(entityId, currentCard());
+    if (!profile) {
       existing?.remove();
       return;
     }
@@ -379,10 +455,10 @@
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Modifier";
-    button.dataset.schemaEdit = "project";
+    button.dataset.schemaEdit = "entity";
     button.addEventListener("click", () => {
       button.disabled = true;
-      void openCurrentProject()
+      void openCurrent()
         .catch(error => window.alert(error.message || String(error)))
         .finally(() => { button.disabled = false; });
     });
@@ -392,13 +468,15 @@
   function install() {
     const stage = $("v2-stage");
     if (!stage) return;
-    ensureProjectEditAction();
-    new MutationObserver(ensureProjectEditAction).observe(stage, { childList: true, subtree: true });
+    ensureEditAction();
+    new MutationObserver(ensureEditAction).observe(stage, { childList: true, subtree: true });
   }
 
   window.PantheonSchemaEditor = Object.freeze({
-    openProject,
-    openCurrentProject,
+    openEntity,
+    openCurrent,
+    openProject(projectId) { return openEntity(`project:${projectId}`); },
+    openInformation(informationId) { return openEntity(`information:${informationId}`); },
     registerRenderer,
     supportedTypes: Object.freeze(Array.from(renderers.keys())),
   });
