@@ -47,6 +47,10 @@
       "purpose": "Information content and provenance shown on the card verso.",
       "fields": ["title","summary","details","source_type","source_ref","source_note","source_version","author","status","index_label","information_date","limits","type_tags","subject_tags"]
     },
+    "create": {
+      "purpose": "Human creation surface for a new Information series. Source identity and initial content are collected together before canonical persistence.",
+      "fields": ["title","category","source_type","source_ref","source_note","source_version","index_label","information_date","summary","details","author","status","limits","type_tags","subject_tags"]
+    },
     "edit": {
       "purpose": "Human working-version editor. Source identity and index are intentionally excluded and change only through source-version derivation.",
       "fields": ["title","category","information_date","summary","details","author","status","limits","type_tags","subject_tags"]
