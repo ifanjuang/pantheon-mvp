@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS agency_organizations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Retired legacy model. This repository is still pre-production; keeping a
+-- second project/contact model would create sync ambiguity, so schema init
+-- removes the obsolete relation table when upgrading an existing dev database.
+DROP TABLE IF EXISTS agency_project_participations;
+
 CREATE TABLE IF NOT EXISTS agency_project_events (
     event_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES agency_projects(project_id) ON DELETE RESTRICT,
