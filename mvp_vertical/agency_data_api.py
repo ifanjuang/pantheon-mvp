@@ -192,12 +192,13 @@ def install_agency_data_routes(
 
     @app.get("/v1/agency/schema/project")
     def get_project_schema(
+        view: str = agency_schema.DEFAULT_PROJECT_VIEW,
         _authorized: None = Depends(require_global_agency_read),
     ) -> dict:
         try:
-            schema = agency_schema.get_project_schema()
+            schema = agency_schema.get_project_schema(view)
         except agency_schema.AgencySchemaError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
             "system_of_record": "postgres",
             "schema": schema,
