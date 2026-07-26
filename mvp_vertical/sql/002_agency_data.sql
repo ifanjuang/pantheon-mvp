@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS agency_projects (
     primary_client TEXT,
     tags JSONB NOT NULL DEFAULT '[]'::jsonb,
     contacts JSONB NOT NULL DEFAULT '[]'::jsonb,
+    attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
     owner_system TEXT NOT NULL DEFAULT 'postgres' CHECK (owner_system = 'postgres'),
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     created_by TEXT NOT NULL,
@@ -19,11 +20,11 @@ CREATE TABLE IF NOT EXISTS agency_projects (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Existing development databases predate project-owned contacts. CREATE TABLE
--- IF NOT EXISTS does not evolve an existing table, so keep this upgrade explicit
--- and idempotent in the single Agency Data initializer.
+-- Existing development databases may predate the extensible Project fields.
 ALTER TABLE agency_projects
     ADD COLUMN IF NOT EXISTS contacts JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE agency_projects
+    ADD COLUMN IF NOT EXISTS attributes JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE INDEX IF NOT EXISTS agency_projects_code_lookup
     ON agency_projects (lower(code));
