@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import hmac
 from datetime import date
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from . import agency_data, agency_directory, agency_information
+from . import agency_data, agency_directory, agency_information, agency_schema
 
 
 class ProjectContactBody(BaseModel):
@@ -40,6 +40,7 @@ class ProjectCreateBody(BaseModel):
     primary_client: str | None = Field(default=None, max_length=500)
     tags: list[str] = Field(default_factory=list, max_length=50)
     contacts: list[ProjectContactBody] = Field(default_factory=list, max_length=500)
+    attributes: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = Field(min_length=8, max_length=200)
 
 
@@ -55,6 +56,7 @@ class ProjectUpdateBody(BaseModel):
     primary_client: str | None = Field(default=None, max_length=500)
     tags: list[str] | None = Field(default=None, max_length=50)
     contacts: list[ProjectContactBody] | None = Field(default=None, max_length=500)
+    attributes: dict[str, Any] | None = None
 
 
 class InformationCreateBody(BaseModel):
@@ -185,6 +187,20 @@ def install_agency_data_routes(
                 detail="global Agency Data writes require a human editor credential",
             )
         return "human"
+
+    @app.get("/v1/agency/schema/project")
+    def get_project_schema(
+        _authorized: None = Depends(require_global_agency_read),
+    ) -> dict:
+        try:
+            schema = agency_schema.get_project_schema()
+        except agency_schema.AgencySchemaError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {
+            "system_of_record": "postgres",
+            "schema": schema,
+            "authorization_inferred": False,
+        }
 
     @app.get("/v1/agency/projects")
     def list_projects(
