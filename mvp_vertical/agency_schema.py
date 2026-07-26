@@ -1,6 +1,6 @@
 """Declarative Agency Data schema loader and bounded attribute validation.
 
-The registry describes business fields and presentation labels. It is not an
+The registry describes business fields and named projections. It is not an
 authorization engine: mutation routes and Pantheon governance remain authoritative.
 """
 
@@ -50,12 +50,69 @@ def _project_schema_cached() -> dict[str, Any]:
             raise AgencySchemaError(f"unsupported storage for Project field {key}")
         if field.get("hermes_mode") not in {"no", "candidate", "auto", "bounded", "system"}:
             raise AgencySchemaError(f"unsupported hermes_mode for Project field {key}")
+
+    views = raw.get("views")
+    if not isinstance(views, dict) or not views:
+        raise AgencySchemaError("Project schema must declare named views")
+    for view_name, view in views.items():
+        if not isinstance(view_name, str) or not view_name.strip():
+            raise AgencySchemaError("Project schema view names must be non-empty strings")
+        if not isinstance(view, dict):
+            raise AgencySchemaError(f"Project schema view {view_name} must be an object")
+        view_fields = view.get("fields")
+        if not isinstance(view_fields, list) or not view_fields:
+            raise AgencySchemaError(f"Project schema view {view_name} must declare fields")
+        view_seen: set[str] = set()
+        for field_key in view_fields:
+            if not isinstance(field_key, str) or not field_key.strip():
+                raise AgencySchemaError(f"Project schema view {view_name} contains an invalid field key")
+            if field_key not in seen:
+                raise AgencySchemaError(
+                    f"Project schema view {view_name} references unknown field {field_key}"
+                )
+            if field_key in view_seen:
+                raise AgencySchemaError(
+                    f"Project schema view {view_name} repeats field {field_key}"
+                )
+            view_seen.add(field_key)
     return raw
 
 
-def get_project_schema() -> dict[str, Any]:
-    """Return a copy so callers cannot mutate the cached registry."""
-    return deepcopy(_project_schema_cached())
+def get_project_schema(view_name: str | None = None) -> dict[str, Any]:
+    """Return the full registry or a named projection copy.
+
+    A named view narrows and orders the exposed fields. It never changes field
+    mutability or grants authorization; those remain enforced by server routes and
+    Pantheon gates.
+    """
+    schema = deepcopy(_project_schema_cached())
+    if view_name is None:
+        return schema
+
+    name = str(view_name or "").strip()
+    view = schema["views"].get(name)
+    if view is None:
+        raise AgencySchemaError(f"unknown Project schema view: {name}")
+
+    by_key = {field["key"]: field for field in schema["fields"]}
+    schema["fields"] = [by_key[key] for key in view["fields"]]
+    schema["resolved_view"] = {
+        "name": name,
+        "purpose": view.get("purpose"),
+        "field_count": len(view["fields"]),
+        "authorization_inferred": False,
+    }
+    return schema
+
+
+def get_project_view(view_name: str) -> dict[str, Any]:
+    """Return one validated named view without changing the cached registry."""
+    schema = _project_schema_cached()
+    name = str(view_name or "").strip()
+    view = schema["views"].get(name)
+    if view is None:
+        raise AgencySchemaError(f"unknown Project schema view: {name}")
+    return deepcopy(view)
 
 
 def _attribute_fields() -> dict[str, dict[str, Any]]:
