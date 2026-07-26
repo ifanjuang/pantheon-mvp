@@ -31,8 +31,20 @@ PROJECT_MUTABLE_FIELDS = {
     "location",
     "primary_client",
     "tags",
+    "contacts",
 }
 ACTOR_KINDS = {"human", "hermes", "system"}
+CONTACT_FIELDS = {
+    "group",
+    "name",
+    "organization",
+    "role",
+    "email",
+    "phone",
+    "address",
+    "notes",
+    "source_ref",
+}
 
 
 class AgencyDataError(ValueError):
@@ -108,6 +120,41 @@ def _normalize_tags(tags: list[str] | None) -> list[str]:
             continue
         seen.add(key)
         normalized.append(tag)
+    return normalized
+
+
+def _normalize_contacts(contacts: list[dict] | None) -> list[dict]:
+    """Normalize the project-owned contacts snapshot without creating relations."""
+    if contacts is None:
+        return []
+    if not isinstance(contacts, list):
+        raise AgencyDataError("contacts must be a list")
+    if len(contacts) > 500:
+        raise AgencyDataError("contacts cannot contain more than 500 entries")
+
+    normalized: list[dict] = []
+    for index, raw in enumerate(contacts):
+        if not isinstance(raw, dict):
+            raise AgencyDataError(f"contact {index + 1} must be an object")
+        unknown = set(raw) - CONTACT_FIELDS
+        if unknown:
+            raise AgencyDataError(
+                f"unsupported contact field(s): {', '.join(sorted(unknown))}"
+            )
+        item: dict[str, str] = {}
+        for key in CONTACT_FIELDS:
+            value = raw.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                item[key] = text
+        if not item.get("name") and not item.get("organization"):
+            raise AgencyDataError(
+                f"contact {index + 1} requires at least a name or organization"
+            )
+        item.setdefault("group", "Autres intervenants")
+        normalized.append(item)
     return normalized
 
 
@@ -205,26 +252,6 @@ def get_project(conn: psycopg.Connection, project_id: str) -> dict:
     return _project_row(conn, project_id)
 
 
-def list_project_participations(conn: psycopg.Connection, project_id: str) -> list[dict]:
-    _project_row(conn, project_id)
-    with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(
-            """
-            SELECT p.*,
-                   person.display_name AS person_name,
-                   org.name AS organization_name
-              FROM agency_project_participations p
-              LEFT JOIN agency_people person ON person.person_id = p.person_id
-              LEFT JOIN agency_organizations org ON org.organization_id = p.organization_id
-             WHERE p.project_id = %s
-             ORDER BY lower(p.role), lower(COALESCE(p.label, person.display_name, org.name, ''))
-            """,
-            (project_id,),
-        )
-        rows = cur.fetchall()
-    return [_jsonable(dict(row)) for row in rows]
-
-
 def create_project(
     conn: psycopg.Connection,
     *,
@@ -240,6 +267,7 @@ def create_project(
     location: str | None = None,
     primary_client: str | None = None,
     tags: list[str] | None = None,
+    contacts: list[dict] | None = None,
 ) -> dict:
     _validate_actor(actor, actor_kind)
     if actor_kind == "hermes":
@@ -263,6 +291,7 @@ def create_project(
         "location": location,
         "primary_client": primary_client,
         "tags": _normalize_tags(tags),
+        "contacts": _normalize_contacts(contacts),
         "actor": actor,
         "actor_kind": actor_kind,
     }
@@ -286,8 +315,8 @@ def create_project(
                 """
                 INSERT INTO agency_projects (
                     project_id, code, display_name, description, status, phase,
-                    location, primary_client, tags, created_by, updated_by
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    location, primary_client, tags, contacts, created_by, updated_by
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     project_id,
@@ -299,6 +328,7 @@ def create_project(
                     location,
                     primary_client,
                     Jsonb(payload["tags"]),
+                    Jsonb(payload["contacts"]),
                     actor,
                     actor,
                 ),
@@ -341,6 +371,8 @@ def update_project(
     normalized = dict(changes)
     if "tags" in normalized:
         normalized["tags"] = _normalize_tags(normalized["tags"])
+    if "contacts" in normalized:
+        normalized["contacts"] = _normalize_contacts(normalized["contacts"])
     for key in {"code", "display_name"} & normalized.keys():
         normalized[key] = str(normalized[key]).strip()
         if not normalized[key]:
@@ -381,7 +413,9 @@ def update_project(
         values: list[Any] = []
         for field in sorted(normalized):
             assignments.append(f"{field} = %s")
-            values.append(Jsonb(normalized[field]) if field == "tags" else normalized[field])
+            values.append(
+                Jsonb(normalized[field]) if field in {"tags", "contacts"} else normalized[field]
+            )
         assignments.extend([
             "revision = revision + 1",
             "updated_by = %s",
