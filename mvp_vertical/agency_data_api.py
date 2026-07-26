@@ -240,6 +240,12 @@ def install_agency_data_routes(
             "system_of_record": "postgres",
             "project_id": project_id,
             "information": information,
+            "card_contract": {
+                "entity_type": "information",
+                "authorization_inferred": False,
+                "front": agency_schema.get_information_schema("cockpit_front"),
+                "back": agency_schema.get_information_schema("cockpit_back"),
+            },
         }
 
     @app.get("/v1/agency/information/{information_id}/context")
