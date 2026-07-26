@@ -365,10 +365,44 @@
     return openProject(projectIdFromEntity(currentEntityId()));
   }
 
+  function ensureProjectEditAction() {
+    const entityId = currentEntityId();
+    const actions = document.querySelector("#v2-stage .v2-card-actions");
+    if (!actions) return;
+    const existing = actions.querySelector('[data-schema-edit="project"]');
+    const isProject = entityId.startsWith("project:") && !entityId.includes(":contacts");
+    if (!isProject) {
+      existing?.remove();
+      return;
+    }
+    if (existing) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Modifier";
+    button.dataset.schemaEdit = "project";
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      void openCurrentProject()
+        .catch(error => window.alert(error.message || String(error)))
+        .finally(() => { button.disabled = false; });
+    });
+    actions.prepend(button);
+  }
+
+  function install() {
+    const stage = $("v2-stage");
+    if (!stage) return;
+    ensureProjectEditAction();
+    new MutationObserver(ensureProjectEditAction).observe(stage, { childList: true, subtree: true });
+  }
+
   window.PantheonSchemaEditor = Object.freeze({
     openProject,
     openCurrentProject,
     registerRenderer,
     supportedTypes: Object.freeze(Array.from(renderers.keys())),
   });
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, { once: true });
+  else install();
 })();
