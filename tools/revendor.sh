@@ -19,6 +19,7 @@ SCHEMAS=(
   "mvp_governed_loop_objects.schema.yaml"
   "document_knowledge_slice.schema.yaml"
   "work_issue_slice.schema.yaml"
+  "project_claim.schema.yaml"
 )
 
 echo "Re-vendoring from ${REPO}@${SHA}"
