@@ -9,7 +9,9 @@ This repository owns the concrete Tool Card projection. Pantheon Next owns the g
 - `mvp_vertical/cockpit/tool_catalog.json` is the cockpit-owned supplementary catalogue.
 - `mvp_vertical/cockpit/tools.js` adds the `Outils` scene and detailed Tool Cards without duplicating the existing card renderer.
 - catalogue records preserve independent installation, runtime, health, governance, update and activation axes.
-- LangChain, LangGraph, LangFlow and LangSmith are initial catalogue entries with detailed operational descriptions.
+- LangChain, Haystack, LangGraph, LangFlow and LangSmith are initial catalogue entries with detailed operational descriptions.
+- Haystack is catalogued only as a candidate binding of the Pantheon Next `knowledge_retrieval_pipeline` Capability Slot; catalogue presence does not select, install, approve or activate it.
+- LangChain retrieval placement uses the same governed `knowledge_retrieval_pipeline` vocabulary instead of a parallel MVP-only retrieval slot.
 - runtime observations can be injected through `window.PantheonToolCards.setHermesObservations(...)` and are reconciled with catalogue entries.
 - `mvp_vertical/hermes_tool_inventory.py` reads only the verified Hermes discovery surfaces `/v1/skills`, `/v1/toolsets` and `/v1/capabilities` and normalizes them into Tool Card observations.
 
