@@ -15,9 +15,10 @@ The exact upstream commit is pinned in [`UPSTREAM_COMMIT`](./UPSTREAM_COMMIT).
 | `mvp_governed_loop_objects.schema.yaml` | `schemas/mvp_governed_loop_objects.schema.yaml` | verbatim copy |
 | `document_knowledge_slice.schema.yaml` | `schemas/document_knowledge_slice.schema.yaml` | verbatim copy |
 | `work_issue_slice.schema.yaml` | `schemas/work_issue_slice.schema.yaml` | verbatim copy |
+| `project_claim.schema.yaml` | `schemas/project_claim.schema.yaml` | verbatim copy |
 | `decision_vocabulary.stand_in.yaml` | **derived**, not copied — mirrors `$defs.decision_value.enum` of `mvp_governed_loop_objects.schema.yaml` | derived |
 
-The three `*.schema.yaml` files map to `schemas/<name>` upstream — the
+Every vendored `*.schema.yaml` maps to `schemas/<name>` upstream. This is the
 convention `tools/check_schema_drift.py` relies on. `decision_vocabulary.stand_in.yaml`
 has no direct upstream file: it is the gate's authority (a single small file to
 read so decision semantics cannot be driven by the candidate stream) and must
@@ -39,7 +40,7 @@ scripts.
 
 ## How to re-vendor
 
-Run `tools/revendor.sh <commit-sha>` (see that script). It fetches the three
-schemas at the given commit, rewrites `UPSTREAM_COMMIT`, and reminds you to
-re-check the derived vocabulary. Re-vendoring is a reviewed change, never an
-automatic one: after it, reconcile any emitted-shape changes and run the tests.
+Run `tools/revendor.sh <commit-sha>` (see that script). It fetches the governed
+schemas at that commit, rewrites `UPSTREAM_COMMIT`, and reminds you to re-check
+the derived vocabulary. Re-vendoring is a reviewed change, never an automatic
+one: after it, reconcile any emitted-shape changes and run the tests.
