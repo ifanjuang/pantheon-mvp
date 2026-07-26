@@ -39,14 +39,14 @@ def _root_identity(root_entity: dict[str, Any]) -> tuple[str, str]:
     return entity_id, entity_type
 
 
-def _participation_project_id(conn: psycopg.Connection, participation_id: str) -> str:
-    row = conn.execute(
-        "SELECT project_id FROM agency_project_participations WHERE participation_id = %s",
-        (participation_id,),
-    ).fetchone()
-    if row is None:
-        raise CardScopeError(f"unknown Agency ProjectParticipation: {participation_id}")
-    return str(row[0])
+def _contacts_project_id(entity_id: str) -> str:
+    value = _strip_prefix(entity_id, "project:")
+    if not value.endswith(":contacts"):
+        raise CardScopeError(f"invalid Project Contacts identity: {entity_id}")
+    project_id = value.removesuffix(":contacts").strip()
+    if not project_id:
+        raise CardScopeError(f"invalid Project Contacts identity: {entity_id}")
+    return project_id
 
 
 def validate_entity_ref(
@@ -65,6 +65,8 @@ def validate_entity_ref(
     try:
         if entity_type == "project":
             agency_data.get_project(conn, _strip_prefix(entity_id, "project:"))
+        elif entity_type == "project_contacts":
+            agency_data.get_project(conn, _contacts_project_id(entity_id))
         elif entity_type == "person":
             person_id = _strip_prefix(entity_id, "person:")
             agency_directory.get_person(conn, person_id)
@@ -72,9 +74,6 @@ def validate_entity_ref(
             organization_id = _strip_prefix(entity_id, "organization:")
             organization_id = _strip_prefix(organization_id, "org:")
             agency_directory.get_organization(conn, organization_id)
-        elif entity_type == "project_participation":
-            participation_id = _strip_prefix(entity_id, "participation:")
-            _participation_project_id(conn, participation_id)
         elif entity_type == "document":
             document_id = _strip_prefix(entity_id, "document:")
             document = store.get_document_card_by_id(conn, document_id)
@@ -150,18 +149,16 @@ def resolve_declared_descendants(
     if entity_type == "project":
         project_id = _strip_prefix(entity_id, "project:")
         try:
-            agency_data.get_project(conn, project_id)
+            project = agency_data.get_project(conn, project_id)
         except agency_data.ProjectNotFound as exc:
             raise CardScopeError(str(exc)) from exc
 
-        participations = agency_directory.list_project_participations(conn, project_id)
         documents = store.list_document_cards(conn, project_id)
         descendants = [
             {
-                "entity_id": f"participation:{item['participation_id']}",
-                "entity_type": "project_participation",
+                "entity_id": f"project:{project_id}:contacts",
+                "entity_type": "project_contacts",
             }
-            for item in participations
         ]
         descendants.extend(
             {
@@ -176,9 +173,23 @@ def resolve_declared_descendants(
             "descendants": descendants,
             "source_refs": [item["source_ref"] for item in documents if item.get("source_ref")],
             "counts": {
-                "project_participations": len(participations),
+                "contacts": len(project.get("contacts") or []),
                 "documents": len(documents),
             },
+        }
+
+    if entity_type == "project_contacts":
+        project_id = _contacts_project_id(entity_id)
+        try:
+            project = agency_data.get_project(conn, project_id)
+        except agency_data.ProjectNotFound as exc:
+            raise CardScopeError(str(exc)) from exc
+        return {
+            "policy": "project_contacts_root_only",
+            "root_owner_id": project_id,
+            "descendants": [],
+            "source_refs": [],
+            "counts": {"contacts": len(project.get("contacts") or [])},
         }
 
     if entity_type == "document":
@@ -221,6 +232,14 @@ def resolve_case_ref(
             raise CardScopeError(str(exc)) from exc
         return project_id
 
+    if entity_type == "project_contacts":
+        project_id = _contacts_project_id(entity_id)
+        try:
+            agency_data.get_project(conn, project_id)
+        except agency_data.ProjectNotFound as exc:
+            raise CardScopeError(str(exc)) from exc
+        return project_id
+
     if entity_type == "document":
         document_id = _strip_prefix(entity_id, "document:")
         try:
@@ -241,10 +260,6 @@ def resolve_case_ref(
             return str(work_issue_read.get_issue_record(conn, issue_id)["case_ref"])
         except work_issues.WorkIssueError as exc:
             raise CardScopeError(str(exc)) from exc
-
-    if entity_type == "project_participation":
-        participation_id = _strip_prefix(entity_id, "participation:")
-        return _participation_project_id(conn, participation_id)
 
     raise CardScopeError(
         f"Hermes handoff submission requires a project-scoped root; unsupported root type: {entity_type}"
