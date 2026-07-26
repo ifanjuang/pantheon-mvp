@@ -346,16 +346,15 @@ def _materialize_entity(
         record = _bounded_projection(raw, INFORMATION_FIELDS)
         details = _bounded_text(str(raw.get("details") or ""), label="Information details")
         source_note = _bounded_text(str(raw.get("source_note") or ""), label="Information source note")
-        representation = {
-            "kind": "agency_information_text",
-            "summary": str(raw.get("summary") or ""),
-            "details": details,
-            "source_note": source_note,
-            "working_assumptions_are_not_acted": raw.get("status") in {"draft", "in_progress"},
-        }
         return {
             "record": record,
-            "representation": representation,
+            "representation": {
+                "kind": "agency_information_text",
+                "summary": str(raw.get("summary") or ""),
+                "details": details,
+                "source_note": source_note,
+                "working_assumptions_are_not_acted": raw.get("status") in {"draft", "in_progress"},
+            },
             "record_owner_system": "postgres_agency_information",
         }
 
@@ -438,19 +437,30 @@ def get_context_manifest(
     ]
     return {
         "kind": "hermes_scoped_context_manifest",
-        "field_projection_version": FIELD_PROJECTION_VERSION,
         "admission_id": admission_id,
         "run_id": run_id,
-        "read_only": True,
-        "scope_widened": False,
-        "freshness_policy": "owner_records_re_read_at_access_time",
-        "resolved_at": _now(),
+        "context_pack_ref": scope["admission_context_pack_ref"],
+        "task_contract_ref": scope["admission_task_contract_ref"],
+        "requested_effect": scope["requested_effect"],
+        "run_status": scope["run_status"],
+        "field_projection_version": FIELD_PROJECTION_VERSION,
         "entities": entities,
         "source_refs": list(context_pack.get("source_refs") or []),
+        "source_dereference_available": False,
+        "global_search_available": False,
+        "global_listing_available": False,
+        "write_effect": False,
+        "read_semantics": "current_owner_read",
+        "context_pack_authorizes_identity_not_snapshot": True,
+        "observed_at": _now(),
+        "requested_by": actor.strip(),
         "non_equivalences": [
-            "context access != Evidence",
-            "runtime success != truth",
-            "read_only context != mutation authority",
+            "Context Pack inclusion != Evidence",
+            "current owner read != admission-time snapshot",
+            "source_ref != source dereference authority",
+            "field projection != full owner record",
+            "read access != write authority",
+            "runtime success != Evidence",
         ],
     }
 
@@ -467,27 +477,52 @@ def get_context_entity(
     if not actor.strip():
         raise HermesScopedContextError("Hermes actor is required for scoped context access")
     scope = _runtime_scope(conn, admission_id=admission_id, run_id=run_id)
-    context_pack = scope["context_pack"]
-    ref = _admitted_entity(context_pack, entity_type=entity_type, entity_id=entity_id)
-    materialized = _materialize_entity(
-        conn,
-        entity_type=ref["entity_type"],
-        entity_id=ref["entity_id"],
+    ref = _admitted_entity(
+        scope["context_pack"],
+        entity_type=entity_type,
+        entity_id=entity_id,
     )
+    try:
+        materialized = _materialize_entity(
+            conn,
+            entity_type=ref["entity_type"],
+            entity_id=ref["entity_id"],
+        )
+    except (
+        agency_data.ProjectNotFound,
+        agency_directory.AgencyDirectoryError,
+        agency_information.AgencyInformationError,
+        knowledge.KnowledgeNotFound,
+        work_issues.WorkIssueError,
+        KeyError,
+    ) as exc:
+        raise ScopedContextNotFound(str(exc)) from exc
+
+    record = materialized["record"]
+    revision = record.get("revision", record.get("version")) if isinstance(record, dict) else None
+
     return {
         "kind": "hermes_scoped_context_entity",
-        "field_projection_version": FIELD_PROJECTION_VERSION,
         "admission_id": admission_id,
         "run_id": run_id,
-        "entity": ref,
-        "read_only": True,
-        "scope_widened": False,
-        "freshness_policy": "owner_record_re_read_at_access_time",
-        "resolved_at": _now(),
-        **materialized,
+        "context_pack_ref": scope["admission_context_pack_ref"],
+        "entity_ref": ref,
+        "field_projection_version": FIELD_PROJECTION_VERSION,
+        "record_owner_system": materialized["record_owner_system"],
+        "current_revision": revision,
+        "record": record,
+        "representation": materialized["representation"],
+        "read_semantics": "current_owner_read",
+        "context_pack_authorizes_identity_not_snapshot": True,
+        "source_binary_included": False,
+        "write_effect": False,
+        "observed_at": _now(),
+        "requested_by": actor.strip(),
         "non_equivalences": [
-            "record != Evidence",
-            "representation != source binary",
-            "read_only context != mutation authority",
+            "entity admitted != entity is Evidence",
+            "current owner read != admission-time snapshot",
+            "field projection != full owner record",
+            "derived representation != source binary",
+            "read access != write authority",
         ],
     }
