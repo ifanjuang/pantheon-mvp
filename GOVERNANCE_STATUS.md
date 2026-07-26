@@ -34,7 +34,21 @@ policy_chokepoint_seam: implemented_not_connected
 policy_client_http: implemented_not_connected
 capability_management_slice: implemented_not_connected
 knowledge_update_chokepoint: wired_not_connected
-capability_executor_http: implemented_not_connected
+capability_executor_http: implemented_transport_requires_verified_binding
+# HermesCapabilityExecutor no longer invents /v1/capabilities:operate as a default.
+# A caller must provide an explicitly reviewed native capability-operation endpoint.
+# The verified Hermes Runs API is work execution, not install/enable/update semantics.
+
+hermes_runs_api_observer: implemented_candidate_merged_not_connected
+hermes_run_launch_reservation: implemented_candidate_merged_not_connected
+hermes_runs_external_binding: implemented_candidate_merged_not_connected
+hermes_active_context_bridge: implemented_candidate_merged_not_connected
+hermes_context_plugin: implemented_candidate_merged_not_installed
+hermes_run_launch_junction_ci: green_on_merged_candidate
+hermes_live_binding_acceptance: implemented_candidate_not_run
+# These merged Hermes Runs/launch/context/live-acceptance slices remain external
+# execution candidates. Their existence does not authorize target installation,
+# activation, retry, provider routing or real-dossier use.
 
 human_issuer_signing: implemented_not_connected
 
@@ -68,7 +82,7 @@ hermes_pantheon_document_intake_skill: implemented_candidate_not_installed
 human_decision_issuer_authentication: implementation_available_not_connected
 ```
 
-None of these statuses establishes target health, installed Hermes skills, live PDP/PEP enforcement, authenticated target issuer, adoption, activation or real-dossier authorization.
+None of these statuses establishes target health, installed Hermes skills/plugins, live PDP/PEP enforcement, authenticated target issuer, adopted Runs binding, adoption, activation or real-dossier authorization.
 
 ## Required non-equivalence rules
 
@@ -85,6 +99,14 @@ Knowledge != Evidence
 source_declared != path_safe
 reachable != healthy
 healthy != safe
+Runs API available != run authorized
+toolset configured != toolset approved
+Hermes API observation != runtime execution
+launch reservation != dispatch
+launch reservation != Hermes run
+session_id correlation != memory promotion
+plugin installed != approved
+plugin enabled != activated
 Paperless metadata != canonical business classification
 Paperless OCR != source truth
 Paperless task success != professional validation
@@ -95,6 +117,7 @@ Hermes skill installed != capability approved
 Hermes /v1/skills listing != task authorization
 runtime observation != activation decision
 synthetic check pass != production adoption
+live binding acceptance pass != production adoption
 compose present != target deployed
 external_repo != Pantheon runtime
 ```
@@ -105,6 +128,12 @@ external_repo != Pantheon runtime
 Task Contract schema alignment               -> met as candidate evidence
 source path boundary                         -> met as candidate evidence
 local/NAS document ingestion                 -> implemented candidate / live proof OPEN
+Hermes Runs API observation                  -> implementation merged / live target proof OPEN
+reviewed restricted Hermes tool surface      -> OPEN / deployment-owned
+Hermes launch reservation + snapshot         -> implementation merged / live target proof OPEN
+Hermes external /v1/runs binding             -> implementation merged / live target proof OPEN
+Hermes context plugin                        -> implementation merged / install + live target proof OPEN
+Hermes live acceptance helper                -> implemented / target run OPEN
 network-native Hermes skill observation      -> implemented candidate / live proof OPEN
 Phase B core composition                     -> implemented candidate / live deployment OPEN
 optional Paperless profile                   -> implemented candidate / selection optional
