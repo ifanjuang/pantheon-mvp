@@ -15,7 +15,12 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 from urllib.parse import quote
 
-from .hermes_run_binding import ExternalHermesRunBinding
+from .hermes_run_binding import (
+    ExternalHermesRunBinding,
+    HermesLaunchReplayRequiresReconciliation,
+    HermesRunRegistrationUnknown,
+    HermesRunSubmissionUnknown,
+)
 from .hermes_runs_observer import HermesRunsApiObserver
 
 SYNTHETIC_MARKER = "PANTHEON_HERMES_LIVE_ACCEPTANCE_V1"
@@ -315,6 +320,41 @@ def _tool_event_assessment(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _ambiguous_receipt(
+    *,
+    admission_id: str,
+    observation: dict[str, Any],
+    reason: str,
+    launch_reservation_id: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "object_type": "hermes_live_binding_acceptance_receipt",
+        "synthetic": True,
+        "marker": SYNTHETIC_MARKER,
+        "admission_id": admission_id,
+        "run_id": run_id,
+        "launch_reservation_id": launch_reservation_id,
+        "live_run_attempted": True,
+        "observation": observation,
+        "target_binding_status": "inconclusive",
+        "distributed_ambiguity": True,
+        "ambiguity_reason": reason,
+        "operator_reconciliation_required": True,
+        "automatic_retry_performed": False,
+        "automatic_stop_performed": False,
+        "automatic_approval_performed": False,
+        "technical_receipt_is_evidence": False,
+        "activation_changed": False,
+        "production_authorization": False,
+        "non_equivalences": [
+            "ambiguous submission != retry instruction",
+            "known run_id != Pantheon registration success",
+            "technical receipt != Evidence",
+        ],
+    }
+
+
 class HermesLiveBindingAcceptance:
     """Orchestrate one explicit synthetic target proof with no hidden retries."""
 
@@ -371,10 +411,33 @@ class HermesLiveBindingAcceptance:
         envelope = self._pantheon.execution_envelope(admission_id)
         root = _validate_synthetic_envelope(envelope)
 
-        receipt = self._binding.launch(
-            admission_id=admission_id,
-            idempotency_key=idempotency_key,
-        )
+        try:
+            receipt = self._binding.launch(
+                admission_id=admission_id,
+                idempotency_key=idempotency_key,
+            )
+        except HermesRunSubmissionUnknown as exc:
+            return _ambiguous_receipt(
+                admission_id=admission_id,
+                observation=observation,
+                reason="Hermes run submission outcome is unknown; explicit reconciliation required",
+                launch_reservation_id=exc.launch_reservation_id,
+            )
+        except HermesRunRegistrationUnknown as exc:
+            return _ambiguous_receipt(
+                admission_id=admission_id,
+                observation=observation,
+                reason="Hermes returned run_id but Pantheon start registration is unknown",
+                launch_reservation_id=exc.launch_reservation_id,
+                run_id=exc.run_id,
+            )
+        except HermesLaunchReplayRequiresReconciliation:
+            return _ambiguous_receipt(
+                admission_id=admission_id,
+                observation=observation,
+                reason="launch reservation replay requires explicit reconciliation; resubmission forbidden",
+            )
+
         run_id = str(receipt.get("run_id") or "")
         if not run_id:
             raise HermesLiveAcceptanceError("launch receipt contains no Hermes run_id")
