@@ -122,6 +122,35 @@
 
   let catalog = [];
   let hermesObservations = [];
+  let hermesObservationStatus = "not_observed";
+
+  async function refreshHermesObservations() {
+    if (!state.token) {
+      hermesObservationStatus = "not_authenticated";
+      return;
+    }
+    try {
+      const response = await fetch("../v1/hermes/capabilities", {
+        headers: { Authorization: `Bearer ${state.token}` },
+      });
+      if (response.status === 404) {
+        hermesObservationStatus = "adapter_not_connected";
+        hermesObservations = [];
+        return;
+      }
+      if (!response.ok) {
+        hermesObservationStatus = `unavailable_${response.status}`;
+        return;
+      }
+      const payload = await response.json();
+      const items = payload.capabilities || payload.items || payload.observations || [];
+      hermesObservations = Array.isArray(items) ? items : [];
+      hermesObservationStatus = "observed";
+    } catch (error) {
+      hermesObservationStatus = "unreachable";
+      console.warn("Hermes capability inventory unavailable", error);
+    }
+  }
 
   const previousCurrentModels = currentModels;
   currentModels = function () {
@@ -140,10 +169,16 @@
     button.dataset.scene = "tools";
     button.type = "button";
     button.textContent = "Outils";
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       state.scene = "tools";
       document.querySelectorAll("[data-scene]").forEach(tab => tab.classList.toggle("is-active", tab === button));
       render();
+      await refreshHermesObservations();
+      render();
+      const suffix = hermesObservationStatus === "observed"
+        ? ` · ${hermesObservations.length} observation(s) Hermes.`
+        : ` · Hermes : ${hermesObservationStatus}.`;
+      $("scene-status").textContent = `${currentModels().length} carte(s) outil${suffix}`;
     });
     rail.append(button);
   }
@@ -151,10 +186,19 @@
   window.PantheonToolCards = {
     setHermesObservations(observations) {
       hermesObservations = Array.isArray(observations) ? observations : [];
+      hermesObservationStatus = "injected";
       if (state.scene === "tools") render();
+    },
+    async refreshHermesObservations() {
+      await refreshHermesObservations();
+      if (state.scene === "tools") render();
+      return hermesObservationStatus;
     },
     getMergedRecords() {
       return mergeCatalogAndHermes(catalog, hermesObservations);
+    },
+    getObservationStatus() {
+      return hermesObservationStatus;
     },
   };
 
