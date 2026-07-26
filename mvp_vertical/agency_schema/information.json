@@ -40,8 +40,8 @@
   ],
   "views": {
     "cockpit_front": {
-      "purpose": "Compact Information identity used on the card recto.",
-      "fields": ["category","title","index_label","information_date","status","limits","type_tags","subject_tags"]
+      "purpose": "Compact Information identity and summary used on the card recto.",
+      "fields": ["category","title","summary","index_label","information_date","status","limits","type_tags","subject_tags"]
     },
     "cockpit_back": {
       "purpose": "Information content and provenance shown on the card verso.",
