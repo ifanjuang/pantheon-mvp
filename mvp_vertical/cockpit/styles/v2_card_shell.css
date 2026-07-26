@@ -31,6 +31,7 @@
   }
 
   .v2-card-meta {
+    min-height: .9rem;
     color: var(--ink-500);
     font-size: .64rem;
     font-weight: 750;
@@ -78,7 +79,7 @@
   }
 
   .v2-card-front .v2-orb--metric,
-  .v2-card-front .v2-family-mark {
+  .v2-card-front .v2-family-mark:not(.v2-family-mark--identity) {
     display: none;
   }
 
@@ -99,6 +100,10 @@
     display: flex;
     flex-wrap: wrap;
     gap: .4rem;
+  }
+
+  .v2-card-actions:empty {
+    display: none;
   }
 
   .v2-card-actions button {
@@ -130,7 +135,25 @@
     font-weight: 820;
   }
 
-  .v2-card-back .v2-entity-id {
+  .v2-back-multiline {
+    display: grid;
+    gap: .28rem;
+  }
+
+  .v2-back-multiline span {
+    display: block;
+  }
+
+  .v2-card[data-family="contact"] .v2-back-section p {
+    font-size: .78rem;
+  }
+
+  .v2-card[data-family="contact"] .v2-back-body {
+    gap: .72rem;
+  }
+
+  .v2-card-back .v2-entity-id,
+  .v2-card-kicker--machine {
     display: none;
   }
 }
@@ -145,6 +168,30 @@
   [data-token-color="violet"] { --token-color: #765d9e; }
   [data-token-color="indigo"] { --token-color: #596a9d; }
   [data-token-color="slate"] { --token-color: #69727d; }
+
+  .v2-card[data-family="contact"] {
+    --family-a: #f4f1e8;
+    --family-b: #e8e3d8;
+    --family-border: #766f62;
+  }
+
+  .v2-card[data-family="work"] {
+    --family-a: #e7e4ef;
+    --family-b: #d9e3ea;
+    --family-border: #66627c;
+  }
+
+  .v2-card[data-family="information"] {
+    --family-a: #eef2f4;
+    --family-b: #e5e8ed;
+    --family-border: #687586;
+  }
+
+  .v2-card[data-family="tool"] {
+    --family-a: #ded9f4;
+    --family-b: #cfe2ec;
+    --family-border: #655d91;
+  }
 }
 
 @layer accessibility {
