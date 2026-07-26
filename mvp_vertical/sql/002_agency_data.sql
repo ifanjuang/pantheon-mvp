@@ -26,6 +26,37 @@ ALTER TABLE agency_projects
 ALTER TABLE agency_projects
     ADD COLUMN IF NOT EXISTS attributes JSONB NOT NULL DEFAULT '{}'::jsonb;
 
+-- Pre-production cleanup: consequential values formerly stored as unqualified
+-- Project attributes are deliberately removed instead of maintaining two source
+-- models. New values live only as ProjectClaims. Descriptive attributes remain.
+UPDATE agency_projects
+   SET attributes = attributes - ARRAY[
+       'budget',
+       'surface_terrain',
+       'surface_existante',
+       'surface_projet',
+       'emprise',
+       'parcelles',
+       'plu_zone',
+       'permit_number',
+       'permit_date',
+       'reception_date',
+       'erp_type'
+   ]::text[]
+ WHERE attributes ?| ARRAY[
+       'budget',
+       'surface_terrain',
+       'surface_existante',
+       'surface_projet',
+       'emprise',
+       'parcelles',
+       'plu_zone',
+       'permit_number',
+       'permit_date',
+       'reception_date',
+       'erp_type'
+   ];
+
 CREATE INDEX IF NOT EXISTS agency_projects_code_lookup
     ON agency_projects (lower(code));
 CREATE INDEX IF NOT EXISTS agency_projects_name_lookup
@@ -111,6 +142,41 @@ CREATE UNIQUE INDEX IF NOT EXISTS agency_information_one_current_acted
     ON agency_information_cards (series_id)
     WHERE status = 'acted';
 
+-- ProjectClaim is semantic backend state, not a Cockpit card family. Rows are
+-- append-only semantic observations: a new value supersedes an older claim
+-- instead of rewriting provenance in place.
+CREATE TABLE IF NOT EXISTS agency_project_claims (
+    claim_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES agency_projects(project_id) ON DELETE CASCADE,
+    claim_type TEXT NOT NULL,
+    value JSONB NOT NULL,
+    unit TEXT,
+    backing_entity_type TEXT,
+    backing_entity_id TEXT,
+    backing_observed_status TEXT,
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('information', 'document', 'human_assertion', 'derived', 'external_projection')),
+    source_ref TEXT,
+    asserted_by TEXT,
+    derivation_note TEXT,
+    status TEXT NOT NULL CHECK (status IN ('asserted', 'source_backed', 'verified', 'contested', 'retired')),
+    observed_at TIMESTAMPTZ NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+    supersedes TEXT REFERENCES agency_project_claims(claim_id) ON DELETE RESTRICT,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (
+        status NOT IN ('source_backed', 'verified')
+        OR (backing_entity_type IS NOT NULL AND backing_entity_id IS NOT NULL)
+    ),
+    CHECK (
+        (backing_entity_type IS NULL AND backing_entity_id IS NULL)
+        OR (backing_entity_type IS NOT NULL AND backing_entity_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS agency_project_claims_project_lookup
+    ON agency_project_claims (project_id, claim_type, observed_at DESC, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS agency_project_events (
     event_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES agency_projects(project_id) ON DELETE RESTRICT,
@@ -127,7 +193,8 @@ CREATE TABLE IF NOT EXISTS agency_project_events (
 );
 
 -- A ChangeCandidate is an envelope around a proposed Project-attributes change.
--- The Project keeps its own business status; candidate status never replaces it.
+-- Claim projections are not plain attributes and cannot be mutated through this
+-- table. The Project keeps its own business status; candidate status never replaces it.
 CREATE TABLE IF NOT EXISTS agency_change_candidates (
     candidate_id TEXT PRIMARY KEY,
     entity_type TEXT NOT NULL CHECK (entity_type = 'project'),
@@ -181,6 +248,15 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION reject_agency_project_claim_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'agency_project_claims are append-only; create a superseding claim';
+END;
+$$;
+
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -218,6 +294,24 @@ BEGIN
         CREATE TRIGGER agency_change_candidate_events_no_delete
         BEFORE DELETE ON agency_change_candidate_events
         FOR EACH ROW EXECUTE FUNCTION reject_agency_change_candidate_event_mutation();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'agency_project_claims_no_update'
+          AND tgrelid = 'agency_project_claims'::regclass
+    ) THEN
+        CREATE TRIGGER agency_project_claims_no_update
+        BEFORE UPDATE ON agency_project_claims
+        FOR EACH ROW EXECUTE FUNCTION reject_agency_project_claim_mutation();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'agency_project_claims_no_delete'
+          AND tgrelid = 'agency_project_claims'::regclass
+    ) THEN
+        CREATE TRIGGER agency_project_claims_no_delete
+        BEFORE DELETE ON agency_project_claims
+        FOR EACH ROW EXECUTE FUNCTION reject_agency_project_claim_mutation();
     END IF;
 END;
 $$;
