@@ -29,8 +29,9 @@ implementation_status: blocks_1_2_3_plus_work_issues_and_document_vertical_compl
 # input validation, closed decision vocabulary, register-seam anti-forgery,
 # decision/retrieval identities and digests, systematic runner-output schema
 # validation, CI fail-not-skip and packaged vendored files. Schema is vendored
-# at UPSTREAM_COMMIT f8bc3bde142d1e105b7c9a966d8e0d62b39918c4 (re-vendored in
-# PR #50); the report-only drift checker distinguishes a newer upstream commit
+# at UPSTREAM_COMMIT 626173e60cbc63d2c7819b4f9b36e26aa4428617 (re-vendored to
+# add project_claim.schema.yaml, the card-deck composition seam); the
+# report-only drift checker distinguishes a newer upstream commit
 # from structural drift, and an offline guard keeps this cited pin equal to
 # mvp_vertical/vendor/pantheon/UPSTREAM_COMMIT.
 binding_status: candidate

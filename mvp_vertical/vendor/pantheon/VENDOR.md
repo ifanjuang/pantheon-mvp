@@ -15,9 +15,10 @@ The exact upstream commit is pinned in [`UPSTREAM_COMMIT`](./UPSTREAM_COMMIT).
 | `mvp_governed_loop_objects.schema.yaml` | `schemas/mvp_governed_loop_objects.schema.yaml` | verbatim copy |
 | `document_knowledge_slice.schema.yaml` | `schemas/document_knowledge_slice.schema.yaml` | verbatim copy |
 | `work_issue_slice.schema.yaml` | `schemas/work_issue_slice.schema.yaml` | verbatim copy |
+| `project_claim.schema.yaml` | `schemas/project_claim.schema.yaml` | verbatim copy |
 | `decision_vocabulary.stand_in.yaml` | **derived**, not copied — mirrors `$defs.decision_value.enum` of `mvp_governed_loop_objects.schema.yaml` | derived |
 
-The three `*.schema.yaml` files map to `schemas/<name>` upstream — the
+The `*.schema.yaml` files map to `schemas/<name>` upstream — the
 convention `tools/check_schema_drift.py` relies on. `decision_vocabulary.stand_in.yaml`
 has no direct upstream file: it is the gate's authority (a single small file to
 read so decision semantics cannot be driven by the candidate stream) and must
