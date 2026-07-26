@@ -1,9 +1,9 @@
 """Versioned Agency Information cards.
 
-An acted Information card is immutable. Any later work happens in one working
-version derived from the current acted version. Hermes may edit a working
-version only through an already-admitted bounded capability; this module does
-not create or infer that admission.
+An ACTED Information card is immutable. Any later work happens in one working
+version derived from the current ACTED version. The declarative Information
+schema controls field shape and named projections; lifecycle transitions remain
+explicit domain gates in this module.
 """
 
 from __future__ import annotations
@@ -17,22 +17,13 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from . import agency_schema
+
 MIGRATION = Path(__file__).resolve().parent / "sql" / "004_agency_information_cards.sql"
 WORKING_STATUSES = {"draft", "in_progress"}
 VISIBLE_STATUSES = {"draft", "in_progress", "acted"}
 ALL_STATUSES = VISIBLE_STATUSES | {"superseded"}
-MUTABLE_WORKING_FIELDS = {
-    "title",
-    "category",
-    "information_date",
-    "summary",
-    "details",
-    "limits",
-    "type_tags",
-    "subject_tags",
-    "author",
-    "status",
-}
+SOURCE_VERSION_FIELDS = {"source_type", "source_ref", "source_note", "source_version", "index_label"}
 
 
 class AgencyInformationError(ValueError):
@@ -78,18 +69,19 @@ def _row(conn: psycopg.Connection, information_id: str, *, lock: bool = False) -
     return _jsonable(dict(row))
 
 
-def _normalize_list(values: list[str] | None) -> list[str]:
-    if not values:
-        return []
-    result: list[str] = []
-    seen: set[str] = set()
-    for raw in values:
-        value = str(raw).strip()
-        if not value or value.casefold() in seen:
-            continue
-        seen.add(value.casefold())
-        result.append(value)
-    return result
+def _schema_values(values: dict[str, Any], *, allowed_fields: set[str]) -> dict[str, Any]:
+    try:
+        return agency_schema.normalize_declared_fields(
+            "information",
+            values,
+            allowed_fields=allowed_fields,
+        )
+    except agency_schema.AgencySchemaError as exc:
+        raise AgencyInformationError(str(exc)) from exc
+
+
+def _editable_fields() -> set[str]:
+    return set(agency_schema.get_information_view("edit")["fields"])
 
 
 def _validate_source(source_ref: str | None, source_note: str | None) -> None:
@@ -124,6 +116,46 @@ def create_information(
     if status not in WORKING_STATUSES:
         raise AgencyInformationError("new Information must start as draft or in_progress")
     _validate_source(source_ref, source_note)
+
+    values = _schema_values(
+        {
+            "project_id": project_id,
+            "title": title,
+            "category": category,
+            "source_type": source_type,
+            "source_ref": source_ref,
+            "source_note": source_note,
+            "source_version": source_version,
+            "index_label": index_label,
+            "information_date": information_date,
+            "summary": summary,
+            "details": details,
+            "limits": limits or [],
+            "type_tags": type_tags or [],
+            "subject_tags": subject_tags or [],
+            "author": author,
+            "status": status,
+        },
+        allowed_fields={
+            "project_id",
+            "title",
+            "category",
+            "source_type",
+            "source_ref",
+            "source_note",
+            "source_version",
+            "index_label",
+            "information_date",
+            "summary",
+            "details",
+            "limits",
+            "type_tags",
+            "subject_tags",
+            "author",
+            "status",
+        },
+    )
+
     information_id = f"info-{uuid.uuid4().hex}"
     series_id = series_id or f"info-series-{uuid.uuid4().hex}"
     with conn.transaction():
@@ -139,22 +171,22 @@ def create_information(
             (
                 information_id,
                 series_id,
-                project_id,
-                title.strip(),
-                category.strip(),
-                source_type.strip(),
-                source_ref,
-                source_note,
-                source_version,
-                index_label.strip(),
-                information_date,
-                summary,
-                details,
-                status,
-                Jsonb(_normalize_list(limits)),
-                Jsonb(_normalize_list(type_tags)),
-                Jsonb(_normalize_list(subject_tags)),
-                author,
+                values["project_id"],
+                values["title"],
+                values["category"],
+                values["source_type"],
+                values.get("source_ref"),
+                values.get("source_note"),
+                values.get("source_version"),
+                values["index_label"],
+                values.get("information_date"),
+                values.get("summary") or "",
+                values.get("details") or "",
+                values["status"],
+                Jsonb(values.get("limits") or []),
+                Jsonb(values.get("type_tags") or []),
+                Jsonb(values.get("subject_tags") or []),
+                values.get("author"),
             ),
         )
     return _row(conn, information_id)
@@ -173,6 +205,17 @@ def derive_working_version(
     if actor_kind not in {"human", "system"}:
         raise InformationGateRequired("Hermes cannot create the next source version directly")
     _validate_source(source_ref, source_note)
+
+    source_values = _schema_values(
+        {
+            "source_ref": source_ref,
+            "source_note": source_note,
+            "source_version": source_version,
+            "index_label": new_index_label,
+        },
+        allowed_fields={"source_ref", "source_note", "source_version", "index_label"},
+    )
+
     with conn.transaction():
         acted = _row(conn, acted_information_id, lock=True)
         if acted["status"] != "acted":
@@ -194,10 +237,10 @@ def derive_working_version(
                 acted["title"],
                 acted["category"],
                 acted["source_type"],
-                source_ref,
-                source_note,
-                source_version,
-                new_index_label.strip(),
+                source_values.get("source_ref"),
+                source_values.get("source_note"),
+                source_values.get("source_version"),
+                source_values["index_label"],
                 acted.get("information_date"),
                 acted.get("summary", ""),
                 acted.get("details", ""),
@@ -221,17 +264,13 @@ def update_working_information(
     actor_kind: Literal["human", "hermes", "system"],
     hermes_admitted: bool = False,
 ) -> dict:
-    unknown = set(changes) - MUTABLE_WORKING_FIELDS
-    if unknown:
-        raise AgencyInformationError(f"unsupported Information field(s): {', '.join(sorted(unknown))}")
     if not changes:
         raise AgencyInformationError("at least one Information field must change")
     if actor_kind == "hermes" and not hermes_admitted:
         raise InformationGateRequired("Hermes Information editing requires an admitted bounded capability")
-    normalized = dict(changes)
-    for name in ("limits", "type_tags", "subject_tags"):
-        if name in normalized:
-            normalized[name] = _normalize_list(normalized[name])
+
+    editable_fields = _editable_fields()
+    normalized = _schema_values(changes, allowed_fields=editable_fields)
     if "status" in normalized and normalized["status"] not in WORKING_STATUSES:
         raise AgencyInformationError("working status may only be draft or in_progress")
 
