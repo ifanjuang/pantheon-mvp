@@ -62,8 +62,20 @@
     $("v2-load")?.click();
   }
 
+  async function informationContextForCurrent() {
+    const { entityId, title } = currentIdentity();
+    const id = informationId(entityId);
+    const payload = await request(`../v1/agency/information/${encodeURIComponent(id)}/context`);
+    const context = payload.information_context || {};
+    if (!context.current) throw new Error("L’Information courante n’est plus disponible.");
+    return { id, title, context, current: context.current };
+  }
+
   async function prepareHermesEdit() {
-    const { title } = currentIdentity();
+    const { title, current } = await informationContextForCurrent();
+    if (!["draft", "in_progress"].includes(current.status)) {
+      throw new Error("Hermès ne peut préparer une modification que sur une version de travail.");
+    }
     const instruction = window.prompt(
       `Que doit faire Hermès sur « ${title} » ?`,
       "Améliorer, détailler et développer cette version de travail sans modifier ce qui est ACTÉ."
@@ -80,11 +92,8 @@
   }
 
   async function actInformation() {
-    const { entityId, title } = currentIdentity();
-    const id = informationId(entityId);
-    const context = await request(`../v1/agency/information/${encodeURIComponent(id)}/context`);
-    const current = context.information_context?.current;
-    if (!current || !["draft", "in_progress"].includes(current.status)) {
+    const { id, title, current } = await informationContextForCurrent();
+    if (!["draft", "in_progress"].includes(current.status)) {
       throw new Error("Seule une version de travail peut être actée.");
     }
     if (!window.confirm(`Acter « ${title} » ${current.index_label || ""} ?\n\nCette version deviendra immuable.`)) return;
@@ -96,11 +105,8 @@
   }
 
   async function deriveInformation() {
-    const { entityId, title } = currentIdentity();
-    const id = informationId(entityId);
-    const context = await request(`../v1/agency/information/${encodeURIComponent(id)}/context`);
-    const acted = context.information_context?.current;
-    if (!acted || acted.status !== "acted") throw new Error("La nouvelle version doit dériver d’une Information ACTÉE.");
+    const { id, title, current: acted } = await informationContextForCurrent();
+    if (acted.status !== "acted") throw new Error("La nouvelle version doit dériver d’une Information ACTÉE.");
 
     const newIndex = window.prompt("Nouvel indice", nextIndex(acted.index_label));
     if (!newIndex?.trim()) return;
