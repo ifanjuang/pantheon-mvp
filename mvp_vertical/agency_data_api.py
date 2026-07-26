@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from . import agency_data, agency_directory, agency_information, agency_schema
+from .agency_change_candidate_api import install_agency_change_candidate_routes
 
 
 class ProjectContactBody(BaseModel):
@@ -449,3 +450,11 @@ def install_agency_data_routes(
             "approval_inferred": False,
             "information": information,
         }
+
+    install_agency_change_candidate_routes(
+        app,
+        with_connection=with_connection,
+        require_read_key=require_global_agency_read,
+        require_human_writer=require_human_agency_writer,
+        require_actor=require_actor,
+    )
