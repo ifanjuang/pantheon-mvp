@@ -5,7 +5,7 @@
   "authority": {
     "system_of_record": "postgres",
     "field_posture_is_authorization": false,
-    "note": "Field posture describes intended interaction only; server routes and Pantheon gates remain authoritative."
+    "note": "Field posture and named views describe interaction/projection only; server routes and Pantheon gates remain authoritative."
   },
   "fields": [
     {"key":"project_id","label":"Identifiant","storage":"core","type":"string","required":true,"mutable":false,"hermes_mode":"no","group":"identity"},
@@ -39,6 +39,25 @@
     {"key":"updated_at","label":"Mis à jour le","storage":"system","type":"datetime","required":true,"mutable":false,"hermes_mode":"system","group":"audit"}
   ],
   "views": {
-    "cockpit_back": ["code","phase","location","primary_client","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
+    "cockpit_front": {
+      "purpose": "Compact Project identity used on the card recto.",
+      "fields": ["code","display_name","phase","location","status","tags"]
+    },
+    "cockpit_back": {
+      "purpose": "Business information shown on the Project card verso.",
+      "fields": ["code","phase","location","primary_client","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
+    },
+    "edit": {
+      "purpose": "Human editor surface; inclusion is not write authorization.",
+      "fields": ["code","display_name","description","status","phase","location","contacts","tags","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
+    },
+    "notion": {
+      "purpose": "Definitive collaborative projection; archives and ChangeCandidates stay outside Notion.",
+      "fields": ["code","display_name","status","phase","location","contacts","tags","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type"]
+    },
+    "hermes_context": {
+      "purpose": "Project business context eligible for scoped runtime materialization; inclusion is not mutation authority.",
+      "fields": ["code","display_name","description","status","phase","location","contacts","tags","budget","surface_terrain","surface_existante","surface_projet","emprise","parcelles","plu_zone","permit_number","permit_date","reception_date","erp_type","revision"]
+    }
   }
 }
