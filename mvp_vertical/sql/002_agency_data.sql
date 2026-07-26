@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS agency_projects (
     tags JSONB NOT NULL DEFAULT '[]'::jsonb,
     contacts JSONB NOT NULL DEFAULT '[]'::jsonb,
     attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    claim_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+    claim_refs JSONB NOT NULL DEFAULT '{}'::jsonb,
     owner_system TEXT NOT NULL DEFAULT 'postgres' CHECK (owner_system = 'postgres'),
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     created_by TEXT NOT NULL,
@@ -25,6 +27,10 @@ ALTER TABLE agency_projects
     ADD COLUMN IF NOT EXISTS contacts JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE agency_projects
     ADD COLUMN IF NOT EXISTS attributes JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE agency_projects
+    ADD COLUMN IF NOT EXISTS claim_values JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE agency_projects
+    ADD COLUMN IF NOT EXISTS claim_refs JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- Pre-production cleanup: consequential values formerly stored as unqualified
 -- Project attributes are deliberately removed instead of maintaining two source
@@ -177,6 +183,121 @@ CREATE TABLE IF NOT EXISTS agency_project_claims (
 CREATE INDEX IF NOT EXISTS agency_project_claims_project_lookup
     ON agency_project_claims (project_id, claim_type, observed_at DESC, created_at DESC);
 
+-- claim_values / claim_refs are derived read caches only. They are refreshed from
+-- the append-only claim store, never accepted as Project writes and never bump the
+-- Project business revision. This avoids N+1 queries for list/Cockpit reads while
+-- preserving ProjectClaim as the semantic source.
+CREATE OR REPLACE FUNCTION refresh_agency_project_claim_projection(target_project_id TEXT)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    scalar_values JSONB := '{}'::jsonb;
+    scalar_refs JSONB := '{}'::jsonb;
+    parcel_values JSONB := '[]'::jsonb;
+    parcel_refs JSONB := '[]'::jsonb;
+BEGIN
+    WITH active_scalar AS (
+        SELECT DISTINCT ON (c.claim_type)
+               c.*
+          FROM agency_project_claims c
+         WHERE c.project_id = target_project_id
+           AND c.claim_type <> 'parcelle'
+           AND c.status <> 'retired'
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM agency_project_claims newer
+                WHERE newer.supersedes = c.claim_id
+           )
+         ORDER BY c.claim_type, c.observed_at DESC, c.created_at DESC, c.claim_id DESC
+    ), projected AS (
+        SELECT claim_type,
+               value,
+               jsonb_build_object(
+                   'claim_id', claim_id,
+                   'status', status,
+                   'unit', unit,
+                   'backing_ref', CASE
+                       WHEN backing_entity_type IS NULL THEN NULL
+                       ELSE jsonb_build_object(
+                           'entity_type', backing_entity_type,
+                           'entity_id', backing_entity_id,
+                           'observed_status', backing_observed_status
+                       )
+                   END,
+                   'provenance', jsonb_build_object(
+                       'source_kind', source_kind,
+                       'source_ref', source_ref,
+                       'asserted_by', asserted_by,
+                       'derivation_note', derivation_note
+                   ),
+                   'observed_at', observed_at
+               ) AS ref
+          FROM active_scalar
+    )
+    SELECT COALESCE(jsonb_object_agg(claim_type, value), '{}'::jsonb),
+           COALESCE(jsonb_object_agg(claim_type, ref), '{}'::jsonb)
+      INTO scalar_values, scalar_refs
+      FROM projected;
+
+    WITH active_parcels AS (
+        SELECT c.*
+          FROM agency_project_claims c
+         WHERE c.project_id = target_project_id
+           AND c.claim_type = 'parcelle'
+           AND c.status <> 'retired'
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM agency_project_claims newer
+                WHERE newer.supersedes = c.claim_id
+           )
+         ORDER BY c.observed_at DESC, c.created_at DESC, c.claim_id DESC
+    )
+    SELECT COALESCE(jsonb_agg(value), '[]'::jsonb),
+           COALESCE(jsonb_agg(jsonb_build_object(
+               'claim_id', claim_id,
+               'status', status,
+               'backing_ref', CASE
+                   WHEN backing_entity_type IS NULL THEN NULL
+                   ELSE jsonb_build_object(
+                       'entity_type', backing_entity_type,
+                       'entity_id', backing_entity_id,
+                       'observed_status', backing_observed_status
+                   )
+               END,
+               'provenance', jsonb_build_object(
+                   'source_kind', source_kind,
+                   'source_ref', source_ref,
+                   'asserted_by', asserted_by,
+                   'derivation_note', derivation_note
+               ),
+               'observed_at', observed_at
+           )), '[]'::jsonb)
+      INTO parcel_values, parcel_refs
+      FROM active_parcels;
+
+    IF jsonb_array_length(parcel_values) > 0 THEN
+        scalar_values := scalar_values || jsonb_build_object('parcelle', parcel_values);
+        scalar_refs := scalar_refs || jsonb_build_object('parcelle', parcel_refs);
+    END IF;
+
+    UPDATE agency_projects
+       SET claim_values = scalar_values,
+           claim_refs = scalar_refs
+     WHERE project_id = target_project_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION refresh_agency_project_claim_projection_after_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM refresh_agency_project_claim_projection(NEW.project_id);
+    RETURN NEW;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS agency_project_events (
     event_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES agency_projects(project_id) ON DELETE RESTRICT,
@@ -313,5 +434,25 @@ BEGIN
         BEFORE DELETE ON agency_project_claims
         FOR EACH ROW EXECUTE FUNCTION reject_agency_project_claim_mutation();
     END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'agency_project_claims_refresh_projection'
+          AND tgrelid = 'agency_project_claims'::regclass
+    ) THEN
+        CREATE TRIGGER agency_project_claims_refresh_projection
+        AFTER INSERT ON agency_project_claims
+        FOR EACH ROW EXECUTE FUNCTION refresh_agency_project_claim_projection_after_insert();
+    END IF;
+END;
+$$;
+
+-- Rebuild derived caches for any pre-existing claim rows after an upgrade.
+DO $$
+DECLARE
+    project_row RECORD;
+BEGIN
+    FOR project_row IN SELECT DISTINCT project_id FROM agency_project_claims LOOP
+        PERFORM refresh_agency_project_claim_projection(project_row.project_id);
+    END LOOP;
 END;
 $$;
