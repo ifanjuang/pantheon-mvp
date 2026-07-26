@@ -17,6 +17,18 @@ from pydantic import BaseModel, Field
 from . import agency_data, agency_directory
 
 
+class ProjectContactBody(BaseModel):
+    group: str = Field(default="Autres intervenants", min_length=1, max_length=120)
+    name: str | None = Field(default=None, max_length=300)
+    organization: str | None = Field(default=None, max_length=300)
+    role: str | None = Field(default=None, max_length=300)
+    email: str | None = Field(default=None, max_length=500)
+    phone: str | None = Field(default=None, max_length=100)
+    address: str | None = Field(default=None, max_length=1000)
+    notes: str | None = Field(default=None, max_length=4000)
+    source_ref: str | None = Field(default=None, max_length=1000)
+
+
 class ProjectCreateBody(BaseModel):
     project_id: str = Field(min_length=1, max_length=200)
     code: str = Field(min_length=1, max_length=200)
@@ -27,6 +39,7 @@ class ProjectCreateBody(BaseModel):
     location: str | None = Field(default=None, max_length=500)
     primary_client: str | None = Field(default=None, max_length=500)
     tags: list[str] = Field(default_factory=list, max_length=50)
+    contacts: list[ProjectContactBody] = Field(default_factory=list, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=200)
 
 
@@ -41,6 +54,7 @@ class ProjectUpdateBody(BaseModel):
     location: str | None = Field(default=None, max_length=500)
     primary_client: str | None = Field(default=None, max_length=500)
     tags: list[str] | None = Field(default=None, max_length=50)
+    contacts: list[ProjectContactBody] | None = Field(default=None, max_length=500)
 
 
 def _bearer_token(authorization: str | None) -> str:
@@ -140,41 +154,6 @@ def install_agency_data_routes(
         project = agency_operation(lambda conn: agency_data.get_project(conn, project_id))
         return {"system_of_record": "postgres", "project": project}
 
-    @app.get("/v1/agency/projects/{project_id}/participations")
-    def get_project_participations(
-        project_id: str,
-        _authorized: None = Depends(require_global_agency_read),
-    ) -> dict:
-        participations = agency_operation(
-            lambda conn: agency_directory.list_project_participations(conn, project_id)
-        )
-        return {
-            "system_of_record": "postgres",
-            "project_id": project_id,
-            "participations": participations,
-        }
-
-    @app.get("/v1/agency/participations")
-    def list_participations(
-        q: str | None = None,
-        project_id: str | None = None,
-        limit: int = 100,
-        _authorized: None = Depends(require_global_agency_read),
-    ) -> dict:
-        participations = agency_operation(
-            lambda conn: agency_directory.list_participations(
-                conn,
-                query=q,
-                project_id=project_id,
-                limit=limit,
-            )
-        )
-        return {
-            "system_of_record": "postgres",
-            "scope_match": "agency_project_participations",
-            "participations": participations,
-        }
-
     @app.get("/v1/agency/people")
     def list_people(
         q: str | None = None,
@@ -230,6 +209,7 @@ def install_agency_data_routes(
         actor: str = Depends(require_actor),
     ) -> dict:
         values = body.model_dump()
+        values["contacts"] = [item.model_dump(exclude_none=True) for item in body.contacts]
         idempotency_key = values.pop("idempotency_key")
         project = agency_operation(
             lambda conn: agency_data.create_project(
@@ -255,6 +235,11 @@ def install_agency_data_routes(
         actor: str = Depends(require_actor),
     ) -> dict:
         supplied = body.model_dump(exclude_unset=True)
+        if "contacts" in supplied and supplied["contacts"] is not None:
+            supplied["contacts"] = [
+                item if isinstance(item, dict) else item.model_dump(exclude_none=True)
+                for item in supplied["contacts"]
+            ]
         expected_revision = supplied.pop("expected_revision")
         idempotency_key = supplied.pop("idempotency_key")
         project = agency_operation(
