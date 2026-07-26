@@ -12,7 +12,7 @@ from typing import Callable
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import work_issues
+from . import work_issue_read, work_issues
 
 
 class WorkDecisionBody(BaseModel):
@@ -36,6 +36,17 @@ def install_work_decision_routes(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (work_issues.TransitionRefused, work_issues.WorkIssueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/v1/work-issues/{issue_id}/decision")
+    def get_work_decision(
+        issue_id: str,
+        _authorized: None = Depends(require_editor_key),
+    ) -> dict:
+        issue = decide(lambda conn: work_issue_read.get_issue_record(conn, issue_id))
+        return {
+            "work_issue": issue,
+            "decision_available": issue.get("status") == "review",
+        }
 
     @app.post("/v1/work-issues/{issue_id}/decision/validate")
     def validate_work_decision(
