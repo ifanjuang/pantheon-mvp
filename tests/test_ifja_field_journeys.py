@@ -221,11 +221,11 @@ def test_f03_work_review_requires_a_distinct_human_close(work_conn) -> None:
         work_conn,
         issue_id=item["id"],
         decided_by="fixture.human",
-        close_reason="Réponse validée par décision humaine",
+        close_reason="answered",
         expected_version=review["work_issue"]["version"],
         idempotency_key="fixture:f03:work:close",
     )
 
     assert closed["work_issue"]["status"] == "done"
-    assert closed["work_issue"]["close_reason"] == "Réponse validée par décision humaine"
+    assert closed["work_issue"]["close_reason"] == "answered"
     assert any(event["event_type"] == "issue_closed" for event in closed["events"])
