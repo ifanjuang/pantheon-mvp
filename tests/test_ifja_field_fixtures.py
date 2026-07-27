@@ -7,13 +7,17 @@ from pathlib import Path
 FIXTURES = Path(__file__).parent / "fixtures" / "ifja"
 FIXTURE_FILES = (
     "f01_maison_neuve.json",
+    "f02_patrimoine_renovation.json",
     "f03_chantier_reserves.json",
     "f04_erp_reglementaire.json",
     "f05_dce_marches.json",
     "f06_agence_bindings.json",
+    "f07_bim_revit.json",
+    "f08_outils_ia.json",
 )
 CONSEQUENTIAL_PROJECT_FIELDS = {
     "surface_projet",
+    "surface_existante",
     "surface_terrain",
     "zone_plu",
     "budget",
@@ -37,7 +41,7 @@ def _fixtures() -> list[dict]:
 def test_ifja_fixtures_are_synthetic_and_use_existing_v2_families() -> None:
     fixtures = _fixtures()
 
-    assert {fixture["fixture_id"] for fixture in fixtures} == {"F01", "F03", "F04", "F05", "F06"}
+    assert {fixture["fixture_id"] for fixture in fixtures} == {f"F{index:02d}" for index in range(1, 9)}
     for fixture in fixtures:
         assert fixture["synthetic"] is True
         assert fixture["project"]["project_id"].startswith("fixture-project-")
@@ -79,13 +83,14 @@ def test_information_taxonomy_axes_remain_distinct() -> None:
             type_tags = set(information["type_tags"])
             subject_tags = set(information["subject_tags"])
             limits = set(information["limits"])
-            assert information["status"] in {"draft", "in_progress", "acted"}
+            assert information["status"] in {"draft", "in_progress", "acted", "superseded"}
             assert not (type_tags & limits)
             assert not (subject_tags & limits)
 
 
 def test_work_review_requires_separate_human_decision_in_consequential_cases() -> None:
     for fixture in (
+        _load("f02_patrimoine_renovation.json"),
         _load("f03_chantier_reserves.json"),
         _load("f04_erp_reglementaire.json"),
         _load("f05_dce_marches.json"),
@@ -141,8 +146,41 @@ def test_contacts_remain_grouped_without_participation_entity() -> None:
     fixture = _load("f06_agence_bindings.json")
     groups = fixture["contacts"]["groups"]
 
-    assert "maitrise_ouvrage" in groups
-    assert "maitrise_oeuvre" in groups
-    assert "bureaux_etudes" in groups
-    assert "entreprises_travaux" in groups
+    assert {"maitrise_ouvrage", "maitrise_oeuvre", "bureaux_etudes", "entreprises_travaux"} <= set(groups)
     assert "participation" not in json.dumps(fixture).lower()
+
+
+def test_bim_fixture_changes_index_only_when_source_changes() -> None:
+    fixture = _load("f07_bim_revit.json")
+    plans = [item for item in fixture["information"] if item.get("series") == "plans-pro"]
+    detail = [item for item in fixture["information"] if item.get("series") == "detail-bardage"]
+
+    assert {item["index_label"] for item in plans} == {"A01", "A02"}
+    assert len({item["source_ref"] for item in plans}) == 2
+    assert {item["index_label"] for item in detail} == {"A01"}
+    assert any(item["status"] == "in_progress" for item in detail)
+
+
+def test_tools_fixture_keeps_governance_axes_independent() -> None:
+    fixture = _load("f08_outils_ia.json")
+    comfy = next(tool for tool in fixture["tools"] if tool["tool_id"] == "comfyui")
+    haystack = next(tool for tool in fixture["tools"] if tool["tool_id"] == "haystack")
+
+    assert comfy["installed"] is True
+    assert comfy["approved"] is False
+    assert comfy["update_available"] is True
+    assert comfy["update_authorized"] is False
+    assert comfy["task_authorized"] is False
+    assert haystack["catalogued"] is True
+    assert haystack["installed"] is False
+    assert haystack["approved"] is False
+    assert "runtime_success != Evidence" in fixture["expected_observations"]
+
+
+def test_patrimoine_fixture_preserves_acted_and_working_context() -> None:
+    fixture = _load("f02_patrimoine_renovation.json")
+    diagnostics = [item for item in fixture["information"] if item.get("series") == "diagnostic-structure"]
+
+    assert {item["status"] for item in diagnostics} == {"acted", "in_progress"}
+    assert {item["index_label"] for item in diagnostics} == {"A01", "A02"}
+    assert any("hypothese" in item["limits"] for item in diagnostics if item["status"] == "in_progress")
