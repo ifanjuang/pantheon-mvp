@@ -20,7 +20,7 @@
   "project_claims": [
     {"claim_type": "surface_projet", "value": 312.11, "unit": "m²", "status": "source_backed", "backing_information_key": "surfaces-apd-a01"},
     {"claim_type": "surface_terrain", "value": 2712, "unit": "m²", "status": "source_backed", "backing_information_key": "cadastre-a01"},
-    {"claim_type": "zone_plu", "value": "UDb", "status": "source_backed", "backing_information_key": "plu-a01"},
+    {"claim_type": "plu_zone", "value": "UDb", "status": "source_backed", "backing_information_key": "plu-a01"},
     {"claim_type": "budget", "value": 800000, "unit": "EUR", "status": "asserted", "backing_information_key": null},
     {"claim_type": "parcelle", "value": "AB 142", "status": "source_backed", "backing_information_key": "cadastre-a01"},
     {"claim_type": "permit_number", "value": "PC 00000 26 C0001", "status": "source_backed", "backing_information_key": "pc-recepisse-a01"}
