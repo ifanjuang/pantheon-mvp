@@ -8,7 +8,9 @@ FIXTURES = Path(__file__).parent / "fixtures" / "ifja"
 FIXTURE_FILES = (
     "f01_maison_neuve.json",
     "f03_chantier_reserves.json",
+    "f04_erp_reglementaire.json",
     "f05_dce_marches.json",
+    "f06_agence_bindings.json",
 )
 CONSEQUENTIAL_PROJECT_FIELDS = {
     "surface_projet",
@@ -20,6 +22,7 @@ CONSEQUENTIAL_PROJECT_FIELDS = {
     "permit_date",
     "reception_date",
     "montant_marche",
+    "erp_type",
 }
 
 
@@ -34,7 +37,7 @@ def _fixtures() -> list[dict]:
 def test_ifja_fixtures_are_synthetic_and_use_existing_v2_families() -> None:
     fixtures = _fixtures()
 
-    assert {fixture["fixture_id"] for fixture in fixtures} == {"F01", "F03", "F05"}
+    assert {fixture["fixture_id"] for fixture in fixtures} == {"F01", "F03", "F04", "F05", "F06"}
     for fixture in fixtures:
         assert fixture["synthetic"] is True
         assert fixture["project"]["project_id"].startswith("fixture-project-")
@@ -82,7 +85,11 @@ def test_information_taxonomy_axes_remain_distinct() -> None:
 
 
 def test_work_review_requires_separate_human_decision_in_consequential_cases() -> None:
-    for fixture in (_load("f03_chantier_reserves.json"), _load("f05_dce_marches.json")):
+    for fixture in (
+        _load("f03_chantier_reserves.json"),
+        _load("f04_erp_reglementaire.json"),
+        _load("f05_dce_marches.json"),
+    ):
         reviewed_work = {item["id"] for item in fixture["work"] if item.get("status") == "review"}
         decision_triggers = {item["trigger"] for item in fixture["decisions"] if item.get("human_required")}
         assert reviewed_work <= decision_triggers
@@ -106,3 +113,36 @@ def test_dce_document_types_do_not_collapse_into_subject_tags() -> None:
     assert {"DCE", "CCTP", "CCAP", "devis", "contrat"} <= type_vocab
     assert {"structure", "budget", "entreprise"} & subject_vocab
     assert not ({"CCTP", "CCAP"} & subject_vocab)
+
+
+def test_erp_fixture_keeps_questions_distinct_from_acted_requirements() -> None:
+    fixture = _load("f04_erp_reglementaire.json")
+    acted = [item for item in fixture["information"] if item["status"] == "acted"]
+    working = [item for item in fixture["information"] if item["status"] == "in_progress"]
+
+    assert any("obligatoire" in item["limits"] for item in acted)
+    assert any("questionnement" in item["limits"] for item in working)
+    assert any("retrouvée" in observation for observation in fixture["expected_observations"])
+
+
+def test_external_bindings_are_optional_mapped_and_non_authoritative() -> None:
+    fixture = _load("f06_agence_bindings.json")
+    bindings = fixture["bindings"]
+
+    assert {item["binding"] for item in bindings} == {"notion", "google_contacts", "gmail", "drive"}
+    assert all(item["optional"] is True for item in bindings)
+    assert all(item["authority"] in {"projection_only", "source_only"} for item in bindings)
+    assert all(item["sync_rules_required"] is True for item in bindings)
+    notion = next(item for item in bindings if item["binding"] == "notion")
+    assert notion["archives_external"] is False
+
+
+def test_contacts_remain_grouped_without_participation_entity() -> None:
+    fixture = _load("f06_agence_bindings.json")
+    groups = fixture["contacts"]["groups"]
+
+    assert "maitrise_ouvrage" in groups
+    assert "maitrise_oeuvre" in groups
+    assert "bureaux_etudes" in groups
+    assert "entreprises_travaux" in groups
+    assert "participation" not in json.dumps(fixture).lower()
