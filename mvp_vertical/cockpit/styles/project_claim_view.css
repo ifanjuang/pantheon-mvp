@@ -1,0 +1,25 @@
+.v2-claim-provenance {
+  margin-top: .28rem;
+  color: var(--ink-500);
+  font-size: .68rem;
+  line-height: 1.35;
+}
+
+.v2-claim-provenance-action {
+  width: fit-content;
+  margin-top: .35rem;
+  padding: .36rem .52rem;
+  border: 1px solid rgb(21 22 24 / 14%);
+  border-radius: .45rem;
+  background: rgb(255 255 255 / 78%);
+  color: var(--ink-800);
+  font: inherit;
+  font-size: .66rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.v2-claim-provenance-action:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
