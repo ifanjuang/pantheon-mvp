@@ -215,7 +215,7 @@ def test_f03_work_review_requires_a_distinct_human_close(work_conn) -> None:
     )
 
     assert review["work_issue"]["status"] == "review"
-    assert review["work_issue"]["close_reason"] is None
+    assert "close_reason" not in review["work_issue"]
 
     closed = work_issues.close_issue(
         work_conn,
