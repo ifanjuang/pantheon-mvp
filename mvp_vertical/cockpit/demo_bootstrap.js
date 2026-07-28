@@ -94,13 +94,13 @@ const tokenInput = document.getElementById("v2-token");
 const network = document.getElementById("v2-network");
 const handoff = document.querySelector(".v2-hermes-dock");
 
-if (projectInput) projectInput.value = "ORANGERIE";
+if (projectInput) projectInput.value = "VALLONS";
 if (tokenInput) tokenInput.value = "demo-read-only";
-if (network) network.textContent = "démo · données fictives";
+if (network) network.textContent = "univers fictif · lecture seule";
 if (handoff) {
   handoff.querySelectorAll("input, textarea, select, button").forEach(control => control.disabled = true);
   const message = handoff.querySelector("#v2-handoff-message");
-  if (message) message.textContent = "Démo statique : aucun Work Issue ni run Hermes ne peut être créé.";
+  if (message) message.textContent = "Hermes est visible comme capacité, mais aucun run n’est autorisé dans cet univers fictif.";
 }
 
 await new Promise(resolve => window.setTimeout(resolve, 180));
