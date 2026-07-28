@@ -16,6 +16,7 @@
   let swiper = null;
   let latestNodes = [];
   let rendererClearedStage = false;
+  let pendingClearToken = 0;
   let navigationLocked = false;
   let userGestureActive = false;
 
@@ -67,6 +68,11 @@
     return button;
   }
 
+  function restoreCurrentSlide(instance = swiper, speed = 0) {
+    if (!instance) return;
+    if (instance.activeIndex !== 1) instance.slideTo(1, speed, false);
+  }
+
   function ensureShell() {
     if (shell && shell.isConnected) return;
     shell = document.createElement("div");
@@ -97,6 +103,7 @@
       on: {
         init(instance) {
           instance.slideTo(1, 0, false);
+          requestAnimationFrame(() => requestAnimationFrame(() => restoreCurrentSlide(instance, 0)));
         },
         touchStart() {
           if (!navigationLocked) userGestureActive = true;
@@ -112,7 +119,7 @@
   }
 
   function resetToCurrent(speed = 0) {
-    if (swiper && swiper.activeIndex !== 1) swiper.slideTo(1, speed, false);
+    restoreCurrentSlide(swiper, speed);
   }
 
   function unlockNavigation() {
@@ -160,16 +167,27 @@
 
     swiper.update();
     resetToCurrent(0);
+    requestAnimationFrame(() => requestAnimationFrame(() => resetToCurrent(0)));
+  }
+
+  function destroyProjection() {
+    swiper?.destroy(true, true);
+    swiper = null;
+    shell = null;
+    wrapper = null;
+    latestNodes = [];
+    userGestureActive = false;
+    navigationLocked = false;
+    delete stage.dataset.swiperNavigation;
   }
 
   function mount(nodes) {
+    pendingClearToken += 1;
+    rendererClearedStage = false;
     latestNodes = nodes;
     const node = nodes.find(item => item instanceof Node) || null;
     if (!node || node.classList?.contains("v2-empty")) {
-      swiper?.destroy(true, true);
-      swiper = null;
-      shell = null;
-      wrapper = null;
+      destroyProjection();
       nativeReplaceChildren(...nodes);
       return;
     }
@@ -179,10 +197,8 @@
       return;
     }
 
-    swiper?.destroy(true, true);
-    swiper = null;
-    shell = null;
-    wrapper = null;
+    destroyProjection();
+    latestNodes = nodes;
     const grid = document.createElement("div");
     grid.className = "v2-card-grid";
     const gridWrapper = document.createElement("div");
@@ -192,15 +208,28 @@
     nativeReplaceChildren(grid);
   }
 
+  function scheduleConfirmedClear() {
+    const token = ++pendingClearToken;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!rendererClearedStage || token !== pendingClearToken) return;
+      destroyProjection();
+      nativeReplaceChildren();
+    }));
+  }
+
   stage.replaceChildren = (...nodes) => {
     rendererClearedStage = nodes.length === 0;
-    if (rendererClearedStage) return;
+    if (rendererClearedStage) {
+      scheduleConfirmedClear();
+      return;
+    }
     mount(nodes);
   };
 
   stage.append = (...nodes) => {
     if (rendererClearedStage) {
       rendererClearedStage = false;
+      pendingClearToken += 1;
       mount(nodes);
       return;
     }
@@ -210,6 +239,7 @@
   stage.appendChild = node => {
     if (rendererClearedStage) {
       rendererClearedStage = false;
+      pendingClearToken += 1;
       mount([node]);
       return node;
     }
@@ -220,5 +250,5 @@
     if (latestNodes.length) mount(latestNodes);
   });
 
-  window.addEventListener("pagehide", () => swiper?.destroy(true, true), { once: true });
+  window.addEventListener("pagehide", destroyProjection, { once: true });
 })();
