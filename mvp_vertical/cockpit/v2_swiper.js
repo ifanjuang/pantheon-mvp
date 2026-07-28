@@ -5,13 +5,16 @@
   const stage = document.getElementById("v2-stage");
   if (!stage) return;
 
+  const MOBILE_QUERY = "(max-width: 620px)";
+  const mobileMedia = window.matchMedia(MOBILE_QUERY);
   const nativeReplaceChildren = stage.replaceChildren.bind(stage);
   const nativeAddEventListener = stage.addEventListener.bind(stage);
   let activeSwiper = null;
   let navigationLocked = false;
+  let latestNodes = [];
 
   stage.addEventListener = function boundedStageListener(type, listener, options) {
-    if (type === "pointerdown" || type === "pointerup") return undefined;
+    if (mobileMedia.matches && (type === "pointerdown" || type === "pointerup")) return undefined;
     return nativeAddEventListener(type, listener, options);
   };
 
@@ -100,7 +103,26 @@
     });
   }
 
+  function buildProjection(node) {
+    const shell = document.createElement("div");
+    shell.className = mobileMedia.matches ? "swiper v2-swiper" : "v2-card-grid";
+    shell.setAttribute("aria-roledescription", mobileMedia.matches ? "carrousel" : "grille de cartes");
+
+    const wrapper = document.createElement("div");
+    wrapper.className = mobileMedia.matches ? "swiper-wrapper v2-swiper-wrapper" : "v2-card-grid-wrapper";
+
+    const previous = document.getElementById("v2-previous");
+    const isFirstCard = !previous || previous.disabled;
+    if (isFirstCard) wrapper.append(createActionSlide());
+    else wrapper.append(previewSlide(node, "previous"));
+    wrapper.append(currentSlide(node), previewSlide(node, "next"));
+
+    shell.append(wrapper);
+    return { shell, wrapper };
+  }
+
   function mount(nodes) {
+    latestNodes = nodes;
     activeSwiper?.destroy(true, true);
     activeSwiper = null;
 
@@ -110,24 +132,13 @@
       return;
     }
 
-    const shell = document.createElement("div");
-    shell.className = "swiper v2-swiper";
-    shell.setAttribute("aria-roledescription", "carrousel");
+    const { shell } = buildProjection(node);
+    nativeReplaceChildren(shell);
 
-    const wrapper = document.createElement("div");
-    wrapper.className = "swiper-wrapper v2-swiper-wrapper";
-
-    const previous = document.getElementById("v2-previous");
-    const isFirstCard = !previous || previous.disabled;
-    if (isFirstCard) wrapper.append(createActionSlide());
-    else wrapper.append(previewSlide(node, "previous"));
-    wrapper.append(currentSlide(node), previewSlide(node, "next"));
+    if (!mobileMedia.matches) return;
 
     const currentSlideIndex = 1;
     shell.dataset.currentSlideIndex = String(currentSlideIndex);
-    shell.append(wrapper);
-    nativeReplaceChildren(shell);
-
     activeSwiper = new window.Swiper(shell, {
       initialSlide: currentSlideIndex,
       speed: 360,
@@ -149,5 +160,8 @@
   }
 
   stage.replaceChildren = (...nodes) => mount(nodes);
+  mobileMedia.addEventListener?.("change", () => {
+    if (latestNodes.length) mount(latestNodes);
+  });
   window.addEventListener("pagehide", () => activeSwiper?.destroy(true, true), { once: true });
 })();
