@@ -1,0 +1,90 @@
+:root[data-cockpit-version="3"] {
+  --v3-card-width: 25rem;
+  --v3-card-height: 31rem;
+  --v3-card-radius: 1.55rem;
+  --v3-card-border: 1px;
+  --v3-card-padding: 1.25rem;
+  --v3-stage-gutter: clamp(.75rem, 3.2vw, 1.25rem);
+  --v3-slide-block-padding: .35rem;
+}
+
+:root[data-cockpit-version="3"] .v3-shell {
+  width: min(100%, 78rem);
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(3rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+}
+
+:root[data-cockpit-version="3"] .v3-stage {
+  width: 100%;
+  min-width: 0;
+  min-height: calc(var(--v3-card-height) + (2 * var(--v3-slide-block-padding)));
+  margin-top: clamp(1rem, 3vh, 2.5rem);
+  overflow: hidden;
+}
+
+:root[data-cockpit-version="3"] .v3-swiper {
+  width: 100%;
+  min-width: 0;
+  min-height: calc(var(--v3-card-height) + (2 * var(--v3-slide-block-padding)));
+  margin-inline: auto;
+  overflow: visible;
+}
+
+:root[data-cockpit-version="3"] .v3-swiper .v2-swiper-wrapper,
+:root[data-cockpit-version="3"] .v3-swiper .v2-swiper-slide {
+  min-height: calc(var(--v3-card-height) + (2 * var(--v3-slide-block-padding)));
+}
+
+:root[data-cockpit-version="3"] .v3-swiper .v2-swiper-slide {
+  min-width: 0;
+  height: auto;
+  padding: var(--v3-slide-block-padding) var(--v3-stage-gutter);
+}
+
+:root[data-cockpit-version="3"] .v3-swiper .v2-swiper-slide > .v2-card,
+:root[data-cockpit-version="3"] .v3-swiper .v2-swiper-slide > .v2-swiper-create-card {
+  width: min(100%, var(--v3-card-width));
+  max-width: var(--v3-card-width);
+  margin-inline: auto;
+}
+
+:root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"] {
+  width: min(100%, var(--v3-card-width));
+  min-width: 0;
+  min-height: var(--v3-card-height);
+}
+
+:root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"] .v2-card-inner,
+:root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"] .v2-card-face {
+  min-height: var(--v3-card-height);
+}
+
+:root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"] .v2-card-face {
+  padding: var(--v3-card-padding);
+  border-width: var(--v3-card-border);
+  border-radius: var(--v3-card-radius);
+}
+
+@media (max-width: 620px) {
+  :root[data-cockpit-version="3"] {
+    --v3-safe-left: max(.75rem, env(safe-area-inset-left));
+    --v3-safe-right: max(.75rem, env(safe-area-inset-right));
+  }
+
+  :root[data-cockpit-version="3"] .v3-shell {
+    width: 100%;
+    padding-top: clamp(.75rem, 2.5vh, 1.25rem);
+    padding-right: var(--v3-safe-right);
+    padding-left: var(--v3-safe-left);
+  }
+
+  :root[data-cockpit-version="3"] .v3-stage {
+    width: calc(100% + var(--v3-safe-left) + var(--v3-safe-right));
+    margin-left: calc(-1 * var(--v3-safe-left));
+  }
+
+  :root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"] .v2-card-face {
+    padding: clamp(1rem, 4.5vw, 1.25rem);
+  }
+}
