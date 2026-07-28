@@ -23,18 +23,22 @@
       <span><strong>COCKPIT</strong></span>
     </a>
     <div class="v2-header-actions">
-      <button id="v2-hermes-toggle" class="v2-hermes-toggle" type="button" aria-controls="v2-hermes-dock" aria-expanded="false">Hermès</button>
+      <button id="v2-menu-toggle" class="v2-header-button" type="button" aria-controls="v2-header-menu" aria-expanded="false">Menu</button>
+      <button id="v2-hermes-toggle" class="v2-header-button" type="button" aria-controls="v2-hermes-dock" aria-expanded="false">Hermès</button>
       <output id="v2-network" class="network-pill" aria-live="polite">hors ligne</output>
     </div>
+
+    <section id="v2-header-menu" class="v2-header-menu" aria-label="Chargement des données" hidden>
+      <label><span>Affaire</span><input id="v2-project" autocomplete="off" placeholder="LIEUREY ou project-lieurey"></label>
+      <label><span>Clé d’accès</span><input id="v2-token" type="password" autocomplete="off" placeholder="lecture / édition"></label>
+      <div class="v2-header-menu-actions">
+        <button id="v2-load-demo" type="button">Données fictives</button>
+        <button id="v2-load" class="primary-action" type="button">Charger</button>
+      </div>
+    </section>
   </header>
 
   <main class="v2-shell">
-    <section class="v2-loader" aria-label="Connexion Agency Data">
-      <label><span>Affaire</span><input id="v2-project" autocomplete="off" placeholder="LIEUREY ou project-lieurey"></label>
-      <label><span>Clé d’accès</span><input id="v2-token" type="password" autocomplete="off" placeholder="lecture / édition"></label>
-      <button id="v2-load" class="primary-action" type="button">Charger</button>
-    </section>
-
     <nav class="v2-space-rail" aria-label="Espaces principaux">
       <button type="button" data-space="pantheon">Pantheon</button>
       <button type="button" data-space="decisions">Décisions</button>
@@ -66,24 +70,18 @@
         <span id="v2-handoff-scope" class="v2-handoff-scope">Aucune carte courante</span>
         <button id="v2-hermes-close" class="v2-hermes-close" type="button" aria-label="Fermer Hermès">×</button>
       </div>
-
       <textarea id="v2-handoff-question" class="v2-handoff-question" rows="4" placeholder="Que voulez-vous faire ?" aria-label="Message pour Hermès"></textarea>
-
       <section class="v2-context-panel v2-context-panel--hermes" aria-label="Ajouter un contexte">
         <input id="v2-context-input" class="v2-context-input" autocomplete="off" placeholder="Retrouver une affaire, une personne ou un sujet…" aria-label="Rechercher un contexte">
         <div id="v2-context-selected" class="v2-context-selected" aria-label="Contexte sélectionné"></div>
         <p id="v2-context-message" class="v2-context-message" aria-live="polite"></p>
         <div id="v2-context-results" class="v2-context-results" aria-label="Résultats de contexte"></div>
       </section>
-
       <input id="v2-handoff-actor" type="hidden" value="IFan">
       <input id="v2-handoff-ttl" type="hidden" value="900">
       <input id="v2-handoff-revoke-reason" type="hidden" value="">
       <input id="v2-handoff-descendants" type="checkbox" checked hidden>
-
-      <div class="v2-handoff-actions">
-        <button id="v2-handoff-send" type="button">Envoyer</button>
-      </div>
+      <div class="v2-handoff-actions"><button id="v2-handoff-send" type="button">Envoyer</button></div>
       <button id="v2-handoff-prepare" type="button" hidden>Préparer</button>
       <button id="v2-handoff-submit" type="button" hidden disabled>Créer</button>
       <button id="v2-handoff-admit" type="button" hidden disabled>Admettre</button>
