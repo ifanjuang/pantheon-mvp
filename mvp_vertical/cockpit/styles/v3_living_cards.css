@@ -24,6 +24,26 @@
       backdrop-filter: blur(18px);
     }
 
+    :root[data-cockpit-version="3"] .v3-shell {
+      padding-bottom: max(3rem, env(safe-area-inset-bottom));
+    }
+
+    :root[data-cockpit-version="3"] .v3-navigation-bridge {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    :root[data-cockpit-version="3"] .v3-stage {
+      margin-top: clamp(1rem, 3vh, 2.5rem);
+    }
+
     .v2-card[data-cockpit-v3="living-card"] {
       --v3-stop-1: #ff5ca8;
       --v3-stop-2: #8d5cff;
