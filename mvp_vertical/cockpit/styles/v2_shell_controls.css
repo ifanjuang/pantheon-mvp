@@ -20,6 +20,33 @@
   color: var(--ink-950);
 }
 
+.v2-loader {
+  grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1fr) auto;
+  align-items: end;
+  padding: .85rem 1rem;
+}
+
+.v2-loader label {
+  display: grid;
+  gap: .3rem;
+}
+
+.v2-loader label > span {
+  color: var(--ink-650);
+  font-size: .7rem;
+  font-weight: 750;
+}
+
+.v2-loader input {
+  min-height: 2.55rem;
+}
+
+.v2-status--quiet {
+  max-width: 22rem;
+  opacity: .58;
+  font-size: .7rem;
+}
+
 .v2-hermes-dock[hidden] {
   display: none !important;
 }
@@ -36,6 +63,47 @@
   padding: 0;
   place-items: center;
   font-size: 1rem;
+}
+
+.v2-context-panel--hermes {
+  margin: 0;
+  padding: .65rem;
+  border-color: rgb(255 255 255 / 12%);
+  border-radius: .85rem;
+  background: rgb(255 255 255 / 5%);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.v2-context-panel--hermes .v2-context-input {
+  min-height: 2.6rem;
+  border-color: rgb(255 255 255 / 16%);
+  background: rgb(255 255 255 / 8%);
+  color: var(--white);
+}
+
+.v2-context-panel--hermes .v2-context-input::placeholder,
+.v2-context-panel--hermes .v2-context-message,
+.v2-context-panel--hermes .v2-context-empty {
+  color: rgb(255 255 255 / 55%);
+}
+
+.v2-context-panel--hermes .v2-context-selected:empty,
+.v2-context-panel--hermes .v2-context-message:empty,
+.v2-context-panel--hermes .v2-context-results:empty {
+  display: none;
+}
+
+.v2-context-panel--hermes .v2-context-chip,
+.v2-context-panel--hermes .v2-context-result {
+  border-color: rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 8%);
+  color: var(--white);
+}
+
+.v2-context-panel--hermes .v2-context-result-copy span,
+.v2-context-panel--hermes .v2-context-match {
+  color: rgb(255 255 255 / 58%);
 }
 
 .v2-swiper-create-card {
@@ -73,9 +141,8 @@
 
 .v2-swiper-create-copy strong {
   font-family: var(--font-impact);
-  font-size: 1.35rem;
-  letter-spacing: .03em;
-  text-transform: uppercase;
+  font-size: 1.15rem;
+  letter-spacing: .02em;
 }
 
 .v2-swiper-create-copy small {
@@ -86,6 +153,10 @@
 @keyframes v2-hermes-enter {
   from { opacity: 0; transform: translateY(.75rem); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 620px) {
+  .v2-loader { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
