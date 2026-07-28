@@ -9,6 +9,14 @@ const fixture = await nativeFetch("demo-data.json", { cache: "no-store" }).then(
   return response.json();
 });
 
+window.PANTHEON_COCKPIT_DEMO = true;
+window.PANTHEON_DEMO_CONFIG = {
+  hermes: {
+    enabled: false,
+    userToggle: true
+  }
+};
+
 function projectPayload(projectId) {
   return fixture.project_payloads[projectId] || {
     information: [],
@@ -19,7 +27,6 @@ function projectPayload(projectId) {
   };
 }
 
-window.PANTHEON_COCKPIT_DEMO = true;
 window.fetch = async (input, init = {}) => {
   const raw = typeof input === "string" ? input : input.url;
   const url = new URL(raw, window.location.href);
@@ -54,10 +61,6 @@ window.fetch = async (input, init = {}) => {
     return fixtureResponse({ work_issues: payload.work_issues });
   }
 
-  if (url.pathname.includes("/v1/context")) {
-    return fixtureResponse({ results: [], selected: [], message: "Démo statique : recherche serveur non simulée." });
-  }
-
   return nativeFetch(input, init);
 };
 
@@ -71,7 +74,6 @@ const scripts = [
   "project_claim_view_adapter.js",
   "information_view_adapter.js",
   "v2_context.js",
-  "v2_handoff.js",
   "v2_actions.js",
   "v2_candidate_actions.js",
   "schema_editor.js",
@@ -92,16 +94,10 @@ for (const src of scripts) {
 const projectInput = document.getElementById("v2-project");
 const tokenInput = document.getElementById("v2-token");
 const network = document.getElementById("v2-network");
-const handoff = document.querySelector(".v2-hermes-dock");
 
-if (projectInput) projectInput.value = "ORANGERIE";
-if (tokenInput) tokenInput.value = "demo-read-only";
-if (network) network.textContent = "démo · données fictives";
-if (handoff) {
-  handoff.querySelectorAll("input, textarea, select, button").forEach(control => control.disabled = true);
-  const message = handoff.querySelector("#v2-handoff-message");
-  if (message) message.textContent = "Démo statique : aucun Work Issue ni run Hermes ne peut être créé.";
-}
+if (projectInput) projectInput.value = "MV-026";
+if (tokenInput) tokenInput.value = "demo-context-only";
+if (network) network.textContent = "univers fictif · lecture seule";
 
 await new Promise(resolve => window.setTimeout(resolve, 180));
 document.getElementById("v2-load")?.click();
