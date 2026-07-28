@@ -23,20 +23,17 @@
       <span><strong>COCKPIT</strong></span>
     </a>
     <div class="v2-header-actions">
-      <button id="v2-menu-toggle" class="v2-header-button" type="button" aria-controls="v2-header-menu" aria-expanded="false">Menu</button>
       <button id="v2-hermes-toggle" class="v2-header-button" type="button" aria-controls="v2-hermes-dock" aria-expanded="false">Hermès</button>
       <output id="v2-network" class="network-pill" aria-live="polite">hors ligne</output>
     </div>
-
-    <section id="v2-header-menu" class="v2-header-menu" aria-label="Chargement des données" hidden>
-      <label><span>Affaire</span><input id="v2-project" autocomplete="off" placeholder="LIEUREY ou project-lieurey"></label>
-      <label><span>Clé d’accès</span><input id="v2-token" type="password" autocomplete="off" placeholder="lecture / édition"></label>
-      <div class="v2-header-menu-actions">
-        <button id="v2-load-demo" type="button">Données fictives</button>
-        <button id="v2-load" class="primary-action" type="button">Charger</button>
-      </div>
-    </section>
   </header>
+
+  <div class="v2-loader v2-loader--internal" hidden>
+    <input id="v2-project" autocomplete="off">
+    <input id="v2-token" type="password" autocomplete="off">
+    <button id="v2-load" type="button">Charger</button>
+    <button id="v2-load-demo" type="button">Données fictives</button>
+  </div>
 
   <main class="v2-shell">
     <nav class="v2-space-rail" aria-label="Espaces principaux">
@@ -49,7 +46,7 @@
 
     <section class="v2-location" aria-live="polite">
       <p id="v2-breadcrumb" class="v2-breadcrumb">Pantheon</p>
-      <p id="v2-status" class="v2-status v2-status--quiet">Recto : ← → frères · ↑ enfants · ↓ parent.</p>
+      <p id="v2-status" class="v2-status v2-status--quiet"></p>
     </section>
 
     <section class="v2-navigation" aria-label="Navigation de la carte courante">
