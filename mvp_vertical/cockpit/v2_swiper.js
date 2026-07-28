@@ -42,13 +42,59 @@
     return slide;
   }
 
+  function createActionSlide() {
+    const slide = document.createElement("div");
+    slide.className = "swiper-slide v2-swiper-slide v2-swiper-slide--create";
+    slide.dataset.swiperAction = "create";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "v2-swiper-create-card";
+    button.setAttribute("aria-label", "Ajouter un nouvel élément");
+
+    const mark = document.createElement("span");
+    mark.className = "v2-swiper-create-mark";
+    mark.textContent = "+";
+
+    const copy = document.createElement("span");
+    copy.className = "v2-swiper-create-copy";
+    const title = document.createElement("strong");
+    title.textContent = "Nouvel élément";
+    const detail = document.createElement("small");
+    detail.textContent = "Créer dans la collection courante";
+    copy.append(title, detail);
+    button.append(mark, copy);
+
+    button.addEventListener("click", () => {
+      if (window.PantheonInformationCreate?.open) {
+        try {
+          window.PantheonInformationCreate.open();
+          return;
+        } catch (error) {
+          window.alert(error.message || String(error));
+          return;
+        }
+      }
+      stage.dispatchEvent(new CustomEvent("pantheon:create-requested", { bubbles: true }));
+    });
+
+    slide.append(button);
+    return slide;
+  }
+
   function moveFromSwiper(swiper) {
-    if (navigationLocked || swiper.activeIndex === 1) return;
-    const buttonId = swiper.activeIndex < 1 ? "v2-previous" : "v2-next";
+    if (navigationLocked) return;
+    const active = swiper.slides[swiper.activeIndex];
+    if (active?.dataset?.swiperAction === "create") return;
+
+    const currentIndex = Number(swiper.el.dataset.currentSlideIndex || 1);
+    if (swiper.activeIndex === currentIndex) return;
+
+    const buttonId = swiper.activeIndex < currentIndex ? "v2-previous" : "v2-next";
     const button = document.getElementById(buttonId);
     navigationLocked = true;
     if (button && !button.disabled) button.click();
-    else swiper.slideTo(1, 180);
+    else swiper.slideTo(currentIndex, 180);
     queueMicrotask(() => {
       navigationLocked = false;
     });
@@ -70,12 +116,20 @@
 
     const wrapper = document.createElement("div");
     wrapper.className = "swiper-wrapper v2-swiper-wrapper";
-    wrapper.append(previewSlide(node, "previous"), currentSlide(node), previewSlide(node, "next"));
+
+    const previous = document.getElementById("v2-previous");
+    const isFirstCard = !previous || previous.disabled;
+    if (isFirstCard) wrapper.append(createActionSlide());
+    else wrapper.append(previewSlide(node, "previous"));
+    wrapper.append(currentSlide(node), previewSlide(node, "next"));
+
+    const currentSlideIndex = 1;
+    shell.dataset.currentSlideIndex = String(currentSlideIndex);
     shell.append(wrapper);
     nativeReplaceChildren(shell);
 
     activeSwiper = new window.Swiper(shell, {
-      initialSlide: 1,
+      initialSlide: currentSlideIndex,
       speed: 360,
       threshold: 12,
       resistanceRatio: 0.72,
