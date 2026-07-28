@@ -18,10 +18,18 @@ entity / governed state
 
 A gradient is presentation metadata only. It is not a status, an authorization, Evidence, a claim or a source-of-truth marker.
 
+## Canonical page
+
+`mvp_vertical/cockpit/v3.html` is the canonical V3 page. The repository root now redirects the GitHub Pages demo to `v3.html?mode=demo`.
+
+The page keeps current V2 element identifiers and operational modules as a compatibility seam while exposing a dedicated `v3_bootstrap.js` entrypoint and V3 page state. The old `v2.html` remains available for regression comparison during migration.
+
+The visible navigation button row is removed from the V3 surface but retained as an off-screen compatibility bridge because the current Swiper adapter still delegates navigation to those controls. This is temporary implementation compatibility, not the target navigation architecture.
+
 ## Interaction contract
 
 - horizontal swipe: move between siblings through the existing spatial navigation bridge;
-- vertical controls: ascend or descend through the existing navigation stack;
+- vertical gesture/navigation bridge: ascend or descend through the existing navigation stack;
 - tap or keyboard activation on a non-interactive card area: flip front/back;
 - front: reading surface;
 - back: technical details and actions already supplied by the current renderer;
@@ -39,6 +47,7 @@ The registry does not encode card family, status, approval, health, safety or ta
 
 This branch deliberately reuses the existing V2 card DOM and flip model. It adds:
 
+- a first-class V3 page and bootstrap entrypoint;
 - a dark, neutral Cockpit background;
 - multicolour organic card materials;
 - deterministic material assignment;
