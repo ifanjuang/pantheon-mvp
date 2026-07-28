@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="styles/v2_refinement.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@14.0.6/swiper-bundle.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="styles/v2_swiper.css">
+  <link rel="stylesheet" href="styles/v2_shell_controls.css">
   <title>Pantheon Cockpit V2</title>
 </head>
 <body class="v2-body">
@@ -22,6 +23,7 @@
       <span><small>PANTHEON</small><strong>COCKPIT V2</strong></span>
     </a>
     <div class="v2-header-actions">
+      <button id="v2-hermes-toggle" class="v2-hermes-toggle" type="button" aria-controls="v2-hermes-dock" aria-expanded="false">Hermès</button>
       <a class="v2-legacy-link" href="./">ancien cockpit</a>
       <output id="v2-network" class="network-pill" aria-live="polite">hors ligne</output>
     </div>
@@ -83,7 +85,7 @@
     <section id="v2-stage" class="v2-stage" aria-label="Carte courante"></section>
   </main>
 
-  <aside class="v2-hermes-dock" aria-label="Assistant Hermes lié à la carte courante">
+  <aside id="v2-hermes-dock" class="v2-hermes-dock" aria-label="Assistant Hermes lié à la carte courante" hidden>
     <div class="v2-handoff-shell">
       <div class="v2-handoff-head">
         <div class="v2-hermes-mark" aria-hidden="true">H</div>
@@ -91,6 +93,7 @@
           <strong>Hermes</strong>
           <span id="v2-handoff-scope" class="v2-handoff-scope">Aucune carte courante</span>
         </div>
+        <button id="v2-hermes-close" class="v2-hermes-close" type="button" aria-label="Fermer Hermès">×</button>
       </div>
       <textarea id="v2-handoff-question" class="v2-handoff-question" rows="2" placeholder="Poser une question dans cette portée…" aria-label="Question pour Hermes"></textarea>
       <label class="v2-handoff-option">
@@ -130,6 +133,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/swiper@14.0.6/swiper-bundle.min.js" crossorigin="anonymous"></script>
   <script src="v2_swiper.js"></script>
+  <script src="v2_shell_controls.js"></script>
   <script src="structured_interface.js" defer></script>
   <script src="context_resolver.js" defer></script>
   <script src="agency_data_binding.js" defer></script>
