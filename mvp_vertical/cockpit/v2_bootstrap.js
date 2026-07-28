@@ -43,6 +43,7 @@
   async function start() {
     const params = new URLSearchParams(window.location.search);
     const isDemo = params.get("mode") === "demo";
+    const isV3 = document.documentElement.dataset.cockpitVersion === "3";
 
     window.PANTHEON_COCKPIT_DEMO = isDemo;
     document.documentElement.dataset.cockpitMode = isDemo ? "demo" : "live";
@@ -60,8 +61,9 @@
     if (isDemo) await import("./demo_bootstrap.js");
 
     const swiperReady = await ensureSwiper();
+    const swiperBridge = isV3 ? "v3_swiper.js" : "v2_swiper.js";
     const scripts = [
-      ...(swiperReady ? ["v2_swiper.js"] : []),
+      ...(swiperReady ? [swiperBridge] : []),
       "v2_shell_controls.js",
       "structured_interface.js",
       "context_resolver.js",
