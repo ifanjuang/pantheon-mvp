@@ -29,7 +29,9 @@
     if (open) {
       setHermesOpen(false);
       requestAnimationFrame(() => {
-        const target = headerMenu.querySelector("[data-space].is-active") || headerMenu.querySelector("[data-space]");
+        const target = headerMenu.querySelector("[data-space].is-active")
+          || headerMenu.querySelector("[data-space]")
+          || document.getElementById("v2-project");
         target?.focus();
       });
     } else if (headerMenu.contains(document.activeElement)) {
