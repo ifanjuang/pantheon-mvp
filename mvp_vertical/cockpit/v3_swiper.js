@@ -2,6 +2,7 @@
   "use strict";
 
   if (typeof window.Swiper !== "function") return;
+
   const stage = document.getElementById("v2-stage");
   if (!stage) return;
 
@@ -9,7 +10,6 @@
   const nativeReplaceChildren = stage.replaceChildren.bind(stage);
   const nativeAppend = stage.append.bind(stage);
   const nativeAppendChild = stage.appendChild.bind(stage);
-  const nativeAddEventListener = stage.addEventListener.bind(stage);
 
   let shell = null;
   let wrapper = null;
@@ -25,11 +25,7 @@
   let userGestureActive = false;
   let pendingDirection = 0;
   let navigationTimeout = 0;
-
-  stage.addEventListener = function boundedStageListener(type, listener, options) {
-    if (mobileMedia.matches && (type === "pointerdown" || type === "pointerup")) return undefined;
-    return nativeAddEventListener(type, listener, options);
-  };
+  let refreshFrame = 0;
 
   function cardIdentity(node) {
     if (!(node instanceof Element)) return "";
@@ -49,8 +45,10 @@
     clone.removeAttribute?.("data-v3-flip-bound");
     clone.removeAttribute?.("data-flipped");
     clone.querySelectorAll?.("[id]").forEach(item => item.removeAttribute("id"));
-    clone.querySelectorAll?.("[data-v3-flip-bound]").forEach(item => item.removeAttribute("data-v3-flip-bound"));
-    clone.querySelectorAll?.("[data-flipped]").forEach(item => item.removeAttribute("data-flipped"));
+    clone.querySelectorAll?.("[data-v3-flip-bound],[data-flipped]").forEach(item => {
+      item.removeAttribute("data-v3-flip-bound");
+      item.removeAttribute("data-flipped");
+    });
     clone.querySelectorAll?.("button,input,select,textarea,a,[tabindex]").forEach(item => {
       item.setAttribute("tabindex", "-1");
       if ("disabled" in item) item.disabled = true;
@@ -61,17 +59,16 @@
   function createPlaceholder() {
     const placeholder = document.createElement("div");
     placeholder.className = "v3-stack-placeholder";
-    placeholder.dataset.v3Placeholder = "true";
     placeholder.setAttribute("aria-hidden", "true");
     return placeholder;
   }
 
-  function createStack(node) {
-    const stack = document.createElement("div");
-    stack.className = "v3-card-stack";
-    stack.append(createPlaceholder(), createPlaceholder());
-    if (node) stack.prepend(node);
-    return stack;
+  function createCardShell(node) {
+    const cardShell = document.createElement("div");
+    cardShell.className = "v3-card-shell";
+    cardShell.append(createPlaceholder(), createPlaceholder());
+    if (node) cardShell.prepend(node);
+    return cardShell;
   }
 
   function createSlide(role) {
@@ -93,8 +90,13 @@
     button.innerHTML = '<span class="v2-swiper-create-mark">+</span><span class="v2-swiper-create-copy"><strong>Nouvel élément</strong><small>Créer dans la collection courante</small></span>';
     button.addEventListener("click", () => {
       if (window.PantheonInformationCreate?.open) {
-        try { window.PantheonInformationCreate.open(); return; }
-        catch (error) { window.alert(error.message || String(error)); return; }
+        try {
+          window.PantheonInformationCreate.open();
+          return;
+        } catch (error) {
+          window.alert(error.message || String(error));
+          return;
+        }
       }
       stage.dispatchEvent(new CustomEvent("pantheon:create-requested", { bubbles: true }));
     });
@@ -103,27 +105,67 @@
 
   function createShell() {
     if (shell?.isConnected) return;
+
     shell = document.createElement("div");
     shell.className = "swiper v2-swiper v3-swiper";
+    shell.setAttribute("role", "region");
+    shell.setAttribute("aria-label", "Navigation horizontale entre les cartes sœurs");
     shell.setAttribute("aria-roledescription", "carrousel");
 
     wrapper = document.createElement("div");
     wrapper.className = "swiper-wrapper v2-swiper-wrapper";
+
     slides = {
       previous: createSlide("previous"),
       current: createSlide("current"),
       next: createSlide("next"),
     };
+
     wrapper.append(slides.previous, slides.current, slides.next);
     shell.append(wrapper);
     nativeReplaceChildren(shell);
   }
 
-  function restoreCurrentSlide(instance = swiper, speed = 0) {
-    if (!instance || instance.destroyed) return;
-    if (instance.activeIndex !== 1 || instance.translate !== -instance.snapGrid[1]) {
-      instance.slideTo(1, speed, false);
+  function restoreCurrentSlide(speed = 0) {
+    if (!swiper || swiper.destroyed) return;
+    swiper.slideTo(1, speed, false);
+  }
+
+  function finishNavigation() {
+    window.clearTimeout(navigationTimeout);
+    navigationTimeout = 0;
+    restoreCurrentSlide(0);
+    navigationLocked = false;
+    pendingDirection = 0;
+    userGestureActive = false;
+    delete stage.dataset.swiperNavigation;
+    delete stage.dataset.swiperTransition;
+  }
+
+  function moveFromSwiper(instance) {
+    if (!userGestureActive || navigationLocked || instance.activeIndex === 1) return;
+    userGestureActive = false;
+
+    const active = instance.slides[instance.activeIndex];
+    if (active?.dataset?.swiperAction === "create") {
+      restoreCurrentSlide(180);
+      return;
     }
+
+    pendingDirection = instance.activeIndex < 1 ? -1 : 1;
+    const button = document.getElementById(pendingDirection < 0 ? "v2-previous" : "v2-next");
+
+    navigationLocked = true;
+    stage.dataset.swiperNavigation = "true";
+
+    if (button && !button.disabled) {
+      button.click();
+      navigationTimeout = window.setTimeout(finishNavigation, 900);
+      return;
+    }
+
+    restoreCurrentSlide(180);
+    navigationTimeout = window.setTimeout(finishNavigation, 200);
   }
 
   function initSwiper() {
@@ -132,13 +174,12 @@
     swiper = new window.Swiper(shell, {
       init: false,
       initialSlide: 1,
+      runCallbacksOnInit: false,
       slidesPerView: 1,
-      centeredSlides: true,
       speed: 300,
       threshold: 12,
       resistance: true,
       resistanceRatio: 0.72,
-      grabCursor: true,
       watchOverflow: false,
       allowTouchMove: true,
       preventInteractionOnTransition: true,
@@ -160,12 +201,8 @@
         slideLabelMessage: "Carte {{index}} sur {{slidesLength}}",
       },
       on: {
-        beforeInit(instance) {
-          instance.slideTo(1, 0, false);
-        },
-        init(instance) {
-          instance.slideTo(1, 0, false);
-          requestAnimationFrame(() => requestAnimationFrame(() => restoreCurrentSlide(instance, 0)));
+        init() {
+          restoreCurrentSlide(0);
         },
         touchStart() {
           if (!navigationLocked) userGestureActive = true;
@@ -187,62 +224,28 @@
   }
 
   function replaceSlideContent(slide, node) {
-    const existing = slide.firstElementChild;
-    const existingIdentity = cardIdentity(existing);
+    const existingIdentity = cardIdentity(slide.firstElementChild);
     const nextIdentity = cardIdentity(node);
-    if (existing && node && existingIdentity && existingIdentity === nextIdentity) return false;
-    slide.replaceChildren(createStack(node));
+    if (existingIdentity && nextIdentity && existingIdentity === nextIdentity) return false;
+    slide.replaceChildren(createCardShell(node));
     return true;
   }
 
-  function refreshSwiperGeometry() {
+  function scheduleSwiperRefresh() {
     if (!swiper || swiper.destroyed) return;
-    swiper.updateSize();
-    swiper.updateSlides();
-    swiper.updateProgress();
-    swiper.updateSlidesClasses();
-    restoreCurrentSlide(swiper, 0);
-  }
-
-  function finishNavigation() {
-    window.clearTimeout(navigationTimeout);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      restoreCurrentSlide(swiper, 0);
-      navigationLocked = false;
-      pendingDirection = 0;
-      userGestureActive = false;
-      delete stage.dataset.swiperNavigation;
-    }));
-  }
-
-  function moveFromSwiper(instance) {
-    if (!userGestureActive || navigationLocked || instance.activeIndex === 1) return;
-    userGestureActive = false;
-
-    const active = instance.slides[instance.activeIndex];
-    if (active?.dataset?.swiperAction === "create") {
-      restoreCurrentSlide(instance, 180);
-      return;
-    }
-
-    pendingDirection = instance.activeIndex < 1 ? -1 : 1;
-    const button = document.getElementById(pendingDirection < 0 ? "v2-previous" : "v2-next");
-    navigationLocked = true;
-    stage.dataset.swiperNavigation = "true";
-
-    if (button && !button.disabled) {
-      button.click();
-      navigationTimeout = window.setTimeout(finishNavigation, 900);
-    } else {
-      restoreCurrentSlide(instance, 180);
-      finishNavigation();
-    }
+    window.cancelAnimationFrame(refreshFrame);
+    refreshFrame = window.requestAnimationFrame(() => {
+      refreshFrame = 0;
+      if (!swiper || swiper.destroyed) return;
+      swiper.update();
+      restoreCurrentSlide(0);
+    });
   }
 
   function updateMobile(node) {
     createShell();
-    const previousButton = document.getElementById("v2-previous");
 
+    const previousButton = document.getElementById("v2-previous");
     if (currentNode && cardIdentity(currentNode) !== cardIdentity(node)) {
       if (pendingDirection > 0) previousProjection = inertPreview(currentNode);
       if (pendingDirection < 0) nextProjection = inertPreview(currentNode);
@@ -257,14 +260,16 @@
     ].some(Boolean);
 
     if (!swiper) initSwiper();
-    else if (changed) refreshSwiperGeometry();
+    else if (changed) scheduleSwiperRefresh();
 
-    requestAnimationFrame(() => requestAnimationFrame(() => restoreCurrentSlide(swiper, 0)));
     if (navigationLocked) finishNavigation();
   }
 
   function destroyProjection() {
     window.clearTimeout(navigationTimeout);
+    window.cancelAnimationFrame(refreshFrame);
+    navigationTimeout = 0;
+    refreshFrame = 0;
     swiper?.destroy(true, true);
     swiper = null;
     shell = null;
@@ -285,8 +290,8 @@
     pendingClearToken += 1;
     rendererClearedStage = false;
     latestNodes = nodes;
-    const node = nodes.find(item => item instanceof Node) || null;
 
+    const node = nodes.find(item => item instanceof Node) || null;
     if (!node || node.classList?.contains("v2-empty")) {
       destroyProjection();
       nativeReplaceChildren(...nodes);
@@ -304,7 +309,7 @@
     grid.className = "v2-card-grid";
     const gridWrapper = document.createElement("div");
     gridWrapper.className = "v2-card-grid-wrapper";
-    gridWrapper.append(createStack(node));
+    gridWrapper.append(createCardShell(node));
     grid.append(gridWrapper);
     nativeReplaceChildren(grid);
   }
@@ -320,7 +325,10 @@
 
   stage.replaceChildren = (...nodes) => {
     rendererClearedStage = nodes.length === 0;
-    if (rendererClearedStage) { scheduleConfirmedClear(); return; }
+    if (rendererClearedStage) {
+      scheduleConfirmedClear();
+      return;
+    }
     mount(nodes);
   };
 
@@ -344,6 +352,9 @@
     return nativeAppendChild(node);
   };
 
-  mobileMedia.addEventListener?.("change", () => { if (latestNodes.length) mount(latestNodes); });
+  mobileMedia.addEventListener?.("change", () => {
+    if (latestNodes.length) mount(latestNodes);
+  });
+
   window.addEventListener("pagehide", destroyProjection, { once: true });
 })();
