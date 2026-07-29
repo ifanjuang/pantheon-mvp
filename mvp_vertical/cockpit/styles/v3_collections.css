@@ -1,3 +1,10 @@
+:root[data-cockpit-version="3"] .v3-stage,
+:root[data-cockpit-version="3"] .v3-level-swiper,
+:root[data-cockpit-version="3"] .v3-collection-swiper {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
 :root[data-cockpit-version="3"] .v3-level-swiper,
 :root[data-cockpit-version="3"] .v3-level-wrapper,
 :root[data-cockpit-version="3"] .v3-level-slide,
