@@ -1,6 +1,8 @@
 (() => {
   "use strict";
 
+  const SWIPER_VERSION = "14.0.6";
+
   function loadExternalScript(src) {
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
@@ -16,12 +18,13 @@
   async function ensureSwiper() {
     if (typeof window.Swiper === "function") {
       document.documentElement.dataset.swiperReady = "true";
+      document.documentElement.dataset.swiperVersion = SWIPER_VERSION;
       return true;
     }
 
     const candidates = [
-      "https://cdn.jsdelivr.net/npm/swiper@12/swiper-bundle.min.js",
-      "https://unpkg.com/swiper@12/swiper-bundle.min.js",
+      `https://cdn.jsdelivr.net/npm/swiper@${SWIPER_VERSION}/swiper-bundle.min.js`,
+      `https://unpkg.com/swiper@${SWIPER_VERSION}/swiper-bundle.min.js`,
     ];
 
     for (const src of candidates) {
@@ -29,6 +32,7 @@
         await loadExternalScript(src);
         if (typeof window.Swiper === "function") {
           document.documentElement.dataset.swiperReady = "true";
+          document.documentElement.dataset.swiperVersion = SWIPER_VERSION;
           return true;
         }
       } catch (error) {
@@ -37,6 +41,7 @@
     }
 
     document.documentElement.dataset.swiperReady = "false";
+    delete document.documentElement.dataset.swiperVersion;
     return false;
   }
 
