@@ -1,5 +1,5 @@
 :root[data-cockpit-version="3"] .v3-collection-swiper {
-  touch-action: pan-x;
+  touch-action: none;
 }
 
 :root[data-cockpit-version="3"] .v3-collection-swiper .v3-swiper-slide {
