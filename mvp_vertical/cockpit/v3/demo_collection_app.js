@@ -53,8 +53,11 @@ const ROOT_ITEMS = [
 ];
 
 const stack = [];
-let swiper = null;
-let gesture = null;
+const horizontalSwipers = new Map();
+let levelSwiper = null;
+let levelSlides = null;
+let pendingChildFrame = null;
+let levelTransitionLocked = false;
 
 function model(id, title, category, family, summary, statusValue = "neutral", details = "") {
   return { id, title, category, family, summary, status: statusValue, details };
@@ -79,7 +82,7 @@ function projectModels() {
 function projectChildren(projectId) {
   const project = fixture.projects.find(item => item.project_id === projectId);
   const payload = fixture.project_payloads[projectId] || {};
-  const children = [
+  return [
     model(`contacts:${projectId}`, "Contacts", "Contacts", "contact", `${project?.contacts?.length || 0} contact(s)`, "neutral", (project?.contacts || []).map(item => [item.name, item.role, item.organization].filter(Boolean).join(" · ")).join("\n")),
     ...(payload.information || []).map(item => model(`information:${item.information_id}`, item.title, item.category || "Information", "information", item.summary, item.status, item.details || item.source_ref || "")),
     ...(payload.documents || []).map(item => model(`document:${item.document_id}`, item.title || item.naming?.object_name || "Document", item.naming?.document_type || "Document", "information", item.source_ref || "Document source", item.status || "ready", item.document_date || "")),
@@ -89,7 +92,6 @@ function projectChildren(projectId) {
       return model(`work:${item.issue_id}`, item.title, "Travail", "work", item.description || "Travail à traiter", item.status || "open", (item.tags || []).join(" · "));
     }),
   ];
-  return children;
 }
 
 function decisionModels() {
@@ -213,32 +215,54 @@ function currentFrame() {
   return stack[stack.length - 1];
 }
 
+function createFrame(collection, rootSpace) {
+  return { ...collection, index: 0, activeSynthetic: false, rootSpace };
+}
+
+function activeItem(frame) {
+  if (!frame || frame.activeSynthetic) return null;
+  return frame.items[frame.index] || null;
+}
+
+function childFrameFor(frame) {
+  const item = activeItem(frame);
+  if (!item) return null;
+  const collection = collectionFor(item);
+  if (!collection || !collection.items.length) return null;
+  return createFrame(collection, frame.rootSpace || item.id.replace("space:", ""));
+}
+
 function updateLocation() {
   const labels = stack.map(frame => frame.title);
   if (breadcrumb) breadcrumb.textContent = labels.join(" / ");
   const frame = currentFrame();
-  const active = frame.items[frame.index] || null;
-  if (status) status.textContent = active ? `${frame.items.length} carte(s) · ${active.title}` : "Collection vide";
+  const active = activeItem(frame);
+  if (status) {
+    status.textContent = frame.activeSynthetic
+      ? `Créer dans ${frame.title}`
+      : active ? `${frame.items.length} carte(s) · ${active.title}` : "Collection vide";
+  }
   spaceButtons.forEach(button => button.classList.toggle("is-active", frame.rootSpace === button.dataset.space));
 }
 
-function hydrateNear(index) {
-  const frame = currentFrame();
+function hydrateNear(frame, instance, index) {
+  if (!frame || !instance || instance.destroyed) return;
   const offset = frame.canCreate ? 1 : 0;
   [index - 1, index, index + 1].forEach(swiperIndex => {
     const itemIndex = swiperIndex - offset;
     if (itemIndex < 0 || itemIndex >= frame.items.length) return;
-    hydrateSlide(swiper.slides[swiperIndex], frame.items[itemIndex]);
+    hydrateSlide(instance.slides[swiperIndex], frame.items[itemIndex]);
   });
-  const idle = window.requestIdleCallback || (callback => setTimeout(callback, 20));
-  idle(() => frame.items.forEach((item, itemIndex) => hydrateSlide(swiper.slides[itemIndex + offset], item)));
+  const idle = window.requestIdleCallback || (callback => window.setTimeout(callback, 20));
+  idle(() => {
+    if (instance.destroyed) return;
+    frame.items.forEach((item, itemIndex) => hydrateSlide(instance.slides[itemIndex + offset], item));
+  });
 }
 
-function renderFrame({ animate = "none" } = {}) {
-  swiper?.destroy(true, true);
-  const frame = currentFrame();
+function buildHorizontalShell(frame) {
   const shell = document.createElement("div");
-  shell.className = `swiper v3-swiper v3-collection-swiper v3-level-${animate}`;
+  shell.className = "swiper v3-swiper v3-collection-swiper";
   const wrapper = document.createElement("div");
   wrapper.className = "swiper-wrapper v2-swiper-wrapper";
   if (frame.canCreate) wrapper.append(createNewSlide(frame));
@@ -250,83 +274,189 @@ function renderFrame({ animate = "none" } = {}) {
     wrapper.append(slide);
   });
   shell.append(wrapper);
-  stage.replaceChildren(shell);
+  return shell;
+}
+
+function buildLevelSlide(role, frame) {
+  const slide = document.createElement("div");
+  slide.className = `swiper-slide v3-level-slide v3-level-slide--${role}`;
+  slide.dataset.levelRole = role;
+  if (!frame) {
+    slide.dataset.empty = "true";
+    slide.setAttribute("aria-hidden", "true");
+    return slide;
+  }
+  slide.append(buildHorizontalShell(frame));
+  return slide;
+}
+
+function destroyHorizontal(role) {
+  const instance = horizontalSwipers.get(role);
+  instance?.destroy(true, true);
+  horizontalSwipers.delete(role);
+}
+
+function initHorizontal(role, frame, { interactive = false } = {}) {
+  if (!frame || !levelSlides) return null;
+  const shell = levelSlides[role].querySelector(".v3-collection-swiper");
+  if (!shell) return null;
   const initialSlide = frame.index + (frame.canCreate ? 1 : 0);
-  swiper = new window.Swiper(shell, {
+  const instance = new window.Swiper(shell, {
+    direction: "horizontal",
+    nested: true,
     initialSlide,
     slidesPerView: 1,
     speed: 320,
     threshold: 10,
+    touchAngle: 45,
     resistanceRatio: 0.72,
+    allowTouchMove: interactive,
     preventClicks: true,
     preventClicksPropagation: true,
     touchStartPreventDefault: false,
+    touchMoveStopPropagation: false,
     noSwiping: true,
     noSwipingSelector: "button,input,select,textarea,a,[contenteditable='true']",
     roundLengths: true,
-    a11y: { enabled: true, containerMessage: `Cartes de ${frame.title}`, slideLabelMessage: "Carte {{index}} sur {{slidesLength}}" },
+    a11y: { enabled: interactive, containerMessage: `Cartes de ${frame.title}`, slideLabelMessage: "Carte {{index}} sur {{slidesLength}}" },
     on: {
-      init(instance) { hydrateNear(instance.activeIndex); },
-      slideChange(instance) {
-        if (instance.slides[instance.activeIndex]?.dataset.synthetic === "create") return;
-        frame.index = instance.activeIndex - (frame.canCreate ? 1 : 0);
-        hydrateNear(instance.activeIndex);
+      init(swiperInstance) { hydrateNear(frame, swiperInstance, swiperInstance.activeIndex); },
+      slideChange(swiperInstance) {
+        if (!interactive) return;
+        const activeSlide = swiperInstance.slides[swiperInstance.activeIndex];
+        frame.activeSynthetic = activeSlide?.dataset.synthetic === "create";
+        if (!frame.activeSynthetic) frame.index = swiperInstance.activeIndex - (frame.canCreate ? 1 : 0);
+        hydrateNear(frame, swiperInstance, swiperInstance.activeIndex);
         updateLocation();
+      },
+      slideChangeTransitionEnd() {
+        if (interactive) refreshChildLevel();
       },
     },
   });
+  horizontalSwipers.set(role, instance);
+  return instance;
+}
+
+function refreshChildLevel() {
+  if (!levelSwiper || levelSwiper.destroyed || !levelSlides || levelSwiper.activeIndex !== 1) return;
+  pendingChildFrame = childFrameFor(currentFrame());
+  destroyHorizontal("child");
+  const replacement = buildLevelSlide("child", pendingChildFrame);
+  levelSlides.child.replaceWith(replacement);
+  levelSlides.child = replacement;
+  if (pendingChildFrame) initHorizontal("child", pendingChildFrame, { interactive: false });
+  levelSwiper.allowSlideNext = Boolean(pendingChildFrame);
+  levelSwiper.update();
+}
+
+function destroyLevelDeck() {
+  horizontalSwipers.forEach(instance => instance?.destroy(true, true));
+  horizontalSwipers.clear();
+  levelSwiper?.destroy(true, true);
+  levelSwiper = null;
+  levelSlides = null;
+  pendingChildFrame = null;
+  levelTransitionLocked = false;
+}
+
+function commitLevelMove(instance) {
+  if (levelTransitionLocked || instance.activeIndex === 1) return;
+  levelTransitionLocked = true;
+  if (instance.activeIndex === 2 && pendingChildFrame) {
+    stack.push(pendingChildFrame);
+    renderLevelDeck();
+    return;
+  }
+  if (instance.activeIndex === 0 && stack.length > 1) {
+    stack.pop();
+    renderLevelDeck();
+    return;
+  }
+  instance.slideTo(1, 180, false);
+  levelTransitionLocked = false;
+}
+
+function renderLevelDeck() {
+  destroyLevelDeck();
+  const current = currentFrame();
+  const parent = stack.length > 1 ? stack[stack.length - 2] : null;
+  pendingChildFrame = childFrameFor(current);
+
+  const shell = document.createElement("div");
+  shell.className = "swiper v3-level-swiper";
+  const wrapper = document.createElement("div");
+  wrapper.className = "swiper-wrapper v3-level-wrapper";
+  levelSlides = {
+    parent: buildLevelSlide("parent", parent),
+    current: buildLevelSlide("current", current),
+    child: buildLevelSlide("child", pendingChildFrame),
+  };
+  wrapper.append(levelSlides.parent, levelSlides.current, levelSlides.child);
+  shell.append(wrapper);
+  stage.replaceChildren(shell);
+
+  levelSwiper = new window.Swiper(shell, {
+    direction: "vertical",
+    nested: true,
+    initialSlide: 1,
+    slidesPerView: 1,
+    speed: 320,
+    threshold: 12,
+    touchAngle: 45,
+    resistanceRatio: 0.72,
+    allowSlidePrev: Boolean(parent),
+    allowSlideNext: Boolean(pendingChildFrame),
+    preventClicks: true,
+    preventClicksPropagation: true,
+    touchStartPreventDefault: false,
+    touchMoveStopPropagation: false,
+    noSwiping: true,
+    noSwipingSelector: "button,input,select,textarea,a,[contenteditable='true']",
+    roundLengths: true,
+    a11y: { enabled: true, containerMessage: "Navigation verticale entre les niveaux", slideLabelMessage: "Niveau {{index}} sur {{slidesLength}}" },
+    on: {
+      slideChangeTransitionEnd(instance) { commitLevelMove(instance); },
+    },
+  });
+
+  if (parent) initHorizontal("parent", parent, { interactive: false });
+  initHorizontal("current", current, { interactive: true });
+  if (pendingChildFrame) initHorizontal("child", pendingChildFrame, { interactive: false });
   updateLocation();
 }
 
 function descend() {
-  const frame = currentFrame();
-  const item = frame.items[frame.index];
-  if (!item) return;
-  const collection = collectionFor(item);
-  if (!collection || !collection.items.length) {
-    status.textContent = "Cette carte ne contient pas encore de sous-cartes.";
+  if (!pendingChildFrame) {
+    if (status) status.textContent = "Cette carte ne contient pas encore de sous-cartes.";
     return;
   }
-  stack.push({ ...collection, index: 0, rootSpace: frame.rootSpace || item.id.replace("space:", "") });
-  renderFrame({ animate: "enter" });
+  levelSwiper?.slideNext();
 }
 
 function ascend() {
   if (stack.length <= 1) return;
-  stack.pop();
-  renderFrame({ animate: "leave" });
+  levelSwiper?.slidePrev();
 }
-
-stage.addEventListener("pointerdown", event => {
-  gesture = { id: event.pointerId, x: event.clientX, y: event.clientY };
-}, { capture: true, passive: true });
-stage.addEventListener("pointerup", event => {
-  if (!gesture || gesture.id !== event.pointerId) return;
-  const dx = event.clientX - gesture.x;
-  const dy = event.clientY - gesture.y;
-  gesture = null;
-  if (Math.abs(dy) < 64 || Math.abs(dy) <= Math.abs(dx) * 1.15) return;
-  if (dy < 0) descend();
-  else ascend();
-}, { capture: true, passive: true });
-stage.addEventListener("pointercancel", () => { gesture = null; }, { capture: true, passive: true });
 
 spaceButtons.forEach(button => button.addEventListener("click", () => {
   const index = ROOT_ITEMS.findIndex(item => item.id === `space:${button.dataset.space}`);
   if (index < 0) return;
   stack.splice(1);
   stack[0].index = index;
-  renderFrame();
+  stack[0].activeSynthetic = false;
+  renderLevelDeck();
 }));
 
 document.getElementById("v2-descend")?.addEventListener("click", descend);
 document.getElementById("v2-ascend")?.addEventListener("click", ascend);
-document.getElementById("v2-previous")?.addEventListener("click", () => swiper?.slidePrev());
-document.getElementById("v2-next")?.addEventListener("click", () => swiper?.slideNext());
+document.getElementById("v2-previous")?.addEventListener("click", () => horizontalSwipers.get("current")?.slidePrev());
+document.getElementById("v2-next")?.addEventListener("click", () => horizontalSwipers.get("current")?.slideNext());
 document.getElementById("v2-flip")?.addEventListener("click", () => {
-  const card = swiper?.slides[swiper.activeIndex]?.querySelector(".v2-card");
+  const currentSwiper = horizontalSwipers.get("current");
+  const card = currentSwiper?.slides[currentSwiper.activeIndex]?.querySelector(".v2-card");
   if (card) card.dataset.flipped = card.dataset.flipped === "true" ? "false" : "true";
 });
 
-stack.push({ id: "root", title: "Pantheon", items: ROOT_ITEMS, index: 0, canCreate: false, rootSpace: "pantheon" });
-renderFrame();
+stack.push({ id: "root", title: "Pantheon", items: ROOT_ITEMS, index: 0, activeSynthetic: false, canCreate: false, rootSpace: "pantheon" });
+renderLevelDeck();
