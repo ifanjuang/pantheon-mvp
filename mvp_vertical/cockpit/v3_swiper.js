@@ -13,6 +13,7 @@
 
   let shell = null;
   let wrapper = null;
+  let slides = null;
   let swiper = null;
   let latestNodes = [];
   let currentNode = null;
@@ -32,10 +33,12 @@
 
   function cardIdentity(node) {
     if (!(node instanceof Element)) return "";
-    return node.dataset.entityId
-      || node.getAttribute("data-card-id")
-      || node.querySelector("[data-entity-id]")?.dataset.entityId
-      || node.querySelector("h1,h2,h3,.v2-card-title")?.textContent?.trim()
+    const card = node.matches(".v2-card") ? node : node.querySelector(".v2-card");
+    if (!card) return "";
+    return card.dataset.entityId
+      || card.getAttribute("data-card-id")
+      || card.querySelector("[data-entity-id]")?.dataset.entityId
+      || card.querySelector("h1,h2,h3,.v2-card-title")?.textContent?.trim()
       || "";
   }
 
@@ -44,8 +47,10 @@
     const clone = node.cloneNode(true);
     clone.removeAttribute?.("id");
     clone.removeAttribute?.("data-v3-flip-bound");
+    clone.removeAttribute?.("data-flipped");
     clone.querySelectorAll?.("[id]").forEach(item => item.removeAttribute("id"));
     clone.querySelectorAll?.("[data-v3-flip-bound]").forEach(item => item.removeAttribute("data-v3-flip-bound"));
+    clone.querySelectorAll?.("[data-flipped]").forEach(item => item.removeAttribute("data-flipped"));
     clone.querySelectorAll?.("button,input,select,textarea,a,[tabindex]").forEach(item => {
       item.setAttribute("tabindex", "-1");
       if ("disabled" in item) item.disabled = true;
@@ -83,7 +88,7 @@
   function createActionCard() {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "v2-swiper-create-card";
+    button.className = "v2-swiper-create-card swiper-no-swiping";
     button.setAttribute("aria-label", "Ajouter un nouvel élément");
     button.innerHTML = '<span class="v2-swiper-create-mark">+</span><span class="v2-swiper-create-copy"><strong>Nouvel élément</strong><small>Créer dans la collection courante</small></span>';
     button.addEventListener("click", () => {
@@ -96,33 +101,58 @@
     return button;
   }
 
-  function restoreCurrentSlide(instance = swiper, speed = 0) {
-    if (instance && instance.activeIndex !== 1) instance.slideTo(1, speed, false);
-  }
-
-  function ensureShell() {
+  function createShell() {
     if (shell?.isConnected) return;
     shell = document.createElement("div");
     shell.className = "swiper v2-swiper v3-swiper";
     shell.setAttribute("aria-roledescription", "carrousel");
+
     wrapper = document.createElement("div");
     wrapper.className = "swiper-wrapper v2-swiper-wrapper";
-    wrapper.append(createSlide("previous"), createSlide("current"), createSlide("next"));
+    slides = {
+      previous: createSlide("previous"),
+      current: createSlide("current"),
+      next: createSlide("next"),
+    };
+    wrapper.append(slides.previous, slides.current, slides.next);
     shell.append(wrapper);
     nativeReplaceChildren(shell);
+  }
+
+  function restoreCurrentSlide(instance = swiper, speed = 0) {
+    if (!instance || instance.destroyed) return;
+    if (instance.activeIndex !== 1 || instance.translate !== -instance.snapGrid[1]) {
+      instance.slideTo(1, speed, false);
+    }
+  }
+
+  function initSwiper() {
+    if (swiper || !shell?.isConnected) return;
 
     swiper = new window.Swiper(shell, {
+      init: false,
       initialSlide: 1,
+      slidesPerView: 1,
+      centeredSlides: true,
       speed: 300,
       threshold: 12,
+      resistance: true,
       resistanceRatio: 0.72,
       grabCursor: true,
       watchOverflow: false,
       allowTouchMove: true,
       preventInteractionOnTransition: true,
+      preventClicks: true,
+      preventClicksPropagation: true,
+      touchStartPreventDefault: false,
+      touchMoveStopPropagation: true,
+      noSwiping: true,
+      noSwipingSelector: "button,input,select,textarea,a,[contenteditable='true']",
       observer: false,
       observeParents: false,
+      observeSlideChildren: false,
       resizeObserver: true,
+      roundLengths: true,
       keyboard: { enabled: false },
       a11y: {
         enabled: true,
@@ -130,6 +160,9 @@
         slideLabelMessage: "Carte {{index}} sur {{slidesLength}}",
       },
       on: {
+        beforeInit(instance) {
+          instance.slideTo(1, 0, false);
+        },
         init(instance) {
           instance.slideTo(1, 0, false);
           requestAnimationFrame(() => requestAnimationFrame(() => restoreCurrentSlide(instance, 0)));
@@ -140,19 +173,35 @@
         touchEnd(instance) {
           if (instance.activeIndex === 1 && !instance.animating) userGestureActive = false;
         },
-        transitionStart() { stage.dataset.swiperTransition = "true"; },
-        transitionEnd(instance) {
+        slideChangeTransitionStart() {
+          stage.dataset.swiperTransition = "true";
+        },
+        slideChangeTransitionEnd(instance) {
           delete stage.dataset.swiperTransition;
           moveFromSwiper(instance);
         },
       },
     });
+
+    swiper.init();
   }
 
   function replaceSlideContent(slide, node) {
-    const current = slide.firstElementChild;
-    if (current && node && cardIdentity(current.querySelector?.(".v2-card") || current) === cardIdentity(node)) return;
+    const existing = slide.firstElementChild;
+    const existingIdentity = cardIdentity(existing);
+    const nextIdentity = cardIdentity(node);
+    if (existing && node && existingIdentity && existingIdentity === nextIdentity) return false;
     slide.replaceChildren(createStack(node));
+    return true;
+  }
+
+  function refreshSwiperGeometry() {
+    if (!swiper || swiper.destroyed) return;
+    swiper.updateSize();
+    swiper.updateSlides();
+    swiper.updateProgress();
+    swiper.updateSlidesClasses();
+    restoreCurrentSlide(swiper, 0);
   }
 
   function finishNavigation() {
@@ -169,6 +218,7 @@
   function moveFromSwiper(instance) {
     if (!userGestureActive || navigationLocked || instance.activeIndex === 1) return;
     userGestureActive = false;
+
     const active = instance.slides[instance.activeIndex];
     if (active?.dataset?.swiperAction === "create") {
       restoreCurrentSlide(instance, 180);
@@ -179,6 +229,7 @@
     const button = document.getElementById(pendingDirection < 0 ? "v2-previous" : "v2-next");
     navigationLocked = true;
     stage.dataset.swiperNavigation = "true";
+
     if (button && !button.disabled) {
       button.click();
       navigationTimeout = window.setTimeout(finishNavigation, 900);
@@ -189,10 +240,7 @@
   }
 
   function updateMobile(node) {
-    ensureShell();
-    const previous = wrapper.querySelector('[data-swiper-role="previous"]');
-    const current = wrapper.querySelector('[data-swiper-role="current"]');
-    const next = wrapper.querySelector('[data-swiper-role="next"]');
+    createShell();
     const previousButton = document.getElementById("v2-previous");
 
     if (currentNode && cardIdentity(currentNode) !== cardIdentity(node)) {
@@ -201,16 +249,16 @@
     }
     currentNode = node;
 
-    previous.dataset.swiperAction = previousButton?.disabled ? "create" : "";
-    replaceSlideContent(previous, previousButton?.disabled ? createActionCard() : (previousProjection || inertPreview(node)));
-    replaceSlideContent(current, node);
-    replaceSlideContent(next, nextProjection || inertPreview(node));
+    slides.previous.dataset.swiperAction = previousButton?.disabled ? "create" : "";
+    const changed = [
+      replaceSlideContent(slides.previous, previousButton?.disabled ? createActionCard() : (previousProjection || inertPreview(node))),
+      replaceSlideContent(slides.current, node),
+      replaceSlideContent(slides.next, nextProjection || inertPreview(node)),
+    ].some(Boolean);
 
-    swiper.updateSize();
-    swiper.updateSlides();
-    swiper.updateProgress();
-    swiper.updateSlidesClasses();
-    restoreCurrentSlide(swiper, 0);
+    if (!swiper) initSwiper();
+    else if (changed) refreshSwiperGeometry();
+
     requestAnimationFrame(() => requestAnimationFrame(() => restoreCurrentSlide(swiper, 0)));
     if (navigationLocked) finishNavigation();
   }
@@ -221,6 +269,7 @@
     swiper = null;
     shell = null;
     wrapper = null;
+    slides = null;
     latestNodes = [];
     currentNode = null;
     previousProjection = null;
@@ -237,6 +286,7 @@
     rendererClearedStage = false;
     latestNodes = nodes;
     const node = nodes.find(item => item instanceof Node) || null;
+
     if (!node || node.classList?.contains("v2-empty")) {
       destroyProjection();
       nativeReplaceChildren(...nodes);
