@@ -32,6 +32,7 @@
   position: relative;
   width: 100%;
   min-width: 0;
+  height: var(--v3-stage-height);
   min-height: var(--v3-stage-height);
   margin-inline: auto;
   overflow: hidden;
@@ -42,7 +43,7 @@
   box-sizing: content-box;
   display: flex;
   width: 100%;
-  height: 100%;
+  height: var(--v3-stage-height) !important;
   min-height: var(--v3-stage-height);
 }
 
@@ -53,7 +54,7 @@
   flex-shrink: 0;
   width: 100%;
   min-width: 0;
-  height: auto;
+  height: var(--v3-stage-height);
   min-height: var(--v3-stage-height);
   padding: var(--v3-slide-block-padding) var(--v3-stage-gutter) calc(var(--v3-slide-block-padding) + (2 * var(--v3-stack-step)));
   place-items: start center;
