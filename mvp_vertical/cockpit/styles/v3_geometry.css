@@ -10,6 +10,7 @@
   --v3-card-border: 1px;
   --v3-card-padding: 1.25rem;
   --v3-stage-gutter: 0;
+  --v3-backdrop: #353738;
   --v3-slide-block-padding: 0;
   --v3-stack-step: .55rem;
   --v3-stage-height: 100vh;
@@ -197,4 +198,13 @@ body.v3-page {
   height: var(--v3-stage-height);
   min-height: var(--v3-stage-height);
   overflow: hidden;
+}
+
+/* Backdrop behind the cards.
+   V2 paints a light "paper" gradient on .v2-body; the V3 surface is a dark
+   neutral so the cards read as objects sitting on a backdrop rather than as
+   panels on a page. Scoped to V3 so the V2 layer is untouched. */
+:root[data-cockpit-version="3"] body.v2-body,
+:root[data-cockpit-version="3"] body.v3-page {
+  background: var(--v3-backdrop);
 }
