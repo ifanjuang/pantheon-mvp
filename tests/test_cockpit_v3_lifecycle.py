@@ -1,16 +1,14 @@
-"""Static guards for the Cockpit V3 Swiper lifecycle (issue #108).
+"""Architecture budgets for the cockpit navigation core.
 
-These checks are text-level, not runtime: they pin the architectural contract so
-a future edit cannot silently reintroduce the destroy/rebuild pattern the refactor
-removed.
+These are static guards, not runtime measurements: they pin the contracts so a
+later edit cannot quietly reintroduce a Swiper-shaped cockpit or mount a whole
+collection into the DOM again.
 
-Contract:
-  - Swiper is instantiated only inside the shared controllers, never in the demo
-    wiring or the live adapter.
-  - The CollectionController bootstraps with a `New` slide plus a placeholder and
-    then only appends further slides.
-  - Neither the demo app nor the live adapter destroys/recreates Swiper between
-    collections; switching collections reuses the instance.
+Contracts:
+  - Swiper exists in exactly one module (the MotionAdapter);
+  - the cockpit never calls Swiper's slide APIs directly;
+  - at most three projections are mounted (active plus one neighbour each side);
+  - an already-resident array is applied at once, never faked as a stream.
 """
 
 from __future__ import annotations
@@ -19,52 +17,60 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COCKPIT = ROOT / "mvp_vertical" / "cockpit"
+ADAPTER = "v3/collection/motion_adapter.js"
+
+# Every cockpit module that must stay free of Swiper.
+SWIPER_FREE = (
+    "v3/collection/navigation_state.js",
+    "v3/collection/collection_provider.js",
+    "v3/collection/collection_controller.js",
+    "v3/collection/level_controller.js",
+    "v3/collection/card_renderer.js",
+    "v3/demo_collection_app.js",
+)
 
 
 def _read(rel: str) -> str:
     return (COCKPIT / rel).read_text(encoding="utf-8")
 
 
-def test_swiper_is_only_constructed_inside_controllers() -> None:
-    # Business wiring must not own Swiper construction.
-    for rel in ("v3/demo_collection_app.js", "v3_swiper.js"):
+def test_swiper_is_confined_to_the_motion_adapter() -> None:
+    adapter = _read(ADAPTER)
+    assert "new window.Swiper" in adapter
+
+    for rel in SWIPER_FREE:
         source = _read(rel)
         assert "new window.Swiper" not in source, rel
         assert "new Swiper(" not in source, rel
 
-    # The controllers are the only place Swiper is created.
-    controller = _read("v3/collection/collection_controller.js")
-    level = _read("v3/collection/level_controller.js")
-    assert "new window.Swiper" in controller
-    assert "new window.Swiper" in level
+
+def test_cockpit_never_drives_swiper_slide_apis_directly() -> None:
+    # These belong to the adapter alone, so the engine stays replaceable.
+    for rel in SWIPER_FREE + ("v3_swiper.js",):
+        source = _read(rel)
+        for forbidden in ("appendSlide", "removeAllSlides", "updateSlides", "slideTo(", "slidePrev(", "slideNext("):
+            assert forbidden not in source, f"{rel} calls {forbidden}"
 
 
-def test_collection_controller_uses_placeholder_then_append() -> None:
-    controller = _read("v3/collection/collection_controller.js")
-    # Bootstrap adds the New slide and a placeholder, first item replaces the
-    # placeholder, the rest are appended.
-    assert "renderPlaceholder()" in controller
-    assert "appendSlide" in controller
-    # No full rebuild: the instance is reused via removeAllSlides, not destroy.
-    assert "removeAllSlides" in controller
+def test_at_most_three_projections_are_mounted() -> None:
+    adapter = _read(ADAPTER)
+
+    # Swiper Virtual keeps only the active slide plus one neighbour per side.
+    assert "virtual" in adapter
+    assert "addSlidesBefore: 1" in adapter
+    assert "addSlidesAfter: 1" in adapter
 
 
-def test_old_rebuild_pattern_is_gone() -> None:
-    demo = _read("v3/demo_collection_app.js")
-    # The per-navigation rebuild helpers must no longer exist.
-    assert "destroyLevelDeck" not in demo
-    assert "buildHorizontalShell" not in demo
-    assert "renderLevelDeck" not in demo
-    # The demo now delegates the Swiper lifecycle to the shared controllers.
-    assert "createLevelController" in demo
+def test_resident_arrays_are_not_fake_streamed() -> None:
+    provider = _read("v3/collection/collection_provider.js")
 
-    adapter = _read("v3_swiper.js")
-    # The live adapter no longer monkeypatches the stage; it drives a controller.
-    assert "stage.replaceChildren =" not in adapter
-    assert "createCollectionController" in adapter
+    assert "isAsyncIterable" in provider
+    assert "Symbol.asyncIterator" in provider
+    # An array must be applied in one go, with no per-frame drip.
+    assert "requestAnimationFrame" not in provider
 
 
-def test_demo_html_targets_cockpit_v3() -> None:
+def test_demo_html_targets_the_single_cockpit_page() -> None:
     demo_html = _read("demo.html")
     assert "index.html?mode=demo" in demo_html
     assert "v2.html?mode=demo" not in demo_html

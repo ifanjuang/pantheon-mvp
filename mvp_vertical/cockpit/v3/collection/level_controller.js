@@ -1,17 +1,20 @@
-// Cockpit V3 — LevelController (demo two-axis navigation).
+// Cockpit — LevelController.
 //
-// Owns two Swiper instances, each initialized once and never destroyed:
-//   - a vertical Swiper with three stable slides (parent · current · child);
-//   - one horizontal CollectionController hosted inside the current slide.
+// TRANSITIONAL: this is the demo's two-axis presentation, not the general
+// target. The durable pieces are NavigationState, CollectionController and
+// MotionAdapter; this file only arranges them as a parent/current/child deck.
+// A desktop master/detail projection would replace it without touching state.
 //
-// Level changes recycle the three vertical slots in place (parent/child are
-// cheap static previews) and re-`load()` the single horizontal controller onto
-// the new collection. There is no `destroy()`, no wrapper recreation and no
-// nested Swiper churn.
+// Three level hosts exist and are recycled in place; the current host owns the
+// single horizontal CollectionController and is never re-rendered from scratch.
 
 import { createCollectionController } from "./collection_controller.js";
+import { createDeckMotion } from "./motion_adapter.js";
 import { renderPreview } from "./card_renderer.js";
-import { streamArray } from "./collection_provider.js";
+
+const PARENT = 0;
+const CURRENT = 1;
+const CHILD = 2;
 
 export function createLevelController({
   stage,
@@ -22,117 +25,78 @@ export function createLevelController({
   onCommit = () => {},
   onMoveState = () => {},
 }) {
-  const shell = document.createElement("div");
-  shell.className = "swiper v3-level-swiper";
-  const wrapper = document.createElement("div");
-  wrapper.className = "swiper-wrapper v3-level-wrapper";
+  const host = document.createElement("div");
+  host.className = "v3-level-host";
+  stage.replaceChildren(host);
 
-  const slides = {
-    parent: levelSlide("parent"),
-    current: levelSlide("current"),
-    child: levelSlide("child"),
-  };
-  wrapper.append(slides.parent, slides.current, slides.child);
-  shell.append(wrapper);
-  stage.replaceChildren(shell);
+  let committing = false;
+  let bounds = { previous: false, next: false };
 
-  // The single horizontal controller lives in the current level slide.
+  const deck = createDeckMotion({
+    mount: host,
+    hosts: 3,
+    initial: CURRENT,
+    direction: "vertical",
+    label: "Navigation verticale entre les niveaux",
+    onMoveState,
+    onSettled(index) {
+      if (committing || index === CURRENT) return;
+      committing = true;
+      if (index === CHILD && bounds.next) onCommit(1);
+      else if (index === PARENT && bounds.previous) onCommit(-1);
+      else {
+        deck.goTo(CURRENT, { animate: true });
+        committing = false;
+      }
+    },
+  });
+
+  // The single horizontal controller lives inside the current level host.
   const collectionHost = document.createElement("div");
   collectionHost.className = "v3-collection-host";
-  slides.current.append(collectionHost);
+  deck.hostAt(CURRENT).append(collectionHost);
 
-  const horizontal = createCollectionController({
+  const collection = createCollectionController({
     mount: collectionHost,
     renderItem,
     renderNew,
     renderPlaceholder,
     onActiveChange,
     onMoveState,
-    // Inner (nested) swiper of the opposite direction, per the Swiper API.
-    swiperOptions: { nested: true },
+    label: "Cartes de la collection courante",
   });
 
-  let cancelStream = null;
-  let allowPrev = false;
-  let allowNext = false;
-  let transitionLocked = false;
+  // Re-point the deck at the current stack position. Hosts are recycled: only
+  // the two neighbour previews are replaced, the current host is left alone.
+  function render({ collection: nextCollection, items, index = 0, parentItem = null, childItem = null, canAscend = false, canDescend = false }) {
+    committing = false;
+    bounds = { previous: Boolean(canAscend), next: Boolean(canDescend) };
 
-  const vertical = new window.Swiper(shell, {
-    direction: "vertical",
-    initialSlide: 1, // start on the current level (parent above, child below)
-    touchReleaseOnEdges: true,
-    roundLengths: true,
-    noSwipingSelector: "button,input,select,textarea,a,[contenteditable='true']",
-    on: {
-      touchStart() { onMoveState(true); },
-      sliderMove() { onMoveState(true); },
-      touchEnd(instance) { if (!instance.animating) onMoveState(false); },
-      slideChangeTransitionEnd(instance) {
-        onMoveState(false);
-        commit(instance);
-      },
-    },
-  });
+    deck.hostAt(PARENT).replaceChildren(renderPreview(parentItem));
+    deck.hostAt(CHILD).replaceChildren(renderPreview(childItem));
+    deck.setBounds(bounds);
+    deck.goTo(CURRENT, { animate: false });
 
-  function commit(instance) {
-    if (transitionLocked || instance.activeIndex === 1) return;
-    transitionLocked = true;
-    if (instance.activeIndex === 2 && allowNext) {
-      onCommit(1);
-      return;
-    }
-    if (instance.activeIndex === 0 && allowPrev) {
-      onCommit(-1);
-      return;
-    }
-    // No valid target: snap back to the current level.
-    instance.slideTo(1, 160, false);
-    transitionLocked = false;
-  }
-
-  // Render (or re-render) the deck for the current stack position. Reuses both
-  // Swiper instances; only slot contents change.
-  function render({ collection, items, index = 0, parentItem = null, childItem = null, canAscend = false, canDescend = false }) {
-    transitionLocked = false;
-    allowPrev = Boolean(canAscend);
-    allowNext = Boolean(canDescend);
-
-    slides.parent.replaceChildren(renderPreview(parentItem));
-    slides.child.replaceChildren(renderPreview(childItem));
-
-    cancelStream?.();
-    cancelStream = streamArray(horizontal, collection, items, index);
-
-    vertical.allowSlidePrev = allowPrev;
-    vertical.allowSlideNext = allowNext;
-    vertical.slideTo(1, 0, false);
-    vertical.update();
+    collection.load(nextCollection, items, index);
   }
 
   function updateDescendability(canDescend) {
-    allowNext = Boolean(canDescend);
-    vertical.allowSlideNext = allowNext;
+    bounds = { ...bounds, next: Boolean(canDescend) };
+    deck.setBounds(bounds);
   }
 
   return Object.freeze({
     render,
     updateDescendability,
-    horizontal,
-    descend() { vertical.slideNext(); },
-    ascend() { vertical.slidePrev(); },
-    slidePrevCard() { horizontal.slide(-1); },
-    slideNextCard() { horizontal.slide(1); },
-    destroy() {
-      cancelStream?.();
-      horizontal.destroy();
-      vertical.destroy(true, true);
+    collection,
+    descend() { deck.move(1); },
+    ascend() { deck.move(-1); },
+    slidePrevCard() { collection.move(-1); },
+    slideNextCard() { collection.move(1); },
+    activeElement() { return collection.activeElement(); },
+    dispose() {
+      collection.dispose();
+      deck.dispose();
     },
   });
-}
-
-function levelSlide(role) {
-  const slide = document.createElement("div");
-  slide.className = `swiper-slide v3-level-slide v3-level-slide--${role}`;
-  slide.dataset.levelRole = role;
-  return slide;
 }

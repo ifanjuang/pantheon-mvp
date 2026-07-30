@@ -289,11 +289,11 @@ document.getElementById("v2-ascend")?.addEventListener("click", () => level.asce
 document.getElementById("v2-previous")?.addEventListener("click", () => level.slidePrevCard());
 document.getElementById("v2-next")?.addEventListener("click", () => level.slideNextCard());
 document.getElementById("v2-flip")?.addEventListener("click", () => {
-  const card = stage.querySelector(".v3-level-slide--current .swiper-slide-active .v2-card");
+  const card = level.activeElement()?.querySelector(".v2-card");
   if (card) card.dataset.flipped = card.dataset.flipped === "true" ? "false" : "true";
 });
 
-window.addEventListener("pagehide", () => level.destroy(), { once: true });
+window.addEventListener("pagehide", () => level.dispose(), { once: true });
 
 stack.push({ id: "root", title: "Pantheon", items: ROOT_ITEMS, index: 0, activeSynthetic: false, canCreate: false, rootSpace: "pantheon" });
 renderDeck();

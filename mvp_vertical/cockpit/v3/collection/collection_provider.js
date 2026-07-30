@@ -1,42 +1,52 @@
-// Cockpit V3 — CollectionProvider.
+// Cockpit — CollectionProvider.
 //
-// The source of a collection's items. It emits items progressively so the
-// CollectionController exercises the real placeholder -> replace -> appendSlide
-// lifecycle even when the backing data is already resident. Business logic never
-// touches Swiper: the provider only calls the sink hooks.
+// Feeds a collection into NavigationState. Two shapes, and no pretending:
+//
+//   - an Array (already resident) is applied synchronously, in one go;
+//   - a real AsyncIterable is consumed progressively, as items actually arrive.
+//
+// There is deliberately no per-frame "streaming" of an array that is already in
+// memory: that would be latency for show.
 
-// Streams a fully-known array of items into a controller, one per animation
-// frame, then settles on `index`. Returns a cancel handle so a superseding
-// navigation can abort an in-flight stream cleanly.
-export function streamArray(controller, collection, itemList, index = 0) {
-  const list = Array.isArray(itemList) ? itemList.slice() : [];
-  controller.bootstrap(collection);
+export function isAsyncIterable(source) {
+  return Boolean(source) && typeof source[Symbol.asyncIterator] === "function";
+}
+
+// Apply `source` to `state` for `collection`. Returns a cancel handle so a
+// superseding navigation can abandon an in-flight async load.
+export function loadCollection(state, collection, source, index = 0) {
+  if (!isAsyncIterable(source)) {
+    const items = Array.isArray(source) ? source : [];
+    state.setCollection({
+      spaceId: collection.spaceId,
+      collectionId: collection.id,
+      items,
+      index,
+      loading: false,
+    });
+    return () => {};
+  }
 
   let cancelled = false;
-  let cursor = 0;
-  let frame = 0;
 
-  function pump() {
-    if (cancelled) return;
-    // Emit a small burst per frame to stay smooth without stalling on large
-    // collections.
-    const budget = Math.min(cursor + 4, list.length);
-    for (; cursor < budget; cursor += 1) controller.push(list[cursor]);
-    if (cursor < list.length) {
-      frame = window.requestAnimationFrame(pump);
-      return;
+  state.setCollection({
+    spaceId: collection.spaceId,
+    collectionId: collection.id,
+    items: [],
+    index: 0,
+    loading: true,
+  });
+
+  (async () => {
+    try {
+      for await (const item of source) {
+        if (cancelled) return;
+        state.appendItems([item]);
+      }
+    } finally {
+      if (!cancelled) state.setLoading(false);
     }
-    controller.settle(index);
-  }
+  })();
 
-  if (!list.length) {
-    controller.settle(null);
-  } else {
-    frame = window.requestAnimationFrame(pump);
-  }
-
-  return function cancel() {
-    cancelled = true;
-    window.cancelAnimationFrame(frame);
-  };
+  return () => { cancelled = true; };
 }

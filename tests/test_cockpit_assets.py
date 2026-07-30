@@ -18,6 +18,8 @@ SCRIPTS = [
     ROOT / "mvp_vertical" / "cockpit" / "v2_bootstrap.js",
     ROOT / "mvp_vertical" / "cockpit" / "v3_swiper.js",
     ROOT / "mvp_vertical" / "cockpit" / "v3" / "demo_collection_app.js",
+    ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "navigation_state.js",
+    ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "motion_adapter.js",
     ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "collection_controller.js",
     ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "collection_provider.js",
     ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "card_renderer.js",
