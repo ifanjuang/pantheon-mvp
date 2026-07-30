@@ -66,9 +66,12 @@
     if (isDemo) await import("./demo_bootstrap.js");
 
     const swiperReady = await ensureSwiper();
-    const swiperBridge = isV3 ? "v3_swiper.js" : "v2_swiper.js";
+    // The V3 live adapter is an ES module (it imports the shared collection
+    // lifecycle); load it before the classic renderer so PantheonLiveCollection
+    // exists when v2_app_schema initializes. V2 keeps its classic bridge.
+    if (swiperReady && isV3) await import("./v3_swiper.js");
     const scripts = [
-      ...(swiperReady ? [swiperBridge] : []),
+      ...(swiperReady && !isV3 ? ["v2_swiper.js"] : []),
       "v2_shell_controls.js",
       "structured_interface.js",
       "context_resolver.js",

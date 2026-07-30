@@ -5,12 +5,13 @@ ROOT = Path(__file__).resolve().parents[1]
 COCKPIT = ROOT / "mvp_vertical" / "cockpit"
 
 
-def test_demo_reuses_v2_styles_and_not_legacy_demo_assets():
+def test_demo_redirects_to_cockpit_v3_and_not_legacy_demo_assets():
+    # Per issue #108, demo.html points at Cockpit V3 (v3.html?mode=demo) and does
+    # not load the legacy demo assets directly.
     html = (COCKPIT / "demo.html").read_text(encoding="utf-8")
 
-    assert 'href="styles/v2.css"' in html
-    assert 'href="styles/v2_refinement.css"' in html
-    assert '<script type="module" src="demo_bootstrap.js"></script>' in html
+    assert "v3.html?mode=demo" in html
+    assert "v2.html?mode=demo" not in html
     assert 'href="styles/demo.css"' not in html
     assert '<script src="demo.js"' not in html
     assert '<script src="app.js"' not in html

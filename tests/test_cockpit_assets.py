@@ -19,6 +19,12 @@ SCRIPTS = [
     ROOT / "mvp_vertical" / "cockpit" / "effects.js",
     ROOT / "mvp_vertical" / "cockpit" / "knowledge_updates.js",
     ROOT / "mvp_vertical" / "cockpit" / "demo.js",
+    ROOT / "mvp_vertical" / "cockpit" / "v3_swiper.js",
+    ROOT / "mvp_vertical" / "cockpit" / "v3" / "demo_collection_app.js",
+    ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "collection_controller.js",
+    ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "collection_provider.js",
+    ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "card_renderer.js",
+    ROOT / "mvp_vertical" / "cockpit" / "v3" / "collection" / "level_controller.js",
     ROOT / "mvp_vertical" / "mobile_editor" / "app.js",
     ROOT / "mvp_vertical" / "mobile_editor" / "sw.js",
 ]
