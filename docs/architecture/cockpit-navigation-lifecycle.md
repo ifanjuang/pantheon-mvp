@@ -10,9 +10,41 @@ L'état métier est **indépendant du moteur d'animation**. Swiper n'est qu'un
 adaptateur de mouvement, confiné dans un seul module et remplaçable.
 
 ```
-SnapshotProvider ─► NavigationState ─► CollectionController ─► CardHost ─► MotionAdapter
-   (source)           (état pur)          (liaison)             (DOM)      (mouvement)
+SnapshotProvider ─► CockpitSnapshot ─► NavigationState ─► CollectionController ─► CardHost ─► MotionAdapter
+   (source)            (contrat)         (état pur)           (liaison)            (DOM)      (mouvement)
 ```
+
+## Une seule forme d'entrée : `CockpitSnapshot`
+
+```text
+DemoProvider ─┐
+              ├→ CockpitSnapshot → même Cockpit
+LiveProvider ─┘
+```
+
+`v3/collection/cockpit_snapshot.js` définit le contrat versionné
+(`cockpit.snapshot.v1`) que le Cockpit consomme, quelle qu'en soit la source —
+fixture de démonstration, renderer live, ou un futur point d'entrée serveur :
+
+```text
+{ snapshot_version, generated_at, revision, source,
+  space, collection, items, navigation, warnings }
+```
+
+Règles :
+
+- **refus explicite** — une version inconnue, un payload non-objet, des `items`
+  invalides ou une carte **sans identité stable** sont refusés. Le refus reste
+  visible (`Projection refusée (raison)`) ; il n'est jamais dégradé en collection
+  vide ni en succès silencieux ;
+- `actions` et `schemas` sont **réservés au serveur** : transportés tels quels,
+  jamais interprétés ici. Le Cockpit affiche ce qu'un serveur expose, il ne
+  décide pas de ce qui est autorisé (`visible != authorized`) ;
+- `generated_at` et `revision` portent la fraîcheur de la projection.
+
+Les deux producteurs vivent dans `v3/providers/` (`demo_provider.js`,
+`live_provider.js`) et ne font que projeter : ils ne récupèrent, ne décident et
+n'autorisent rien.
 
 - **NavigationState** (`v3/collection/navigation_state.js`) — données pures, sans
   DOM ni Swiper, testables sans navigateur :
@@ -121,12 +153,16 @@ faux streaming d'un tableau         = aucun
 ## Suite prévue
 
 ```text
-CockpitSnapshot versionné → unification démo/live → registre de cartes
-schema-driven → migration des sélecteurs .v2-card vers un registre d'hôtes
+snapshot émis par le serveur → registre de cartes schema-driven →
+migration des sélecteurs .v2-card vers un registre d'hôtes →
+invalidation incrémentale
 ```
 
-Snapshot, contrat d'actions, autorisations et conflits de révision sont des
-contrats **serveur** : le Cockpit les consomme, il ne les invente pas.
+Contrat d'actions, autorisations, conflits de révision et politique de fraîcheur
+sont des contrats **serveur** : le Cockpit les consomme, il ne les invente pas.
+Aujourd'hui les deux providers construisent le snapshot côté client ; l'étape
+suivante est qu'un point d'entrée serveur émette directement
+`cockpit.snapshot.v1`, sans changer ce que le Cockpit consomme.
 
 ## Frontière
 

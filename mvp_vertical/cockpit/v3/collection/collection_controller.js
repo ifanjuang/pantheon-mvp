@@ -1,16 +1,18 @@
 // Cockpit — CollectionController.
 //
-// Binds the three independent pieces together and owns none of their concerns:
+// Binds the independent pieces together and owns none of their concerns:
 //
-//   NavigationState (data) · CollectionProvider (source) · MotionAdapter (motion)
+//   CockpitSnapshot (input) · NavigationState (data) · MotionAdapter (motion)
 //
-// The rest of the cockpit talks to this controller, never to Swiper. Only the
-// active projection and its two neighbours are ever mounted; the collection
-// itself stays in NavigationState as data.
+// It accepts exactly one input shape — a CockpitSnapshot — so the demo and the
+// live path drive the same cockpit. The rest of the cockpit talks to this
+// controller, never to Swiper. Only the active projection and its two
+// neighbours are ever mounted; the collection stays in state as data.
 
 import { createNavigationState } from "./navigation_state.js";
 import { createWindowedMotion } from "./motion_adapter.js";
 import { loadCollection } from "./collection_provider.js";
+import { readSnapshot, collectionOf, activeIndexOf } from "./cockpit_snapshot.js";
 
 export function createCollectionController({
   mount,
@@ -18,8 +20,10 @@ export function createCollectionController({
   renderNew = () => null,
   renderPlaceholder,
   renderEmpty = null,
+  renderRefusal = null,
   onActiveChange = () => {},
   onMoveState = () => {},
+  onRefusal = () => {},
   state = null,
   label = "",
 }) {
@@ -28,13 +32,15 @@ export function createCollectionController({
 
   const navigation = state || createNavigationState();
   let collection = { id: null, title: "", canCreate: false };
+  let refused = null;
   let cancelLoad = null;
   let syncing = false;
   let refreshFrame = 0;
 
-  const offset = () => (collection.canCreate ? 1 : 0);
+  const offset = () => (collection.canCreate && !refused ? 1 : 0);
 
   function renderAt(virtualIndex) {
+    if (refused) return renderRefusalNode(refused);
     if (offset() && virtualIndex === 0) return renderNew(collection);
 
     const itemIndex = virtualIndex - offset();
@@ -50,12 +56,24 @@ export function createCollectionController({
     });
   }
 
+  // A refused snapshot stays visible as a refusal. It is never downgraded to an
+  // empty collection or a silent success.
+  function renderRefusalNode(result) {
+    if (renderRefusal) return renderRefusal(result);
+    const node = document.createElement("p");
+    node.className = "v2-empty";
+    node.setAttribute("role", "status");
+    node.textContent = `Projection refusée (${result.reason}). ${result.detail || ""}`.trim();
+    return node;
+  }
+
   const motion = createWindowedMotion({
     mount,
     renderAt,
     label,
     onMoveState,
     onIndexChange(virtualIndex) {
+      if (refused) return;
       if (offset() && virtualIndex === 0) {
         onActiveChange(null, -1, { synthetic: "create", collection });
         return;
@@ -80,37 +98,47 @@ export function createCollectionController({
   }
 
   function projectionCount() {
-    const snapshot = navigation.snapshot();
-    return offset() + (snapshot.itemCount || 1);
+    if (refused) return 1;
+    return offset() + (navigation.snapshot().itemCount || 1);
   }
 
-  function syncMotion({ reposition = true } = {}) {
+  function syncMotion() {
     const snapshot = navigation.snapshot();
     motion.mount(projectionCount(), Math.max(0, snapshot.activeIndex) + offset());
-    if (reposition) motion.goTo(Math.max(0, snapshot.activeIndex) + offset(), { animate: false });
   }
 
   navigation.subscribe(() => {
-    if (syncing) return;
+    if (syncing || refused) return;
     // Items arrived (or the collection changed) while we were not driving.
     motion.extendTo(projectionCount());
     scheduleRefresh();
   });
 
-  // Load a collection. `source` is an Array (applied at once) or an
-  // AsyncIterable (consumed as it yields).
-  function load(nextCollection, source, index = 0) {
+  // Load a CockpitSnapshot. Returns the validation result so a caller can react
+  // to a refusal; the refusal is rendered either way.
+  function load(payload) {
     cancelLoad?.();
-    collection = {
-      id: nextCollection?.id ?? null,
-      title: nextCollection?.title ?? "",
-      canCreate: Boolean(nextCollection?.canCreate),
-      spaceId: nextCollection?.spaceId ?? null,
-    };
-    cancelLoad = loadCollection(navigation, collection, source, index);
+    const result = readSnapshot(payload);
+
+    if (!result.ok) {
+      refused = result;
+      collection = { id: null, title: "", canCreate: false };
+      navigation.setCollection({ collectionId: null, items: [], index: 0, loading: false });
+      syncMotion();
+      motion.refresh();
+      onRefusal(result);
+      return result;
+    }
+
+    refused = null;
+    const snapshot = result.snapshot;
+    collection = collectionOf(snapshot);
+    cancelLoad = loadCollection(navigation, collection, snapshot.items, activeIndexOf(snapshot));
     syncMotion();
-    const snapshot = navigation.snapshot();
-    onActiveChange(snapshot.activeItem, snapshot.activeIndex, { synthetic: null, collection });
+
+    const current = navigation.snapshot();
+    onActiveChange(current.activeItem, current.activeIndex, { synthetic: null, collection });
+    return result;
   }
 
   return Object.freeze({
@@ -128,5 +156,6 @@ export function createCollectionController({
       motion.dispose();
     },
     get collection() { return collection; },
+    get refusal() { return refused; },
   });
 }

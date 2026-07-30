@@ -11,10 +11,12 @@
 // explicit host registry is a separate step.
 
 import { createCollectionController } from "./v3/collection/collection_controller.js";
+import { createLiveProvider } from "./v3/providers/live_provider.js";
 
 const stage = document.getElementById("v2-stage");
 
 if (stage && typeof window.Swiper === "function") {
+  const provider = createLiveProvider();
   let controller = null;
   let currentKey = null;
   let renderCard = null;   // provided by the live renderer on each present()
@@ -89,7 +91,7 @@ if (stage && typeof window.Swiper === "function") {
 
     if (key !== currentKey || !siblings.length) {
       currentKey = key;
-      controller.load({ id: key, canCreate: false, title: "" }, siblings, index);
+      controller.load(provider.toSnapshot({ key, siblings, index }));
       return;
     }
     // Same collection re-presented (e.g. project reload): reposition only.

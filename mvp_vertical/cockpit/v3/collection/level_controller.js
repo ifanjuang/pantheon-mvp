@@ -68,7 +68,7 @@ export function createLevelController({
 
   // Re-point the deck at the current stack position. Hosts are recycled: only
   // the two neighbour previews are replaced, the current host is left alone.
-  function render({ collection: nextCollection, items, index = 0, parentItem = null, childItem = null, canAscend = false, canDescend = false }) {
+  function render({ snapshot, parentItem = null, childItem = null, canAscend = false, canDescend = false }) {
     committing = false;
     bounds = { previous: Boolean(canAscend), next: Boolean(canDescend) };
 
@@ -77,7 +77,7 @@ export function createLevelController({
     deck.setBounds(bounds);
     deck.goTo(CURRENT, { animate: false });
 
-    collection.load(nextCollection, items, index);
+    return collection.load(snapshot);
   }
 
   function updateDescendability(canDescend) {
