@@ -48,6 +48,8 @@ export function createLevelController({
     renderPlaceholder,
     onActiveChange,
     onMoveState,
+    // Inner (nested) swiper of the opposite direction, per the Swiper API.
+    swiperOptions: { nested: true },
   });
 
   let cancelStream = null;
@@ -57,21 +59,10 @@ export function createLevelController({
 
   const vertical = new window.Swiper(shell, {
     direction: "vertical",
-    nested: true,
-    initialSlide: 1,
-    slidesPerView: 1,
-    threshold: 12,
-    touchAngle: 35,
-    resistanceRatio: 0.62,
-    observer: false,
-    observeParents: false,
-    observeSlideChildren: false,
-    resizeObserver: true,
-    roundLengths: true,
+    initialSlide: 1, // start on the current level (parent above, child below)
     touchReleaseOnEdges: true,
-    noSwiping: true,
+    roundLengths: true,
     noSwipingSelector: "button,input,select,textarea,a,[contenteditable='true']",
-    a11y: { enabled: true, containerMessage: "Navigation verticale entre les niveaux", slideLabelMessage: "Niveau {{index}} sur {{slidesLength}}" },
     on: {
       touchStart() { onMoveState(true); },
       sliderMove() { onMoveState(true); },

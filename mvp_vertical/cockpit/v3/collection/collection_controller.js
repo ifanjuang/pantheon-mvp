@@ -15,22 +15,10 @@
 // The controller is transport-agnostic: a provider pushes items in through
 // `bootstrap()` / `push()` / `settle()`.
 
-const DEFAULT_SWIPER_OPTIONS = Object.freeze({
-  slidesPerView: 1,
-  threshold: 8,
-  touchAngle: 35,
-  resistanceRatio: 0.62,
-  // Pantheon owns every DOM mutation explicitly, so the observers stay off.
-  observer: false,
-  observeParents: false,
-  observeSlideChildren: false,
-  resizeObserver: true,
-  roundLengths: true,
-  // Let Swiper own the first swipe / edge release on iOS.
-  touchReleaseOnEdges: true,
-  preventClicks: true,
-  preventClicksPropagation: true,
-  noSwiping: true,
+// Only the options that differ from Swiper defaults and that we actually need.
+const BASE_OPTIONS = Object.freeze({
+  touchReleaseOnEdges: true, // hand back the first swipe at the edges (iOS)
+  roundLengths: true,        // keep card text crisp on transformed slides
   noSwipingSelector: "button,input,select,textarea,a,[contenteditable='true']",
 });
 
@@ -42,7 +30,6 @@ export function createCollectionController({
   onActiveChange = () => {},
   onMoveState = () => {},
   swiperOptions = {},
-  a11y = {},
 }) {
   if (typeof window.Swiper !== "function") throw new Error("Swiper runtime unavailable");
   if (!mount) throw new Error("CollectionController requires a mount element");
@@ -78,12 +65,8 @@ export function createCollectionController({
   }
 
   const swiper = new window.Swiper(shell, {
-    ...DEFAULT_SWIPER_OPTIONS,
+    ...BASE_OPTIONS,
     ...swiperOptions,
-    init: false,
-    initialSlide: 0,
-    runCallbacksOnInit: false,
-    a11y: { enabled: true, ...a11y },
     on: {
       touchStart() { onMoveState(true); },
       sliderMove() { onMoveState(true); },
@@ -92,7 +75,6 @@ export function createCollectionController({
       slideChangeTransitionEnd() { onMoveState(false); },
     },
   });
-  swiper.init();
 
   function handleSlideChange(instance) {
     const offset = createOffset();
