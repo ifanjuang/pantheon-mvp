@@ -63,6 +63,9 @@ def test_mobile_surface_keeps_navigation_implicit_and_card_first() -> None:
     for control_id in ("v2-previous", "v2-next", "v2-descend", "v2-ascend", "v2-flip"):
         assert f'id="{control_id}"' in html
 
-    assert '.v2-location, .v2-navigation' in shell_css
+    # Both nav-chrome elements stay hidden on the mobile surface (format-robust:
+    # the selectors may be listed across separate lines).
+    assert '.v2-location' in shell_css
+    assert '.v2-navigation' in shell_css
     assert 'display: none !important;' in shell_css
     assert 'const MOBILE_QUERY = "(max-width: 620px)"' in swiper

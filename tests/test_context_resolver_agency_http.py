@@ -110,6 +110,7 @@ def test_v2_context_surface_is_read_only_and_requires_explicit_selection() -> No
     assert 'setTimeout(() => void search(raw, generation), 180)' in javascript
     assert 'generation !== searchGeneration' in javascript
     assert 'id="v2-context-input"' in html
-    assert 'src="context_resolver.js"' in html
-    assert 'src="agency_data_binding.js"' in html
-    assert 'src="v2_context.js"' in html
+    bootstrap = (ROOT / "mvp_vertical" / "cockpit" / "v2_bootstrap.js").read_text(encoding="utf-8")
+    assert '"context_resolver.js"' in bootstrap
+    assert '"agency_data_binding.js"' in bootstrap
+    assert '"v2_context.js"' in bootstrap
