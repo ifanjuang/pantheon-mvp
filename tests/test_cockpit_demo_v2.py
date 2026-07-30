@@ -10,7 +10,7 @@ def test_demo_redirects_to_cockpit_v3_and_not_legacy_demo_assets():
     # not load the legacy demo assets directly.
     html = (COCKPIT / "demo.html").read_text(encoding="utf-8")
 
-    assert "v3.html?mode=demo" in html
+    assert "index.html?mode=demo" in html
     assert "v2.html?mode=demo" not in html
     assert 'href="styles/demo.css"' not in html
     assert '<script src="demo.js"' not in html
@@ -22,9 +22,9 @@ def test_demo_bootstrap_loads_the_same_v2_modules():
     # reuses the same modules via demo_bootstrap.js.
     demo_bootstrap = (COCKPIT / "demo_bootstrap.js").read_text(encoding="utf-8")
     v2_bootstrap = (COCKPIT / "v2_bootstrap.js").read_text(encoding="utf-8")
-    v2_html = (COCKPIT / "v2.html").read_text(encoding="utf-8")
+    v2_html = (COCKPIT / "index.html").read_text(encoding="utf-8")
 
-    assert 'src="v2_bootstrap.js"' in v2_html
+    assert 'src="v3_bootstrap.js"' in v2_html
 
     modules = [
         "structured_interface.js",

@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COCKPIT = ROOT / "mvp_vertical" / "cockpit"
 CREATE = COCKPIT / "information_create.js"
-HTML = COCKPIT / "v2.html"
+HTML = COCKPIT / "index.html"
 SCHEMA = ROOT / "mvp_vertical" / "agency_schema" / "information.json"
 
 

@@ -14,7 +14,7 @@ def test_v2_uses_schema_renderer_without_presentation_adapter():
 
 
 def test_v2_loads_one_consolidated_v2_stylesheet():
-    html = (COCKPIT / "v2.html").read_text(encoding="utf-8")
+    html = (COCKPIT / "index.html").read_text(encoding="utf-8")
     css = (COCKPIT / "styles" / "v2.css").read_text(encoding="utf-8")
 
     assert 'href="styles/v2.css"' in html

@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COCKPIT = ROOT / "mvp_vertical" / "cockpit"
-HTML = COCKPIT / "v2.html"
+HTML = COCKPIT / "index.html"
 POLICY = COCKPIT / "v2_interaction_policy.js"
 CLAIMS = COCKPIT / "project_claim_view_adapter.js"
 CLAIM_CSS = COCKPIT / "styles" / "project_claim_view.css"

@@ -66,5 +66,5 @@ def test_old_rebuild_pattern_is_gone() -> None:
 
 def test_demo_html_targets_cockpit_v3() -> None:
     demo_html = _read("demo.html")
-    assert "v3.html?mode=demo" in demo_html
+    assert "index.html?mode=demo" in demo_html
     assert "v2.html?mode=demo" not in demo_html

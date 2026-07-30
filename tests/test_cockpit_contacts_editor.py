@@ -32,7 +32,7 @@ def test_contacts_editor_keeps_optional_connector_provenance_as_data_only() -> N
 
 def test_contacts_editor_is_loaded_as_an_independent_module() -> None:
     bootstrap = (COCKPIT / "v2_bootstrap.js").read_text(encoding="utf-8")
-    html = (COCKPIT / "v2.html").read_text(encoding="utf-8")
+    html = (COCKPIT / "index.html").read_text(encoding="utf-8")
 
     assert '"contacts_editor.js"' in bootstrap
     assert '<link rel="stylesheet" href="styles/contacts_editor.css">' in html

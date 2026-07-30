@@ -48,7 +48,6 @@
   async function start() {
     const params = new URLSearchParams(window.location.search);
     const isDemo = params.get("mode") === "demo";
-    const isV3 = document.documentElement.dataset.cockpitVersion === "3";
 
     window.PANTHEON_COCKPIT_DEMO = isDemo;
     document.documentElement.dataset.cockpitMode = isDemo ? "demo" : "live";
@@ -69,9 +68,8 @@
     // The V3 live adapter is an ES module (it imports the shared collection
     // lifecycle); load it before the classic renderer so PantheonLiveCollection
     // exists when v2_app_schema initializes. V2 keeps its classic bridge.
-    if (swiperReady && isV3) await import("./v3_swiper.js");
+    if (swiperReady) await import("./v3_swiper.js");
     const scripts = [
-      ...(swiperReady && !isV3 ? ["v2_swiper.js"] : []),
       "v2_shell_controls.js",
       "structured_interface.js",
       "context_resolver.js",
