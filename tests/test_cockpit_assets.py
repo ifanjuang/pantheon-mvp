@@ -298,39 +298,25 @@ def test_notion_selective_bidirectional_policy_rejects_undeclared_and_detects_co
 
 
 def test_static_demo_reuses_cockpit_assets_and_blocks_network() -> None:
+    # demo.html is a thin redirect to Cockpit V3 (issue #108); it no longer embeds
+    # the legacy self-contained static demo (app.js / demo.js / styles/index.css).
     html = (ROOT / "mvp_vertical" / "cockpit" / "demo.html").read_text(
         encoding="utf-8"
     )
-    javascript = (ROOT / "mvp_vertical" / "cockpit" / "demo.js").read_text(
+    bootstrap = (ROOT / "mvp_vertical" / "cockpit" / "demo_bootstrap.js").read_text(
         encoding="utf-8"
     )
-    html_lower = html.lower()
 
-    assert 'href="styles/index.css"' in html
-    for script in (
-        "app.js",
-        "resources.js",
-        "effects.js",
-        "knowledge_updates.js",
-        "demo.js",
-    ):
-        assert f'src="{script}"' in html
+    assert "v3.html?mode=demo" in html
+    assert "v2.html?mode=demo" not in html
+    for legacy in ('src="app.js"', 'src="demo.js"', 'href="styles/index.css"'):
+        assert legacy not in html
 
-    assert "window.PANTHEON_COCKPIT_DEMO = true" in html
-    assert "window.fetch = async" in html
-    assert "accès réseau désactivé" in html_lower
-    assert "données fictives" in html_lower
-
-    assert "const references = [" in javascript
-    assert "const projects = [" in javascript
-    assert "workIssues: [" in javascript
-    assert "documents: [" in javascript
-    assert "referenceIds:" in javascript
-    assert "state.documents = project.documents" in javascript
-    assert "state.workIssues = project.workIssues" in javascript
-    assert "state.knowledge = references.filter" in javascript
-    assert "state.resourceProfiles = {" in javascript
-    assert "fetch(" not in javascript
+    # The demo is served read-only by demo_bootstrap.js: non-GET requests are
+    # blocked and the data comes from the fictional fixture.
+    assert 'method !== "GET"' in bootstrap
+    assert "demo-data.json" in bootstrap
+    assert "écriture désactivée" in bootstrap
 
 
 def test_mobile_editor_exposes_and_clears_device_local_data() -> None:

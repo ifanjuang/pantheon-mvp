@@ -40,9 +40,9 @@ def test_information_view_adapter_respects_cardshell_slots() -> None:
 
 
 def test_information_view_adapter_is_loaded_after_main_renderer() -> None:
-    html = V2_HTML.read_text(encoding="utf-8")
+    bootstrap = (COCKPIT / "v2_bootstrap.js").read_text(encoding="utf-8")
 
-    renderer = html.index('src="v2_app_schema.js"')
-    adapter = html.index('src="information_view_adapter.js"')
-    editor = html.index('src="schema_editor.js"')
+    renderer = bootstrap.index('"v2_app_schema.js"')
+    adapter = bootstrap.index('"information_view_adapter.js"')
+    editor = bootstrap.index('"schema_editor.js"')
     assert renderer < adapter < editor

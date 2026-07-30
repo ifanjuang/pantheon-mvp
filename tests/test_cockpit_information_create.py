@@ -13,8 +13,9 @@ SCHEMA = ROOT / "mvp_vertical" / "agency_schema" / "information.json"
 
 def test_project_loads_removable_blank_information_creation_surface() -> None:
     html = HTML.read_text(encoding="utf-8")
+    bootstrap = (COCKPIT / "v2_bootstrap.js").read_text(encoding="utf-8")
 
-    assert '<script src="information_create.js" defer></script>' in html
+    assert '"information_create.js"' in bootstrap
     assert '<link rel="stylesheet" href="styles/information_create.css">' in html
     assert CREATE.exists()
     assert (COCKPIT / "styles" / "information_create.css").exists()

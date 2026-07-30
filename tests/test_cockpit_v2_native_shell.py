@@ -6,11 +6,11 @@ COCKPIT = ROOT / "mvp_vertical" / "cockpit"
 
 
 def test_v2_uses_schema_renderer_without_presentation_adapter():
-    html = (COCKPIT / "v2.html").read_text(encoding="utf-8")
+    bootstrap = (COCKPIT / "v2_bootstrap.js").read_text(encoding="utf-8")
 
-    assert 'src="v2_app_schema.js"' in html
-    assert 'src="v2_app.js"' not in html
-    assert 'src="v2_card_presentation.js"' not in html
+    assert '"v2_app_schema.js"' in bootstrap
+    assert '"v2_app.js"' not in bootstrap
+    assert '"v2_card_presentation.js"' not in bootstrap
 
 
 def test_v2_loads_one_consolidated_v2_stylesheet():

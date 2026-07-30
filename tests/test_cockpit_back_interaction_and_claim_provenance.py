@@ -14,11 +14,11 @@ def _text(path: Path) -> str:
 
 
 def test_v2_loads_back_face_interaction_policy_after_renderer() -> None:
-    html = _text(HTML)
+    bootstrap = _text(COCKPIT / "v2_bootstrap.js")
 
-    assert 'src="v2_app_schema.js"' in html
-    assert 'src="v2_interaction_policy.js"' in html
-    assert html.index('src="v2_app_schema.js"') < html.index('src="v2_interaction_policy.js"')
+    assert '"v2_app_schema.js"' in bootstrap
+    assert '"v2_interaction_policy.js"' in bootstrap
+    assert bootstrap.index('"v2_app_schema.js"') < bootstrap.index('"v2_interaction_policy.js"')
 
 
 def test_back_face_blocks_spatial_swipe_and_keyboard_navigation_only() -> None:
