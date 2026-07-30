@@ -2,7 +2,7 @@
   /* Breathing room between the card and the viewport edge, so the backdrop
      reads. Composed with the device safe areas rather than replacing them: a
      notch or home indicator can only push the card further in, never less. */
-  --v3-card-gutter: 36px;
+  --v3-card-gutter: 24px;
   --v3-safe-top: max(var(--v3-card-gutter), env(safe-area-inset-top));
   --v3-safe-right: max(var(--v3-card-gutter), env(safe-area-inset-right));
   --v3-safe-bottom: max(var(--v3-card-gutter), env(safe-area-inset-bottom));
@@ -212,12 +212,9 @@ body.v3-page {
   background: var(--v3-backdrop);
 }
 
-/* Horizontal spacing is owned by Swiper (slidesPerView:auto + centeredSlides +
-   spaceBetween), so each collection slide is exactly one card wide and carries
-   no horizontal padding. The vertical inset stays in CSS: a horizontal Swiper
-   has no parameter for it. */
-:root[data-cockpit-version="3"] .v3-collection-swiper .v3-swiper-slide {
-  width: var(--v3-card-width);
-  padding-right: 0;
-  padding-left: 0;
-}
+/* Horizontal spacing stays in CSS. Swiper's Virtual mode writes its own inline
+   slide width, which overrides `width` from the stylesheet — so driving the
+   gutter through slidesPerView:auto + spaceBetween silently stopped honouring
+   --v3-card-gutter (measured: CSS said 345px, Swiper imposed 320px). The slide
+   spans the viewport and the gutter is its padding, so the token stays in
+   control on both axes. */

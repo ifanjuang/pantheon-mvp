@@ -22,13 +22,6 @@ const BASE_OPTIONS = Object.freeze({
   noSwipingSelector: "button,input,select,textarea,a,[contenteditable='true']",
 });
 
-// The gutter between a card and the viewport edge, read from the CSS token.
-function cardGutter() {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue("--v3-card-gutter");
-  const value = Number.parseFloat(raw);
-  return Number.isFinite(value) ? value : 0;
-}
-
 function requireSwiper() {
   if (typeof window.Swiper !== "function") throw new Error("Swiper runtime unavailable");
 }
@@ -71,13 +64,6 @@ export function createWindowedMotion({
     ...BASE_OPTIONS,
     direction,
     nested: direction === "horizontal",
-    // Horizontal spacing between cards is Swiper's job: one card per slide,
-    // centred. The gap is twice the gutter, so a neighbour sits exactly one
-    // viewport away and never peeks past the edge. Derived from the CSS token
-    // so the gutter stays the single source of truth.
-    slidesPerView: "auto",
-    centeredSlides: true,
-    spaceBetween: cardGutter() * 2,
     virtual: {
       enabled: true,
       cache: false,
