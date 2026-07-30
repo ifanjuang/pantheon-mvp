@@ -64,6 +64,11 @@ export function createWindowedMotion({
     ...BASE_OPTIONS,
     direction,
     nested: direction === "horizontal",
+    // Horizontal spacing between cards is Swiper's job: one card per slide,
+    // centred, with the neighbours peeking at the edges.
+    slidesPerView: "auto",
+    centeredSlides: true,
+    spaceBetween: 12,
     virtual: {
       enabled: true,
       cache: false,
