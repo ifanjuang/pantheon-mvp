@@ -29,7 +29,8 @@ function createShell(mount, className, label) {
     shell.setAttribute("aria-label", label);
   }
   const wrapper = document.createElement("div");
-  wrapper.className = "swiper-wrapper";
+  // `v2-swiper-wrapper` is what the V3 geometry stylesheet sizes.
+  wrapper.className = "swiper-wrapper v2-swiper-wrapper";
   shell.append(wrapper);
   mount.append(shell);
   return shell;

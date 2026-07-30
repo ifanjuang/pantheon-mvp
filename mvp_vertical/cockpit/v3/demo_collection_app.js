@@ -8,7 +8,7 @@ import { createLevelController } from "./collection/level_controller.js";
 import { renderCard, renderPlaceholder, renderNewSlide } from "./collection/card_renderer.js";
 import { createDemoProvider } from "./providers/demo_provider.js";
 
-const SWIPER_VERSION = "14.0.6";
+const SWIPER_VERSION = "14.0.7";
 const stage = document.getElementById("v2-stage");
 const breadcrumb = document.getElementById("v2-breadcrumb");
 const status = document.getElementById("v2-status");

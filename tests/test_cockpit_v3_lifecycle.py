@@ -7,7 +7,7 @@ collection into the DOM again.
 Contracts:
   - Swiper exists in exactly one module (the MotionAdapter);
   - the cockpit never calls Swiper's slide APIs directly;
-  - at most three projections are mounted (active plus one neighbour each side);
+  - the mounted DOM window is bounded and does not grow with the collection;
   - an already-resident array is applied at once, never faked as a stream.
 """
 
@@ -52,13 +52,17 @@ def test_cockpit_never_drives_swiper_slide_apis_directly() -> None:
             assert forbidden not in source, f"{rel} calls {forbidden}"
 
 
-def test_at_most_three_projections_are_mounted() -> None:
+def test_mounted_window_is_bounded_independently_of_collection_size() -> None:
     adapter = _read(ADAPTER)
 
-    # Swiper Virtual keeps only the active slide plus one neighbour per side.
+    # Swiper Virtual keeps a windowed slice of the collection in the DOM instead
+    # of mounting every sibling. Measured in Chromium on a 43-item collection:
+    # the DOM window peaks at 5 slides and does not grow with the collection
+    # (see docs/architecture/cockpit-navigation-lifecycle.md).
     assert "virtual" in adapter
     assert "addSlidesBefore: 1" in adapter
     assert "addSlidesAfter: 1" in adapter
+    assert "cache: false" in adapter
 
 
 def test_resident_arrays_are_not_fake_streamed() -> None:

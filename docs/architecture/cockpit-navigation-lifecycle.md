@@ -74,19 +74,25 @@ n'autorisent rien.
 
   `appendSlide()`, `removeAllSlides()` et `updateSlides()` restent internes.
 
-## Trois projections montées, pas la collection
+## Une fenêtre bornée, pas la collection entière
 
-Seules la projection active et ses deux voisines existent dans le DOM (slides
-virtuelles de Swiper, `addSlidesBefore/After: 1`) :
+Seule une tranche glissante de la collection existe dans le DOM (slides
+virtuelles de Swiper, `addSlidesBefore/After: 1`, `cache: false`) :
 
 ```text
-previous | active | next
+… | previous | active | next | …
 ```
 
 - la carte active est complète et interactive ;
-- les deux voisines sont des aperçus légers et inertes ;
+- les voisines sont des aperçus légers et inertes ;
 - tout le reste demeure **des données** dans `NavigationState` ;
-- les hôtes sont recyclés pendant la navigation.
+- les slides sont recyclées pendant la navigation.
+
+**Mesuré** (Chromium, viewport 390×844, collection de 43 éléments) : la fenêtre
+DOM plafonne à **5 slides** et ne croît pas avec la collection — elle reste
+identique aux index 1, 5, 9 et 13. C'est la propriété qui compte : le DOM est
+**borné et indépendant de la taille de la collection**, pas égal à un chiffre
+précis. La valeur exacte dépend de la façon dont Swiper calcule sa fenêtre.
 
 Cela réduit les nœuds DOM, les écouteurs, les formulaires cachés, les calculs de
 layout, la mémoire mobile et les risques de collision d'identifiants.
@@ -141,14 +147,44 @@ surdéfinie**). Le Swiper imbriqué (horizontal dans le deck vertical) reçoit
 Vérifiés statiquement par `tests/test_cockpit_v3_lifecycle.py` :
 
 ```text
-projections montées                 ≤ 3
 modules construisant Swiper         = 1 (MotionAdapter)
 appels slide API hors adaptateur    = 0
+fenêtre DOM                         bornée (virtual + cache: false)
 faux streaming d'un tableau         = aucun
 ```
 
-`NavigationState` est en plus exercé réellement (sans navigateur) par
-`tests/test_cockpit_navigation_state.py`.
+`NavigationState` (`tests/test_cockpit_navigation_state.py`) et
+`CockpitSnapshot` (`tests/test_cockpit_snapshot_contract.py`) sont en plus
+exercés réellement, sans navigateur.
+
+## Vérification navigateur
+
+Ces tests sont statiques ou sans DOM : ils ne prouvent pas le rendu. Une
+vérification a été menée dans Chromium (Playwright, viewport 390×844, tactile
+activé), Swiper `14.0.7` servi localement — le CDN étant inaccessible depuis
+l'environnement d'exécution.
+
+Constaté :
+
+```text
+démarrage                     cartes rendues, aucune erreur JS
+swipe horizontal réel         change la carte active
+descente de niveau            fil d'Ariane « Pantheon / Décisions »
+fenêtre DOM (43 éléments)     5 slides, stable aux index 1 · 5 · 9 · 13
+requêtes en échec             aucune (hors /favicon.ico du navigateur)
+```
+
+Deux défauts ont été trouvés ainsi, invisibles pour `node --check` et pour les
+tests de contrat :
+
+1. les points de montage `.v3-level-host` / `.v3-collection-host` n'avaient
+   aucune règle CSS — la largeur partait à 2²⁵ px et **plus rien ne bougeait** ;
+2. le wrapper avait perdu la classe `v2-swiper-wrapper` que cible la géométrie.
+
+**Limite** : la barre de navigation étant masquée sur mobile, les contrôles
+`#v2-previous/#v2-next/#v2-descend` ont été pilotés par script pour certaines
+étapes ; le geste horizontal, lui, a été rejoué réellement. Le rendu visuel
+(matières, animations, safe areas iOS) n'est pas couvert.
 
 ## Suite prévue
 

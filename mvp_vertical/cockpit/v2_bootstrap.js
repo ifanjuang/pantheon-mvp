@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const SWIPER_VERSION = "14.0.6";
+  const SWIPER_VERSION = "14.0.7";
 
   function loadExternalScript(src) {
     return new Promise((resolve, reject) => {
