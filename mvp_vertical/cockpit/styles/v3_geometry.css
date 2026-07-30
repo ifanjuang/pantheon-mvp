@@ -1,12 +1,8 @@
 :root[data-cockpit-version="3"] {
-  /* Breathing room between the card and the viewport edge, so the backdrop
-     reads. Composed with the device safe areas rather than replacing them: a
-     notch or home indicator can only push the card further in, never less. */
-  --v3-card-gutter: 24px;
-  --v3-safe-top: max(var(--v3-card-gutter), env(safe-area-inset-top));
-  --v3-safe-right: max(var(--v3-card-gutter), env(safe-area-inset-right));
-  --v3-safe-bottom: max(var(--v3-card-gutter), env(safe-area-inset-bottom));
-  --v3-safe-left: max(var(--v3-card-gutter), env(safe-area-inset-left));
+  --v3-safe-top: max(.65rem, env(safe-area-inset-top));
+  --v3-safe-right: max(.65rem, env(safe-area-inset-right));
+  --v3-safe-bottom: max(.65rem, env(safe-area-inset-bottom));
+  --v3-safe-left: max(.65rem, env(safe-area-inset-left));
   --v3-card-width: min(32rem, calc(100vw - var(--v3-safe-left) - var(--v3-safe-right)));
   --v3-card-height: calc(100vh - var(--v3-safe-top) - var(--v3-safe-bottom));
   --v3-card-height: calc(100dvh - var(--v3-safe-top) - var(--v3-safe-bottom));
@@ -14,7 +10,6 @@
   --v3-card-border: 1px;
   --v3-card-padding: 1.25rem;
   --v3-stage-gutter: 0;
-  --v3-backdrop: #353738;
   --v3-slide-block-padding: 0;
   --v3-stack-step: .55rem;
   --v3-stage-height: 100vh;
@@ -172,9 +167,10 @@ body.v3-page {
 
 @media (max-width: 620px) {
   :root[data-cockpit-version="3"] {
-    /* The gutter is defined once, at the top of this file, and is NOT reset
-       here: this block used to shrink it to .4rem, which silently removed the
-       breathing room on exactly the devices it matters for. */
+    --v3-safe-top: max(.4rem, env(safe-area-inset-top));
+    --v3-safe-right: max(.4rem, env(safe-area-inset-right));
+    --v3-safe-bottom: max(.4rem, env(safe-area-inset-bottom));
+    --v3-safe-left: max(.4rem, env(safe-area-inset-left));
     --v3-card-width: calc(100vw - var(--v3-safe-left) - var(--v3-safe-right));
     --v3-card-padding: clamp(1rem, 4.5vw, 1.25rem);
     --v3-card-radius: clamp(1.15rem, 4vw, 1.55rem);
@@ -204,17 +200,11 @@ body.v3-page {
 }
 
 /* Backdrop behind the cards.
-   V2 paints a light "paper" gradient on .v2-body; the V3 surface is a dark
-   neutral so the cards read as objects sitting on a backdrop rather than as
-   panels on a page. Scoped to V3 so the V2 layer is untouched. */
+   V2 paints a light "paper" gradient on .v2-body; the V3 surface is a flat
+   neutral so the cards read as objects sitting on a backdrop. Flat by
+   intent — the gradients belong to the cards, not to the surface.
+   Scoped to V3 so the V2 layer is untouched. */
 :root[data-cockpit-version="3"] body.v2-body,
 :root[data-cockpit-version="3"] body.v3-page {
-  background: var(--v3-backdrop);
+  background: #353738;
 }
-
-/* Horizontal spacing stays in CSS. Swiper's Virtual mode writes its own inline
-   slide width, which overrides `width` from the stylesheet — so driving the
-   gutter through slidesPerView:auto + spaceBetween silently stopped honouring
-   --v3-card-gutter (measured: CSS said 345px, Swiper imposed 320px). The slide
-   spans the viewport and the gutter is its padding, so the token stays in
-   control on both axes. */
