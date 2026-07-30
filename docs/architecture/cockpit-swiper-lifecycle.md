@@ -75,11 +75,18 @@ en V3 live.
 
 ## Config Swiper
 
-Les options sont centralisées dans `CollectionController` (`DEFAULT_SWIPER_OPTIONS`) :
-`slidesPerView: 1`, `threshold: 8`, `touchReleaseOnEdges: true` (premier swipe
-iOS), observers désactivés (Pantheon maîtrise le DOM), `resizeObserver`,
-`roundLengths`, `noSwipingSelector` pour les contrôles interactifs. La **vitesse
-n'est pas surdéfinie** : Swiper gère sa valeur par défaut.
+La configuration reste **minimale** : on ne garde que les options qui diffèrent
+des défauts Swiper et dont on a réellement besoin (`CollectionController`,
+`BASE_OPTIONS`) :
+
+- `touchReleaseOnEdges: true` — rendre le premier swipe / le relâchement aux bords (iOS) ;
+- `roundLengths: true` — texte de carte net sur les slides transformées ;
+- `noSwipingSelector` — les contrôles interactifs (boutons, champs) ne déclenchent pas de swipe.
+
+Tout le reste s'appuie sur les défauts Swiper (`slidesPerView`, observers,
+`resizeObserver`, `preventClicks`, `noSwiping`, `initialSlide`, vitesse…). La
+**vitesse n'est pas surdéfinie**. Le Swiper imbriqué (horizontal, dans le deck
+vertical) reçoit `nested: true`, conformément à l'API.
 
 ## Frontière
 
