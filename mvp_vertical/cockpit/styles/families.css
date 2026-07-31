@@ -1,58 +1,153 @@
 @layer reset, tokens, shell, navigation, cards, families, states, editors, responsive;
 
 @layer families {
-  [data-level="pack"] {
-    --card-title-scale: 1.25;
-  }
-
-  [data-level="booster"] {
-    --card-title-scale: 1.1;
-  }
-
-  [data-level="card"] {
-    --card-title-scale: 1;
-  }
+  [data-level="pack"] { --card-title-scale: 1.25; }
+  [data-level="booster"] { --card-title-scale: 1.1; }
+  [data-level="card"] { --card-title-scale: 1; }
 
   [data-family="pantheon"] {
     --card-front-background: linear-gradient(145deg, #10131d 0%, #252940 54%, #171922 100%);
     --card-front-color: #fff;
     --card-back-border-width: var(--cockpit-back-border-general);
-    --card-accent: #10d7e8;
+    --card-accent: var(--pantheon-cyan);
+    --blob-border-width: 7px;
+  }
+
+  [data-family="pantheon"] .v3-card-blob--1 {
+    --blob-width: clamp(8rem, 32vw, 13rem);
+    --blob-height: clamp(6.2rem, 24vw, 9.6rem);
+    --blob-top: 1.3rem;
+    --blob-right: 4.2rem;
+    --blob-color: var(--pantheon-cyan);
+    --blob-radius: 61% 39% 48% 52% / 42% 62% 38% 58%;
+    --blob-rotation: -9deg;
+  }
+
+  [data-family="pantheon"] .v3-card-blob--2 {
+    --blob-width: clamp(7rem, 27vw, 10.5rem);
+    --blob-height: clamp(8rem, 31vw, 12rem);
+    --blob-top: -.6rem;
+    --blob-right: .7rem;
+    --blob-color: var(--pantheon-yellow);
+    --blob-radius: 39% 61% 57% 43% / 64% 39% 61% 36%;
+    --blob-rotation: 13deg;
+  }
+
+  [data-family="pantheon"] .v3-card-blob--3 {
+    --blob-width: clamp(6.8rem, 26vw, 10rem);
+    --blob-height: clamp(5.8rem, 22vw, 8.4rem);
+    --blob-top: 6rem;
+    --blob-right: 1.4rem;
+    --blob-color: var(--pantheon-magenta);
+    --blob-radius: 52% 48% 35% 65% / 47% 63% 37% 53%;
+    --blob-rotation: -18deg;
   }
 
   [data-family="affaires"] {
     --card-front-background: linear-gradient(145deg, #9f3218 0%, #e65b29 52%, #f5a83f 100%);
     --card-front-color: #fff;
     --card-back-border-width: var(--cockpit-back-border-business);
+    --card-accent: #d75a28;
+  }
+
+  [data-family="affaires"] .v3-card-blob--1 {
+    --blob-width: 8.2rem; --blob-height: 7rem; --blob-top: 1rem; --blob-right: 1rem;
+    --blob-fill: #ffd952; --blob-radius: 58% 42% 51% 49% / 43% 57% 43% 57%; --blob-rotation: -8deg;
+  }
+  [data-family="affaires"] .v3-card-blob--2 {
+    --blob-width: 6rem; --blob-height: 6.6rem; --blob-top: 4.1rem; --blob-right: 5rem;
+    --blob-fill: #c64035; --blob-radius: 43% 57% 60% 40% / 56% 39% 61% 44%; --blob-rotation: 12deg;
+  }
+  [data-family="affaires"] .v3-card-blob--3 {
+    --blob-width: 5rem; --blob-height: 5.5rem; --blob-top: 7rem; --blob-right: 1.4rem;
+    --blob-fill: #822767; --blob-radius: 54% 46% 38% 62% / 48% 62% 38% 52%; --blob-rotation: -17deg;
+  }
+
+  [data-family="project"] {
+    --card-front-background: #fff;
+    --card-front-color: var(--cockpit-ink);
+    --card-back-border-width: var(--cockpit-back-border-business);
+    --card-accent: var(--project-accent, #d75a28);
+  }
+
+  [data-family="project"] .v3-card-blob--1 {
+    --blob-width: clamp(8rem, 30vw, 12rem); --blob-height: clamp(9rem, 34vw, 13rem);
+    --blob-top: 1rem; --blob-right: 1rem; --blob-fill: var(--card-accent);
+    --blob-radius: 58% 42% 54% 46% / 46% 54% 46% 54%; --blob-rotation: -6deg;
+  }
+  [data-family="project"] .v3-card-blob--2 {
+    --blob-width: 4.8rem; --blob-height: 4.2rem; --blob-top: 7.5rem; --blob-right: 7.3rem;
+    --blob-fill: color-mix(in srgb, var(--card-accent) 28%, white); --blob-radius: 42% 58% 63% 37% / 55% 38% 62% 45%;
+  }
+  [data-family="project"] .v3-card-blob--3 {
+    --blob-width: 3.8rem; --blob-height: 4.5rem; --blob-top: 1.4rem; --blob-right: 8.8rem;
+    --blob-fill: color-mix(in srgb, var(--card-accent) 18%, white); --blob-radius: 63% 37% 46% 54% / 39% 61% 43% 57%;
   }
 
   [data-family="knowledge"] {
     --card-front-background:
-      linear-gradient(150deg, #ecedee, transparent 30%),
-      linear-gradient(330deg, rgb(210 206 242), transparent 30%),
-      linear-gradient(225deg, #fff0be, #fbdce7, #e2fae1, powderblue);
+      radial-gradient(circle at 16% 18%, #55e6d2 0 12%, transparent 34%),
+      radial-gradient(circle at 84% 18%, #ff75c8 0 14%, transparent 38%),
+      radial-gradient(circle at 74% 84%, #ffc45a 0 15%, transparent 40%),
+      linear-gradient(145deg, #244fc7 0%, #7247ce 42%, #c54291 72%, #ef794b 100%);
     --card-front-color: #fff;
     --card-back-border-width: var(--cockpit-back-border-general);
+    --card-accent: #7050c8;
   }
 
   [data-family="skills"] {
     --card-front-background:
-      linear-gradient(150deg, #f4c7ff, transparent 30%),
-      linear-gradient(330deg, #7be7d8, transparent 30%),
-      linear-gradient(225deg, #ffcf5a, #ee5eb8, #7657e8, #20cbd4);
+      radial-gradient(circle at 14% 22%, #68f0c7 0 13%, transparent 34%),
+      radial-gradient(circle at 82% 17%, #67a7ff 0 14%, transparent 36%),
+      radial-gradient(circle at 72% 80%, #ffdb5d 0 14%, transparent 37%),
+      radial-gradient(circle at 26% 84%, #f564c9 0 13%, transparent 35%),
+      linear-gradient(145deg, #176573 0%, #30889b 32%, #5b55c5 62%, #b43b9e 100%);
     --card-front-color: #fff;
     --card-back-border-width: var(--cockpit-back-border-general);
+    --card-accent: #238b8e;
   }
 
+  [data-level="booster"][data-family="knowledge"],
+  [data-level="booster"][data-family="skills"] {
+    --card-front-color: #202226;
+  }
+
+  [data-level="booster"][data-family="knowledge"] {
+    --card-front-background: linear-gradient(180deg, #cfd8ff 0%, #f3c6df 100%);
+  }
+
+  [data-level="booster"][data-family="skills"] {
+    --card-front-background:
+      linear-gradient(150deg, #ecedee, transparent 30%),
+      linear-gradient(330deg, rgb(210 206 242), transparent 30%),
+      linear-gradient(225deg, #fff0be, #fbdce7, #e2fae1, powderblue);
+  }
+
+  [data-level="card"][data-family="knowledge"] {
+    --card-front-background: #8a78c9;
+    --card-front-color: #fff;
+  }
+
+  [data-level="card"][data-family="skills"] {
+    --card-front-background: #8b42d7;
+    --card-front-color: #fff;
+  }
+
+  [data-family="tool"],
   [data-family="tools"] {
     --card-front-background: linear-gradient(90deg, #214c55 0 33.333%, #39767a 33.333% 66.666%, #7ea99b 66.666% 100%);
     --card-front-color: #fff;
     --card-back-border-width: var(--cockpit-back-border-general);
+    --card-accent: #39767a;
   }
 
-  [data-kind="project"],
   [data-kind="work"],
-  [data-kind="folder"] {
+  [data-kind="folder"],
+  [data-family="work"],
+  [data-family="information"] {
+    --card-front-background: #fff;
+    --card-front-color: var(--cockpit-ink);
     --card-back-border-width: var(--cockpit-back-border-business);
+    --card-accent: var(--project-accent, #d75a28);
   }
 }
