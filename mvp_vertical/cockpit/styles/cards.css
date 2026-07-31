@@ -1,0 +1,57 @@
+@layer reset, tokens, shell, navigation, cards, families, states, editors, responsive;
+
+@layer cards {
+  /* Common card geometry, faces, content, flip and shared signatures. */
+
+  .v3-card-blobs {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .v3-card-blob {
+    position: absolute;
+    width: var(--blob-width, 0);
+    height: var(--blob-height, 0);
+    top: var(--blob-top, 0);
+    right: var(--blob-right, 0);
+    border: var(--blob-border-width, 0) solid var(--blob-color, transparent);
+    border-radius: var(--blob-radius, 50%);
+    background: var(--blob-fill, transparent);
+    transform: translate(var(--blob-shift-x, 0), var(--blob-shift-y, 0)) rotate(var(--blob-rotation, 0deg));
+    transform-origin: center;
+  }
+
+  [data-kind="work"] .v2-card-front::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 0;
+    height: 0;
+    border-top: var(--cockpit-accent-size) solid var(--project-accent);
+    border-right: var(--cockpit-accent-size) solid transparent;
+    pointer-events: none;
+  }
+
+  [data-kind="folder"] .v2-card-front::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: var(--cockpit-accent-size);
+    background: var(--project-accent);
+    pointer-events: none;
+  }
+}
+
+@layer states {
+  /* Common loading, new, selected and disabled presentation only. */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-card-blob,
+  .v2-card-inner {
+    animation: none !important;
+    transition: none !important;
+  }
+}
