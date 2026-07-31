@@ -23,7 +23,8 @@ def test_cockpit_loads_four_current_stylesheet_authorities():
     cards = (COCKPIT / "styles" / "cards.css").read_text(encoding="utf-8")
     assert "@layer reset, tokens, shell, navigation, cards, families, states, editors, responsive;" in cockpit
     assert ".card-back" in cards
-    assert ".card-footer" in cards
+    assert ".card-face" in cards
+    assert ".card-body" in cards
 
 
 def test_schema_renderer_exposes_one_contacts_card_per_project():
