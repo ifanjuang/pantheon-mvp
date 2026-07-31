@@ -30,6 +30,9 @@ def test_css_layers_and_responsibilities_are_explicit() -> None:
     assert '[data-family="skills"]' in families
     assert "display:" not in families
     assert "position:" not in families
+    assert ".v2-schema-editor" in editors
+    assert ".v2-contacts-editor" in editors
+    assert ".v2-information-create-dialog" in editors
 
 
 def test_renderer_projects_visual_axes_without_style_presets() -> None:
@@ -47,6 +50,9 @@ def test_renderer_projects_visual_axes_without_style_presets() -> None:
 
     for filename in ("cockpit.css", "cards.css", "families.css", "editors.css"):
         assert filename not in renderer
+
+    for legacy in ("v2-card", "v3-card-blobs", "v3-card-blob"):
+        assert legacy not in renderer
 
 
 def test_visual_markers_remain_twelve_pixels_and_flat() -> None:
@@ -76,3 +82,36 @@ def test_level_family_kind_status_and_context_stay_independent() -> None:
 
     assert "--project-accent" in families
     assert "data-status" not in families
+
+
+def test_canonical_page_loads_only_four_local_stylesheets() -> None:
+    index = (COCKPIT / "index.html").read_text(encoding="utf-8")
+    expected = (
+        "styles/cockpit.css",
+        "styles/cards.css",
+        "styles/families.css",
+        "styles/editors.css",
+    )
+    for href in expected:
+        assert f'href="{href}"' in index
+
+    retired = (
+        "styles/index.css",
+        "styles/v2.css",
+        "styles/v2_refinement.css",
+        "styles/v2_swiper.css",
+        "styles/v2_shell_controls.css",
+        "styles/v3_living_cards.css",
+        "styles/v3_card_tokens.css",
+        "styles/v3_card_blobs.css",
+        "styles/v3_card_project.css",
+        "styles/v3_card_work.css",
+        "styles/v3_geometry.css",
+        "styles/v3_collections.css",
+        "styles/schema_editor.css",
+        "styles/contacts_editor.css",
+        "styles/information_create.css",
+        "styles/project_claim_view.css",
+    )
+    for href in retired:
+        assert f'href="{href}"' not in index
