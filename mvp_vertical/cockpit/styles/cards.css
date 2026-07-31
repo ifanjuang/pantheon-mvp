@@ -1,13 +1,137 @@
 @layer reset, tokens, shell, navigation, cards, families, states, editors, responsive;
 
 @layer cards {
-  /* Common card geometry, faces, content, flip and shared signatures. */
+  .v2-card {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    color: var(--card-front-color, var(--cockpit-ink));
+    perspective: 1400px;
+  }
+
+  .v2-card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 240ms ease;
+  }
+
+  .v2-card[data-flipped="true"] .v2-card-inner {
+    transform: rotateY(180deg);
+  }
+
+  .v2-card-face {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: clamp(1.1rem, 3.8vw, 2rem);
+    border-radius: var(--cockpit-radius);
+    backface-visibility: hidden;
+    isolation: isolate;
+  }
+
+  .v2-card-front {
+    border: 0;
+    background: var(--card-front-background, var(--cockpit-surface));
+    color: var(--card-front-color, var(--cockpit-ink));
+  }
+
+  .v2-card-back {
+    transform: rotateY(180deg);
+    border: var(--card-back-border-width, 1px) solid var(--card-accent, #b8bcc0);
+    background: var(--cockpit-surface);
+    color: var(--cockpit-ink);
+  }
+
+  .v2-card-top,
+  .v2-card-body,
+  .v2-back-body {
+    position: relative;
+    z-index: 2;
+  }
+
+  .v2-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .v2-card-identity-line {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+  }
+
+  .v2-family-mark,
+  .v2-state-icon {
+    display: inline-grid;
+    place-items: center;
+    min-width: 2rem;
+    height: 2rem;
+    border: 1px solid currentColor;
+    border-radius: .65rem;
+    font-size: .72rem;
+    font-weight: 750;
+    letter-spacing: .06em;
+  }
+
+  .v2-card-category {
+    font-size: .76rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  .v2-card-body,
+  .v2-back-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 0;
+  }
+
+  .v2-card-title,
+  .v2-back-title {
+    max-width: 15ch;
+    margin: 0;
+    font-size: clamp(1.9rem, calc(4.6vw * var(--card-title-scale, 1)), 4rem);
+    line-height: .98;
+    letter-spacing: -.045em;
+    text-wrap: balance;
+  }
+
+  .v2-back-title {
+    font-size: clamp(1.7rem, 4vw, 3rem);
+  }
+
+  .v2-card-summary,
+  .v2-back-multiline {
+    max-width: 34ch;
+    margin: 1rem 0 0;
+    font-size: clamp(.88rem, 1.6vw, 1.02rem);
+    line-height: 1.45;
+    white-space: pre-line;
+  }
 
   .v3-card-blobs {
     position: absolute;
     inset: 0;
+    z-index: 0;
+    display: none;
     overflow: hidden;
     pointer-events: none;
+  }
+
+  [data-blob-signature="true"] .v3-card-blobs {
+    display: block;
   }
 
   .v3-card-blob {
@@ -19,8 +143,19 @@
     border: var(--blob-border-width, 0) solid var(--blob-color, transparent);
     border-radius: var(--blob-radius, 50%);
     background: var(--blob-fill, transparent);
+    opacity: var(--blob-opacity, 1);
     transform: translate(var(--blob-shift-x, 0), var(--blob-shift-y, 0)) rotate(var(--blob-rotation, 0deg));
     transform-origin: center;
+  }
+
+  [data-blob-variant="2"] .v3-card-blobs {
+    --blob-shift-x: -.55rem;
+    --blob-shift-y: .35rem;
+  }
+
+  [data-blob-variant="3"] .v3-card-blobs {
+    --blob-shift-x: .5rem;
+    --blob-shift-y: -.3rem;
   }
 
   [data-kind="work"] .v2-card-front::before {
@@ -29,7 +164,7 @@
     inset: 0 auto auto 0;
     width: 0;
     height: 0;
-    border-top: var(--cockpit-accent-size) solid var(--project-accent);
+    border-top: var(--cockpit-accent-size) solid var(--project-accent, var(--card-accent));
     border-right: var(--cockpit-accent-size) solid transparent;
     pointer-events: none;
   }
@@ -39,13 +174,24 @@
     position: absolute;
     inset: 0 0 auto;
     height: var(--cockpit-accent-size);
-    background: var(--project-accent);
+    background: var(--project-accent, var(--card-accent));
     pointer-events: none;
   }
 }
 
 @layer states {
-  /* Common loading, new, selected and disabled presentation only. */
+  .v2-card[aria-hidden="true"] {
+    pointer-events: none;
+  }
+
+  .v2-card[data-status="blocked"] {
+    --card-accent: #b42318;
+  }
+
+  .v2-card[data-status="review"],
+  .v2-card[data-status="pending_review"] {
+    --card-accent: #b7791f;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
