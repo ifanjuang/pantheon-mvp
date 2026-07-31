@@ -1,0 +1,5 @@
+@layer reset, tokens, shell, navigation, cards, families, states, editors, responsive;
+
+@layer editors {
+  /* Schema, Contacts, Information and ProjectClaim editing surfaces migrate here. */
+}
