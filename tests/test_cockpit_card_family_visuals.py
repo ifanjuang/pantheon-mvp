@@ -26,7 +26,7 @@ def test_shared_blob_primitive_renders_three_css_shapes_with_stable_variants() -
 
     assert "function blobPrimitive()" in renderer
     assert "index <= 3" in renderer
-    assert "article.dataset.blobVariant" in renderer
+    assert "article.dataset.variant = stableVariant(item.id)" in renderer
     for selector in (".card-blob--1", ".card-blob--2", ".card-blob--3"):
         assert selector in cards
     assert "border-radius: var(--blob-radius)" in cards
