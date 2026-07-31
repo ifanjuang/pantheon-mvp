@@ -44,5 +44,5 @@ def test_v2_handoff_separates_conversation_governance_and_runtime() -> None:
     assert '/v1/hermes/execution-admissions' not in javascript
     assert 'v2-handoff-send' in send_javascript
     assert 'v2-handoff-prepare' in send_javascript
-    assert '.v2-handoff-preview' in css
     assert '.v2-handoff-shell' in css
+    assert '.v2-handoff-question' in css
