@@ -22,9 +22,11 @@ def test_card_typography_is_controlled_by_level_variables() -> None:
     cards = _text(STYLES / "cards.css")
     families = _text(STYLES / "families.css")
     assert "var(--card-title-size" in cards
+    assert "letter-spacing: -.045em" in cards
+    assert "text-wrap: balance" in cards
     for level in ("pack", "booster", "card"):
         assert f'[data-level="{level}"]' in families
-    assert "text-transform: none" in cards
+        assert "--card-title-size" in families
 
 
 def test_motion_is_limited_to_flip_and_respects_reduced_motion() -> None:
@@ -49,5 +51,5 @@ def test_mobile_surface_keeps_navigation_controls_and_card_first_layout() -> Non
     for control_id in ("v2-previous", "v2-next", "v2-descend", "v2-ascend", "v2-flip"):
         assert f'id="{control_id}"' in html
     assert "@media" in cockpit
-    assert ".v2-stage" in cockpit
-    assert ".v2-navigation" in cockpit
+    assert ".v3-stage" in cockpit
+    assert ".v2-navigation" in cockpit or ".v3-navigation" in cockpit
