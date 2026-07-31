@@ -5,11 +5,27 @@
 //   { id, title, category, family, summary, status, details }
 
 const BLOB_FAMILIES = new Set(["pantheon", "affaires", "project"]);
+const PACK_IDS = new Set(["space:pantheon", "space:affaires", "space:connaissances", "space:outils"]);
 
 function stableVariant(value) {
   let hash = 0;
   for (const character of String(value || "")) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
   return String((Math.abs(hash) % 3) + 1);
+}
+
+function visualLevel(item) {
+  if (item.level) return item.level;
+  if (PACK_IDS.has(item.id)) return "pack";
+  if (item.family === "project") return "booster";
+  return "card";
+}
+
+function visualKind(item) {
+  if (item.kind) return item.kind;
+  if (item.family === "project") return "project";
+  if (item.family === "work") return "work";
+  if (String(item.id || "").startsWith("document:")) return "folder";
+  return item.family || "information";
 }
 
 function blobPrimitive() {
@@ -66,17 +82,19 @@ function faceElement(className, item, { hydrated }) {
   return face;
 }
 
-// Interactive recto/verso card for the active slide.
 export function renderCard(item, { hydrated = true, interactive = true } = {}) {
   const article = document.createElement("article");
+  const family = item.family ?? "";
   article.className = "v2-card";
   article.dataset.entityId = item.id ?? "";
-  article.dataset.family = item.family ?? "";
+  article.dataset.family = family;
+  article.dataset.level = visualLevel(item);
+  article.dataset.kind = visualKind(item);
   article.dataset.status = item.status ?? "";
   article.dataset.cockpitV3 = "living-card";
   article.dataset.flipped = "false";
   article.dataset.blobVariant = stableVariant(item.id);
-  article.dataset.blobSignature = BLOB_FAMILIES.has(item.family) ? "true" : "false";
+  article.dataset.blobSignature = BLOB_FAMILIES.has(family) ? "true" : "false";
   article.tabIndex = interactive ? 0 : -1;
   if (!interactive) {
     article.setAttribute("aria-hidden", "true");
@@ -89,7 +107,6 @@ export function renderCard(item, { hydrated = true, interactive = true } = {}) {
   return article;
 }
 
-// The placeholder slide content, shown before the first item lands.
 export function renderPlaceholder() {
   const placeholder = document.createElement("div");
   placeholder.className = "v3-card-shell v3-collection-placeholder";
@@ -104,7 +121,6 @@ export function renderPlaceholder() {
   return placeholder;
 }
 
-// The synthetic `New` slide, offered only for creatable collections.
 export function renderNewSlide(collection, onCreate) {
   const card = document.createElement("div");
   card.className = "v2-swiper-create-card";
