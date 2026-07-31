@@ -1,0 +1,33 @@
+@layer reset, tokens, shell, navigation, cards, families, states, editors, responsive;
+
+@layer reset {
+  :where(.v3-body, .v3-body *) {
+    box-sizing: border-box;
+  }
+}
+
+@layer tokens {
+  :root {
+    --cockpit-bg: #0d0e11;
+    --cockpit-surface: #ffffff;
+    --cockpit-ink: #17191b;
+    --cockpit-muted: #656b70;
+    --cockpit-radius: 24px;
+    --cockpit-gap: 16px;
+    --cockpit-accent-size: 12px;
+    --cockpit-back-border-business: 1px;
+    --cockpit-back-border-general: 4px;
+  }
+}
+
+@layer shell {
+  /* Shell, viewport and stage rules are migrated here from the retired cascade. */
+}
+
+@layer navigation {
+  /* Header, menus, navigation and Hermès dock are migrated here. */
+}
+
+@layer responsive {
+  /* Global layout adaptations only. Card-family rules stay in families.css. */
+}
