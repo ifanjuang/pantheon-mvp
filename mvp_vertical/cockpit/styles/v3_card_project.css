@@ -39,6 +39,43 @@
   --blob-rotation: -19deg;
 }
 
+/* The Affaires root is still semantically projected as family=project.
+   Its stable entity identity selects the Pack composition without changing the model. */
+:root[data-cockpit-version="3"] .v2-card[data-entity-id="space:affaires"] .v2-card-front {
+  background: linear-gradient(145deg, #9f3218 0%, #e65b29 52%, #f5a83f 100%);
+  color: #fff;
+}
+
+:root[data-cockpit-version="3"] .v2-card[data-entity-id="space:affaires"] .v3-card-blob--1 {
+  --blob-width: 8.2rem;
+  --blob-height: 7rem;
+  --blob-top: 1rem;
+  --blob-right: 1rem;
+  --blob-fill: #ffd952;
+  --blob-radius: 58% 42% 51% 49% / 43% 57% 43% 57%;
+  --blob-rotation: -8deg;
+}
+
+:root[data-cockpit-version="3"] .v2-card[data-entity-id="space:affaires"] .v3-card-blob--2 {
+  --blob-width: 6rem;
+  --blob-height: 6.6rem;
+  --blob-top: 4.1rem;
+  --blob-right: 5rem;
+  --blob-fill: #c64035;
+  --blob-radius: 43% 57% 60% 40% / 56% 39% 61% 44%;
+  --blob-rotation: 12deg;
+}
+
+:root[data-cockpit-version="3"] .v2-card[data-entity-id="space:affaires"] .v3-card-blob--3 {
+  --blob-width: 5rem;
+  --blob-height: 5.5rem;
+  --blob-top: 7rem;
+  --blob-right: 1.4rem;
+  --blob-fill: #822767;
+  --blob-radius: 54% 46% 38% 62% / 48% 62% 38% 52%;
+  --blob-rotation: -17deg;
+}
+
 :root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"][data-family="project"] .v2-card-top,
 :root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"][data-family="project"] .v2-card-body {
   position: relative;
@@ -55,6 +92,13 @@
 :root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"][data-family="project"] .v2-card-meta,
 :root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"][data-family="project"] .v2-card-summary {
   color: var(--v3-card-muted);
+}
+
+:root[data-cockpit-version="3"] .v2-card[data-entity-id="space:affaires"] .v2-family-mark,
+:root[data-cockpit-version="3"] .v2-card[data-entity-id="space:affaires"] .v2-card-category,
+:root[data-cockpit-version="3"] .v2-card[data-entity-id="space:affaires"] .v2-card-summary {
+  color: #fff;
+  border-color: #fff;
 }
 
 :root[data-cockpit-version="3"] .v2-card[data-cockpit-v3="living-card"][data-family="project"] .v2-card-body {
