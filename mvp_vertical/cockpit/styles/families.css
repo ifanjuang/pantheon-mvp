@@ -1,0 +1,58 @@
+@layer reset, tokens, shell, navigation, cards, families, states, editors, responsive;
+
+@layer families {
+  [data-level="pack"] {
+    --card-title-scale: 1.25;
+  }
+
+  [data-level="booster"] {
+    --card-title-scale: 1.1;
+  }
+
+  [data-level="card"] {
+    --card-title-scale: 1;
+  }
+
+  [data-family="pantheon"] {
+    --card-front-background: linear-gradient(145deg, #10131d 0%, #252940 54%, #171922 100%);
+    --card-front-color: #fff;
+    --card-back-border-width: var(--cockpit-back-border-general);
+    --card-accent: #10d7e8;
+  }
+
+  [data-family="affaires"] {
+    --card-front-background: linear-gradient(145deg, #9f3218 0%, #e65b29 52%, #f5a83f 100%);
+    --card-front-color: #fff;
+    --card-back-border-width: var(--cockpit-back-border-business);
+  }
+
+  [data-family="knowledge"] {
+    --card-front-background:
+      linear-gradient(150deg, #ecedee, transparent 30%),
+      linear-gradient(330deg, rgb(210 206 242), transparent 30%),
+      linear-gradient(225deg, #fff0be, #fbdce7, #e2fae1, powderblue);
+    --card-front-color: #fff;
+    --card-back-border-width: var(--cockpit-back-border-general);
+  }
+
+  [data-family="skills"] {
+    --card-front-background:
+      linear-gradient(150deg, #f4c7ff, transparent 30%),
+      linear-gradient(330deg, #7be7d8, transparent 30%),
+      linear-gradient(225deg, #ffcf5a, #ee5eb8, #7657e8, #20cbd4);
+    --card-front-color: #fff;
+    --card-back-border-width: var(--cockpit-back-border-general);
+  }
+
+  [data-family="tools"] {
+    --card-front-background: linear-gradient(90deg, #214c55 0 33.333%, #39767a 33.333% 66.666%, #7ea99b 66.666% 100%);
+    --card-front-color: #fff;
+    --card-back-border-width: var(--cockpit-back-border-general);
+  }
+
+  [data-kind="project"],
+  [data-kind="work"],
+  [data-kind="folder"] {
+    --card-back-border-width: var(--cockpit-back-border-business);
+  }
+}
