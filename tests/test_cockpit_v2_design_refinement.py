@@ -18,6 +18,20 @@ def test_current_styles_replace_historical_refinement_chain() -> None:
         assert retired not in html
 
 
+def test_canonical_page_uses_neutral_bootstrap_entrypoint() -> None:
+    html = _text(HTML)
+    bootstrap = _text(COCKPIT / "cockpit_bootstrap.js")
+    live = _text(COCKPIT / "live_bootstrap.js")
+
+    assert 'src="cockpit_bootstrap.js"' in html
+    assert "v3_bootstrap.js" not in html
+    assert 'import("./live_bootstrap.js")' in bootstrap
+    assert 'import("./shell_controls.js")' in bootstrap
+    assert 'import("./live_collection_adapter.js")' in live
+    for retired in ("v2_bootstrap.js", "v2_shell_controls.js", "v3_swiper.js"):
+        assert not (COCKPIT / retired).exists()
+
+
 def test_card_typography_is_controlled_by_level_variables() -> None:
     cards = _text(STYLES / "cards.css")
     families = _text(STYLES / "families.css")
@@ -65,7 +79,7 @@ def test_live_stage_has_a_definite_viewport_height() -> None:
 
 def test_live_schema_cards_are_normalized_before_entering_the_design_system() -> None:
     cards = _text(STYLES / "cards.css")
-    adapter = _text(COCKPIT / "v3_swiper.js")
+    adapter = _text(COCKPIT / "live_collection_adapter.js")
 
     for historical_selector in (
         ".v2-card",
