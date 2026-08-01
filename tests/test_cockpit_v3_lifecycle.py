@@ -10,7 +10,7 @@ Contracts:
   - the mounted DOM window is bounded and does not grow with the collection;
   - an already-resident array is applied at once, never faked as a stream;
   - a superseded async load cannot append into the replacement collection;
-  - V3 geometry is the sole owner of the page backdrop.
+  - cockpit.css is the sole owner of the page backdrop.
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 COCKPIT = ROOT / "mvp_vertical" / "cockpit"
 ADAPTER = "v3/collection/motion_adapter.js"
+LIVE_ADAPTER = "live_collection_adapter.js"
 COLLECTION_PROVIDER = COCKPIT / "v3" / "collection" / "collection_provider.js"
 
-# Every cockpit module that must stay free of Swiper.
 SWIPER_FREE = (
     "v3/collection/navigation_state.js",
     "v3/collection/collection_provider.js",
@@ -66,8 +66,7 @@ def test_swiper_is_confined_to_the_motion_adapter() -> None:
 
 
 def test_cockpit_never_drives_swiper_slide_apis_directly() -> None:
-    # These belong to the adapter alone, so the engine stays replaceable.
-    for rel in SWIPER_FREE + ("v3_swiper.js",):
+    for rel in SWIPER_FREE + (LIVE_ADAPTER,):
         source = _read(rel)
         for forbidden in ("appendSlide", "removeAllSlides", "updateSlides", "slideTo(", "slidePrev(", "slideNext("):
             assert forbidden not in source, f"{rel} calls {forbidden}"
@@ -75,11 +74,6 @@ def test_cockpit_never_drives_swiper_slide_apis_directly() -> None:
 
 def test_mounted_window_is_bounded_independently_of_collection_size() -> None:
     adapter = _read(ADAPTER)
-
-    # Swiper Virtual keeps a windowed slice of the collection in the DOM instead
-    # of mounting every sibling. Measured in Chromium on a 43-item collection:
-    # the DOM window peaks at 5 slides and does not grow with the collection
-    # (see docs/architecture/cockpit-navigation-lifecycle.md).
     assert "virtual" in adapter
     assert "addSlidesBefore: 1" in adapter
     assert "addSlidesAfter: 1" in adapter
@@ -88,10 +82,8 @@ def test_mounted_window_is_bounded_independently_of_collection_size() -> None:
 
 def test_resident_arrays_are_not_fake_streamed() -> None:
     provider = _read("v3/collection/collection_provider.js")
-
     assert "isAsyncIterable" in provider
     assert "Symbol.asyncIterator" in provider
-    # An array must be applied in one go, with no per-frame drip.
     assert "requestAnimationFrame" not in provider
 
 
@@ -148,18 +140,14 @@ def test_new_card_stays_swipeable() -> None:
     renderer = _read("v3/collection/card_renderer.js")
     adapter = _read(ADAPTER)
 
-    # The synthetic `New` card fills its whole slide. Rendering it as a <button>
-    # (matched by noSwipingSelector) or tagging it `swiper-no-swiping` makes
-    # Swiper refuse every gesture starting on it, trapping the user on that card
-    # with no way back. It must navigate like any other card.
     new_card = renderer[renderer.index("export function renderNewSlide"):]
     new_card = new_card[: new_card.index("\nexport function")] if "\nexport function" in new_card else new_card
     code = "\n".join(line for line in new_card.splitlines() if not line.lstrip().startswith("//"))
 
     assert 'createElement("button")' not in code
     assert "swiper-no-swiping" not in code
-    assert 'role", "button"' in code  # still announced as activatable
-    assert "noSwipingSelector" in adapter  # the selector that made <button> fatal
+    assert 'role", "button"' in code
+    assert "noSwipingSelector" in adapter
 
 
 def test_demo_html_targets_the_single_cockpit_page() -> None:
@@ -168,11 +156,14 @@ def test_demo_html_targets_the_single_cockpit_page() -> None:
     assert "v2.html?mode=demo" not in demo_html
 
 
-def test_v3_geometry_is_the_single_backdrop_authority() -> None:
-    living_cards = _read("styles/v3_living_cards.css")
-    geometry = _read("styles/v3_geometry.css")
+def test_canonical_css_is_the_single_backdrop_authority() -> None:
+    cockpit = _read("styles/cockpit.css")
+    cards = _read("styles/cards.css")
+    families = _read("styles/families.css")
 
-    assert '.v2-body {' not in living_cards
-    assert "radial-gradient(circle at 10% 0%" not in living_cards
-    assert ':root[data-cockpit-version="3"] body.v2-body' in geometry
-    assert "background: #353738;" in geometry
+    assert "--cockpit-bg" in cockpit
+    assert "background: var(--cockpit-bg)" in cockpit
+    assert "body.v2-body" not in cards
+    assert "body.v2-body" not in families
+    assert not (COCKPIT / "styles" / "v3_geometry.css").exists()
+    assert not (COCKPIT / "styles" / "v3_living_cards.css").exists()
