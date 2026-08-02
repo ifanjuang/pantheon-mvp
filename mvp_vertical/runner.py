@@ -297,7 +297,7 @@ def _run(
                     "metric": "cosine_distance",
                     "useful_distance_threshold": MAX_USEFUL_DISTANCE,
                     "profile": _metric_profile(hit),
-                    "interpretation": "distance_and_hybrid_rank_are_retrieval_signals_not_truth_probability",
+                    "interpretation": "lower_is_closer_not_truth_probability",
                 },
                 "support_status": "sourced_not_verified",
             }
