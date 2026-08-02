@@ -1,0 +1,19 @@
+{
+  "baseline_id": "pantheon.architecture_debt",
+  "revision": 1,
+  "status": "capture_pending",
+  "captured_at": "2026-08-02",
+  "source_refs": {
+    "pantheon-mvp": "26f995101d46a5be475742db2cb9314ab2035e8c",
+    "Pantheon-Next": "23f05310377f2a31a3ae62aeca6fc90cb7dba949"
+  },
+  "policy": {
+    "new_generation_named_artifacts": 0,
+    "new_internal_versioned_routes": 0,
+    "existing_debt_may_only_decrease": true
+  },
+  "allowed": {
+    "generation_named_artifacts": [],
+    "internal_versioned_route_declarations": []
+  }
+}
