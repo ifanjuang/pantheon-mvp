@@ -99,7 +99,7 @@ def persist_candidate(
                 project_id,
                 report["task_contract_ref"],
                 report["candidate"]["candidate_id"],
-                report["candidate"]["candidate_digest"],
+                report["candidate"]["digest"],
                 report["produced_by"]["execution_id"],
                 report["status"],
                 report_digest,
