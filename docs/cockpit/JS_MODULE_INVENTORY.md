@@ -61,6 +61,8 @@ Demo mode loads `v3/demo_collection_app.js` and `shell_controls.js` from `cockpi
 - `projection/navigation_registry_adapter.js`: applies registered root identity and order at the navigation boundary.
 - `projection/child_collection_assembler.js`: resolves abstract registry sources and assembles root and selected-project child collections. It owns no transport, authorization or Evidence semantics.
 
+Registry source names are projection inputs only: they are neither endpoint declarations nor authority grants.
+
 Swiper must remain isolated behind `v3/collection/motion_adapter.js` for instance construction and navigation APIs.
 
 ### Rendering and projection
