@@ -70,5 +70,6 @@ def test_schema_renderer_keeps_type_subject_status_and_limits_separate():
     assert "model.subject_tags" in renderer
     assert "model.status" in renderer
     assert "model.limits" in renderer
-    assert "typeTags" in icons
-    assert "subjectTags" in icons
+    assert 'type: new URL("../registries/type_tags.json"' in icons
+    assert 'subject: new URL("../registries/subject_tags.json"' in icons
+    assert "resolveTagPresentation" in icons
