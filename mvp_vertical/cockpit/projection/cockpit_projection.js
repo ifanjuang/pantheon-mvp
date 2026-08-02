@@ -189,7 +189,7 @@
     const chunks = item.chunk_summary || {};
     const id = item.document_id || item.card_id || item.source_ref || crypto.randomUUID();
     const category = naming.document_type || item.category || "Document";
-    const chunkSummary = chunks.total == null ? null : `${chunks.total} chunks${chunks.total === 1 ? "" : "s"} · ${chunks.indexed ?? 0} indexé${chunks.indexed === 1 ? "" : "s"}`;
+    const chunkSummary = chunks.total == null ? null : `${chunks.total} chunk${chunks.total === 1 ? "" : "s"} · ${chunks.indexed ?? 0} indexé${chunks.indexed === 1 ? "" : "s"}`;
     return card({
       entity_id: `document:${id}`, entity_type: "document", family: "information", presentation_family: "information",
       category, title: naming.object_name || item.title || category,
@@ -198,7 +198,7 @@
       date: item.document_date || item.date || item.created_at || null, author: item.author || naming.issuer || item.issuer || null,
       type_tags: item.type_tags || [slug(category)], subject_tags: item.subject_tags || item.tags || [], limits: item.limits || [],
       available_actions: item.available_actions || (chunks.total == null ? [] : ["Inspecter les chunks"]),
-      back: [["Résumé", text(item.summary, "Résumé non renseigné")], ["Informations détaillées", text(item.details, "À produire dans une Information métier")], ["Extraction structurée", text(structured.status, "Non disponible")], ["Unités", text(structured.unit_count, "Non renseigné")], ["Pages / tableaux", `${structured.page_count ?? "—"} / ${structured.table_count ?? "—"]`], ["Anomalies", text(structured.anomaly_count, "Non renseigné")], ["Chunks /indexés", `${chunks.total ?? "—"} / ${chunks.indexed ?? "—"]`], ["Chunks signalés", text(chunks.with_quality_flags, "Non renseigné")], ["Vérification source", chunks.verification_status === "not_observed" ? "Non observée" : text(chunks.verification_status, "Non renseignée")], ["Source", text(item.source_ref, "Source non exposée.")]],
+      back: [["Résumé", text(item.summary, "Résumé non renseigné")], ["Informations détaillées", text(item.details, "À produire dans une Information métier")], ["Extraction structurée", text(structured.status, "Non disponible")], ["Unités", text(structured.unit_count, "Non renseigné")], ["Pages / tableaux", `${structured.page_count ?? "—"} / ${structured.table_count ?? "—"}`], ["Anomalies", text(structured.anomaly_count, "Non renseigné")], ["Chunks / indexés", `${chunks.total ?? "—"} / ${chunks.indexed ?? "—"}`], ["Chunks signalés", text(chunks.with_quality_flags, "Non renseigné")], ["Vérification source", chunks.verification_status === "not_observed" ? "Non observée" : text(chunks.verification_status, "Non renseignée")], ["Source", text(item.source_ref, "Source non exposée")]],
       source_refs: [item.source_ref].filter(Boolean),
     });
   }
@@ -211,8 +211,8 @@
     const issue = workData(projection);
     const id = issue.issue_id || crypto.randomUUID();
     const milestones = issue.milestones || issue.steps || [];
-    const resources = [...(issue.responsibilities || []), ...issue.skills || []), ...issue.functions || []), ...issue.tools || []];
-    return card({ entity_id: `work:${id}`, entity_type: "work_issue", family: "work", presentation_family: "work", category: "Travail", title: issue.title || "Travail", summary: issue.description || "Objectif de travail non renseigné", status: issue.status || "open", subject_tags: issue.tags || [], back: [["Objectif", text(issue.description, "Non renseigné")], ["Jalons", milestones.length ? milestones.map(step => typeof step === "string" ? step : step.label || step.title).filter(Boolean).join("\n") : "Non renseignés"], ["Responsabilités ÷ Skills ÷ Fonctions · Outils", resources.length ? resources.map(String).join(" · ") : "Non renseignés"], ["Résultat attendu", text(issue.result_ref || issue.output_ref || issue.requested_effect, "Non renseigné")]], source_work_id: id });
+    const resources = [...(issue.responsibilities || []), ...(issue.skills || []), ...(issue.functions || []), ...(issue.tools || [])];
+    return card({ entity_id: `work:${id}`, entity_type: "work_issue", family: "work", presentation_family: "work", category: "Travail", title: issue.title || "Travail", summary: issue.description || "Objectif de travail non renseigné", status: issue.status || "open", subject_tags: issue.tags || [], back: [["Objectif", text(issue.description, "Non renseigné")], ["Jalons", milestones.length ? milestones.map(step => typeof step === "string" ? step : step.label || step.title).filter(Boolean).join("\n") : "Non renseignés"], ["Responsabilités · Skills · Fonctions · Outils", resources.length ? resources.map(String).join(" · ") : "Non renseignés"], ["Résultat attendu", text(issue.result_ref || issue.output_ref || issue.requested_effect, "Non renseigné")]], source_work_id: id });
   }
 
   function normalizeWorkDecision(projection) {
@@ -228,12 +228,12 @@
 
   function candidateChangeLine(change) {
     const field = (state.projectSchema?.fields || []).find(item => item.key === change.field);
-    return `${candidateFieldTitle(change.field)} : ${formattedValue(field, change.before)} → dd{formattedValue(field, change.proposed)}`;
+    return `${candidateFieldTitle(change.field)} : ${formattedValue(field, change.before)} → ${formattedValue(field, change.proposed)}`;
   }
 
   function normalizeChangeCandidate(item) {
     const changes = Array.isArray(item.changes) ? item.changes : [];
-    return card({ entity_id: `decision:change:${item.candidate_id}`, entity_type: "project_change_candidate", family: "decision", presentation_family: "decision", category: "Décision · Modification", title: changes.length === 1 ? `Modifier ${candidateFieldTitle(changes[0].field)}` : `Modifier ${changes.length} champs du Projet`, summary: item.reason || changes.map(candidateChangeLine).join(" · ") || "Proposition de modification À examiner.", status: item.status || "pending_review", date: item.created_at || null, available_actions: item.status === "pending_review" ? ["Refuser", "Valider"] : [], back: [["Projet", text(item.entity_id, state.project)], ["Proposition", changes.map(candidateChangeLine).join("\n") || "Aucun diff exposé"], ["Proposé par", `${text(item.proposer, "Innconu"} · ${text(item.proposer_kind, "inconnu"}`], ["Révision de base", text(item.base_revision, "Non renseignée"], ["Motif", text(item.reason, "Non renseigné")], ["Sources", (item.source_refs || []).join("\n") || "Aucune source déclarée"]], source_candidate_id: item.candidate_id, source_project_id: item.entity_id });
+    return card({ entity_id: `decision:change:${item.candidate_id}`, entity_type: "project_change_candidate", family: "decision", presentation_family: "decision", category: "Décision · Modification", title: changes.length === 1 ? `Modifier ${candidateFieldTitle(changes[0].field)}` : `Modifier ${changes.length} champs du Projet`, summary: item.reason || changes.map(candidateChangeLine).join(" · ") || "Proposition de modification à examiner.", status: item.status || "pending_review", date: item.created_at || null, available_actions: item.status === "pending_review" ? ["Refuser", "Valider"] : [], back: [["Projet", text(item.entity_id, state.project)], ["Proposition", changes.map(candidateChangeLine).join("\n") || "Aucun diff exposé"], ["Proposé par", `${text(item.proposer, "Inconnu")} · ${text(item.proposer_kind, "inconnu")}`], ["Révision de base", text(item.base_revision, "Non renseignée")], ["Motif", text(item.reason, "Non renseigné")], ["Sources", (item.source_refs || []).join("\n") || "Aucune source déclarée"]], source_candidate_id: item.candidate_id, source_project_id: item.entity_id });
   }
 
   function normalizeCurrentRun(item) {
@@ -288,7 +288,7 @@
 
   function buildToolCards() {
     if (state.toolCatalog.length) return state.toolCatalog.map(normalizeTool);
-    return [card({ entity_id: "tools:catalog-unvailable", entity_type: "tool_container", role: "container", family: "tool", presentation_family: "tool", category: "Outil", type_tags: ["outil"], title: "Catalogue indisponible", summary: "Aucun éstat runtime n’est inventé lorsque le catalogue ne peut pas ºtre chargé.", status: "neutral", back: [["Principe", "Catalogue absent ≠ outil absent · runtime non observé ≠ non installé."]] })];
+    return [card({ entity_id: "tools:catalog-unavailable", entity_type: "tool_container", role: "container", family: "tool", presentation_family: "tool", category: "Outil", type_tags: ["outil"], title: "Catalogue indisponible", summary: "Aucun état runtime n’est inventé lorsque le catalogue ne peut pas être chargé.", status: "neutral", back: [["Principe", "Catalogue absent ≠ outil absent · runtime non observé ≠ non installé."]] })];
   }
 
   function projectLookup() {
@@ -324,7 +324,7 @@
     title.className = "card-title v2-card-title";
     title.textContent = model.title;
     const summary = document.createElement("p");
-    sumary.className = "card-summary v2-card-summary";
+    summary.className = "card-summary v2-card-summary";
     summary.textContent = model.summary;
     front.append(title, summary);
     const back = document.createElement("div");
