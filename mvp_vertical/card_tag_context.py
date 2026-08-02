@@ -18,6 +18,7 @@ from . import (
     store,
     tag_registry,
     work_issue_read,
+    work_issues,
 )
 
 
@@ -77,28 +78,40 @@ def resolve_tag_context(
 
     contexts: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-    for raw in entity_refs:
-        entity_id = str(raw.get("entity_id") or "").strip()
-        entity_type = str(raw.get("entity_type") or "").strip()
-        if not entity_id or not entity_type:
-            raise CardTagContextError("tag context entity requires stable identity")
-        key = (entity_type, entity_id)
-        if key in seen:
-            continue
-        seen.add(key)
+    try:
+        for raw in entity_refs:
+            entity_id = str(raw.get("entity_id") or "").strip()
+            entity_type = str(raw.get("entity_type") or "").strip()
+            if not entity_id or not entity_type:
+                raise CardTagContextError("tag context entity requires stable identity")
+            key = (entity_type, entity_id)
+            if key in seen:
+                continue
+            seen.add(key)
 
-        record = _entity_record(
-            conn,
-            entity_id=entity_id,
-            entity_type=entity_type,
-        )
-        type_tags, subject_tags = _record_tags(record or {})
-        context = tag_registry.resolve_entity_tag_context(
-            entity_id=entity_id,
-            entity_type=entity_type,
-            type_tags=type_tags,
-            subject_tags=subject_tags,
-        )
-        if context["tags"] or context["unregistered_tags"]:
-            contexts.append(context)
+            record = _entity_record(
+                conn,
+                entity_id=entity_id,
+                entity_type=entity_type,
+            )
+            type_tags, subject_tags = _record_tags(record or {})
+            context = tag_registry.resolve_entity_tag_context(
+                entity_id=entity_id,
+                entity_type=entity_type,
+                type_tags=type_tags,
+                subject_tags=subject_tags,
+            )
+            if context["tags"] or context["unregistered_tags"]:
+                contexts.append(context)
+    except CardTagContextError:
+        raise
+    except (
+        agency_data.AgencyDataError,
+        agency_information.AgencyInformationError,
+        knowledge.KnowledgeError,
+        work_issues.WorkIssueError,
+        tag_registry.TagRegistryError,
+        KeyError,
+    ) as exc:
+        raise CardTagContextError(str(exc)) from exc
     return contexts
