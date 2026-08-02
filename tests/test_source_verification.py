@@ -106,3 +106,11 @@ def test_contract_rejects_unknown_kinds_and_missing_provenance():
 
     with pytest.raises(ValueError, match="source_digest is required"):
         _report(source_digest="")
+
+
+def test_contract_rejects_ambiguous_coverage_and_invalid_observation_values():
+    with pytest.raises(ValueError, match="coverage_complete must be a boolean"):
+        _report(coverage_complete="false")
+
+    with pytest.raises(ValueError, match="observations must contain"):
+        _report(observations=("changed_number",))
