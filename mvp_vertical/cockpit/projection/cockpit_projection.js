@@ -8,7 +8,6 @@
   if (!navigationProjection) throw new Error("Navigation projection unavailable");
   if (!childAssembler?.assemble) throw new Error("Child collection assembler unavailable");
 
-  const PROJECT_ACCENTS = ["#244f7b", "#6a4a77", "#356753", "#805a2c", "#76504a", "#4d5f87"];
   const CONTACT_GROUPS = [
     "Maîtrise d’ouvrage",
     "Équipe de maîtrise d’œuvre",
@@ -18,60 +17,42 @@
     "Entreprises de travaux",
     "Autres intervenants",
   ];
+  const STATUS_LABELS = {
+    draft: "Brouillon", in_progress: "En rédaction", acted: "Acté", superseded: "Archivé",
+    review: "À valider", needs_review: "À valider", pending_review: "À valider",
+    generated_unreviewed: "Non revu", ready: "Prêt", reviewed: "Revu", active: "Actif",
+    waiting: "En attente", running: "En cours", done: "Terminé", conflict: "Conflit",
+    failed: "Échec", stale: "Obsolète", rejected: "Refusé", applied: "Appliqué",
+    neutral: "Référence", open: "À faire", partial: "Partiel", candidate: "Candidat",
+    watch: "À observer", unreviewed: "Non revu", not_activated: "Non activé",
+  };
+  const PROJECT_ACCENTS = ["#244f7b", "#6a4a77", "#356753", "#805a2c", "#76504a", "#4d5f87"];
 
   const state = {
-    project: "",
-    token: "",
-    projects: [],
-    projectSchema: null,
-    information: [],
-    legacyDocuments: [],
-    knowledge: [],
-    workIssues: [],
-    changeCandidates: [],
-    currentRuns: [],
-    toolCatalog: [],
-    cards: new Map(),
-    children: new Map(),
-    flipped: new Set(),
-    navigator: null,
-    lastMove: "none",
+    project: "", token: "", projects: [], projectSchema: null, information: [],
+    legacyDocuments: [], knowledge: [], workIssues: [], changeCandidates: [],
+    currentRuns: [], toolCatalog: [], cards: new Map(), children: new Map(),
+    flipped: new Set(), navigator: null, lastMove: "none",
   };
 
   const text = (value, fallback = "") => value == null || value === "" ? fallback : String(value);
-  const slug = value => String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+  const slug = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const statusLabel = value => STATUS_LABELS[value] || String(value || "À vérifier").replaceAll("_", " ");
 
   function stableAccent(value) {
     const input = String(value || "project");
     let hash = 0;
-    for (let index = 0; index < input.length; index += 1) {
-      hash = ((hash << 5) - hash + input.charCodeAt(index)) | 0;
-    }
+    for (let index = 0; index < input.length; index += 1) hash = ((hash << 5) - hash + input.charCodeAt(index)) | 0;
     return PROJECT_ACCENTS[Math.abs(hash) % PROJECT_ACCENTS.length];
   }
 
   function card(input) {
     const projection = window.PantheonStructuredInterface?.buildCardProjection?.(input) || {};
     return {
-      role: "entity",
-      family: "information",
-      presentation_family: input.presentation_family || input.family || "information",
-      status: "neutral",
-      summary: "",
-      type_tags: [],
-      subject_tags: [],
-      limits: [],
-      available_actions: [],
-      back: [],
-      ...input,
-      ...projection,
-      presentation_family: projection.presentation_family || input.presentation_family || input.family || "information",
+      role: "entity", family: "information", status: "neutral", summary: "", type_tags: [],
+      subject_tags: [], limits: [], available_actions: [], back: [], ...input, ...projection,
+      presentation_family: projection.presentation_family || input.presentation_family || input.family,
     };
   }
 
@@ -86,10 +67,10 @@
 
   function rootCards() {
     return [
-      card({ entity_id: "space:pantheon", entity_type: "cockpit_space", role: "conversation", family: "pantheon", title: "Pantheon", category: "Pantheon", summary: "Contexte, gouvernance, décisions conséquentes et runs en cours.", status: "active", back: [["Principe", "Pantheon gouverne ; Hermès exécute."]] }),
-      card({ entity_id: "space:affaires", entity_type: "cockpit_space", role: "container", family: "project", title: "Affaires", category: "Projets", summary: "Projets, Informations, Contacts et Travaux.", status: "active", back: [["Source", "PostgreSQL Agency Data reste le system of record."]] }),
-      card({ entity_id: "space:connaissances", entity_type: "cockpit_space", role: "container", family: "information", title: "Connaissances", category: "Références", summary: "Références réutilisables et leur état de revue.", back: [["Limite", "Knowledge ≠ Evidence ≠ mémoire gouvernée."]] }),
-      card({ entity_id: "space:outils", entity_type: "cockpit_space", role: "container", family: "tool", title: "Outils", category: "Outils", summary: "Outils, skills, bindings et runtimes observés ou candidats.", back: [["Limite", "Installé ≠ approuvé · healthy ≠ safe."]] }),
+      card({ entity_id: "space:pantheon", entity_type: "cockpit_space", role: "conversation", family: "pantheon", presentation_family: "pantheon", category: "Pantheon", title: "Pantheon", summary: "Contexte, gouvernance, décisions conséquentes et runs en cours.", status: "active", back: [["Principe", "Pantheon gouverne ; Hermès exécute. Cette projection ne modifie ni la nature ni les autorisations des objets."]] }),
+      card({ entity_id: "space:affaires", entity_type: "cockpit_space", role: "container", family: "project", presentation_family: "project", category: "Projets", title: "Affaires", summary: "Projets, Informations, Contacts et Travaux.", status: "active", back: [["Source", "PostgreSQL Agency Data reste le system of record."]] }),
+      card({ entity_id: "space:connaissances", entity_type: "cockpit_space", role: "container", family: "information", presentation_family: "information", category: "Références", title: "Connaissances", summary: "Références réutilisables et leur état de revue.", status: "neutral", back: [["Limite", "Knowledge ≠ Evidence ≠ mémoire gouvernée."]] }),
+      card({ entity_id: "space:outils", entity_type: "cockpit_space", role: "container", family: "tool", presentation_family: "tool", category: "Outils", title: "Outils", summary: "Outils, skills, bindings et runtimes observés ou candidats.", status: "neutral", back: [["Limite", "Installé ≠ approuvé · healthy ≠ safe · update disponible ≠ update autorisée."]] }),
     ];
   }
 
@@ -100,16 +81,16 @@
   function formattedValue(field, value) {
     if (value == null || value === "") return "Non renseigné";
     if (Array.isArray(value)) return value.join(" · ");
-    if (field?.unit === "EUR" && typeof value === "number") {
-      return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
-    }
-    if (field?.unit === "m2" && typeof value === "number") return `${value} m²`;
+    if (field?.unit === "EUR" && typeof value === "number") return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
+    if (field?.unit === "m2" && typeof value === "number") return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)} m²`;
     return String(value);
   }
 
   function projectSchemaRows(item) {
     if (!state.projectSchema) {
-      return Object.entries(item.attributes || {}).map(([key, value]) => [key.replaceAll("_", " "), formattedValue(null, value)]);
+      return Object.entries(item.attributes || {})
+        .filter(([, value]) => value !== null && value !== "" && !(Array.isArray(value) && !value.length))
+        .map(([key, value]) => [key.replaceAll("_", " "), Array.isArray(value) ? value.join(" · ") : String(value)]);
     }
     const rows = [];
     for (const field of state.projectSchema.fields || []) {
@@ -125,192 +106,189 @@
     return rows;
   }
 
+  function informationTimestamp(item) {
+    return String(item.information_date || item.acted_at || item.updated_at || item.created_at || "");
+  }
+
+  function newestInformation(items) {
+    return [...items].sort((left, right) => informationTimestamp(right).localeCompare(informationTimestamp(left)));
+  }
+
+  function informationContextLine(item) {
+    const identity = [item.information_date || null, item.author || null, item.title || null].filter(Boolean).join(" · ");
+    return [identity, item.summary].filter(Boolean).join("\n");
+  }
+
   function workData(projection) {
     return projection.work_issue || projection;
+  }
+
+  function projectContextRows() {
+    const information = newestInformation(state.information);
+    const working = information.find(item => ["draft", "in_progress"].includes(item.status));
+    const acted = information.find(item => item.status === "acted");
+    const sensitive = information.find(item => {
+      const vocabulary = [item.category, ...(item.subject_tags || [])].map(slug);
+      return vocabulary.some(value => ["assurance", "sinistre", "responsabilite", "reserve", "reservations", "reprise", "reprises"].includes(value));
+    });
+    const activeWork = state.workIssues.map(workData)
+      .filter(item => ["open", "in_progress", "waiting", "review", "needs_review"].includes(item.status));
+    const pendingCandidates = state.changeCandidates.filter(item => item.status === "pending_review");
+    const reviewWork = activeWork.filter(item => ["review", "needs_review"].includes(item.status));
+    const rows = [];
+    if (working) rows.push(["Situation en cours", `${statusLabel(working.status)}\n${informationContextLine(working)}`]);
+    else if (acted) rows.push(["Situation actuelle", informationContextLine(acted)]);
+    if (acted && acted !== working) rows.push(["Dernière base ACTÉE", informationContextLine(acted)]);
+    if (sensitive && sensitive !== working && sensitive !== acted) rows.push(["Dossier sensible", informationContextLine(sensitive)]);
+    if (activeWork.length) {
+      rows.push(["Suites à donner", activeWork.slice(0, 3).map(item => {
+        const responsibility = (item.responsibilities || []).join(" · ");
+        const identity = [statusLabel(item.status), item.title, responsibility].filter(Boolean).join(" · ");
+        return [identity, item.description].filter(Boolean).join(" — ");
+      }).join("\n")]);
+    }
+    const reviewCount = reviewWork.length + pendingCandidates.length;
+    if (reviewCount) rows.push(["Revue humaine", `${reviewCount} proposition(s) ou travail(aux) attendent une validation humaine.`]);
+    return rows;
   }
 
   function normalizeProject(item, { selected = false } = {}) {
     const projectId = item.project_id || item.entity_id || item.code || item.display_name;
     const title = item.display_name || item.code || projectId || "Affaire";
+    const contactCount = Array.isArray(item.contacts) ? item.contacts.length : 0;
+    const informationCount = state.information.length + state.legacyDocuments.length;
     return card({
-      entity_id: projectEntityId(item),
-      entity_type: "project",
-      family: "project",
-      category: "Projet",
-      title,
-      summary: selected
-        ? `${state.information.length + state.legacyDocuments.length} information(s) · ${(item.contacts || []).length} contact(s) · ${state.workIssues.length} travail(aux)`
-        : [item.code && item.code !== title ? item.code : null, item.phase, item.location].filter(Boolean).join(" · ") || "Affaire Agency Data",
-      status: item.status || "active",
-      subject_tags: item.tags || [],
-      identity_accent: stableAccent(projectId),
-      back: projectSchemaRows(item),
+      entity_id: projectEntityId(item), entity_type: "project", family: "project", presentation_family: "project",
+      category: "Projet", title,
+      summary: selected ? `${informationCount} information(s) · ${contactCount} contact(s) · ${state.workIssues.length} travail(aux)` : [item.code && item.code !== title ? item.code : null, item.phase, item.location].filter(Boolean).join(" · ") || "Affaire Agency Data",
+      status: item.status || "active", subject_tags: Array.isArray(item.tags) ? item.tags : [],
+      identity_accent: stableAccent(projectId), index: item.display_index || item.index || null,
+      date: item.updated_at || null, front: { issuer: item.primary_client || null },
+      back: selected ? [...projectContextRows(), ...projectSchemaRows(item)] : projectSchemaRows(item),
       source_project_id: String(projectId || ""),
     });
   }
 
   function normalizeInformation(item) {
     return card({
-      entity_id: `information:${item.information_id}`,
-      entity_type: "information",
-      family: "information",
-      category: item.category || "Information",
-      title: item.title || "Information",
-      summary: item.summary || "Résumé non renseigné",
-      status: item.status || "draft",
-      index: item.index_label || null,
-      date: item.information_date || item.updated_at || null,
-      author: item.author || null,
-      type_tags: item.type_tags || [],
-      subject_tags: item.subject_tags || [],
-      limits: item.limits || [],
+      entity_id: `information:${item.information_id}`, entity_type: "information", family: "information",
+      presentation_family: "information", category: item.category || "Information", title: item.title || "Information",
+      summary: item.summary || "Résumé non renseigné", status: item.status || "draft", index: item.index_label || null,
+      date: item.information_date || item.updated_at || null, author: item.author || null,
+      type_tags: item.type_tags || [], subject_tags: item.subject_tags || [], limits: item.limits || [],
       available_actions: item.status === "acted" ? ["Nouvelle version"] : ["Modifier avec Hermès", "Acter"],
-      back: [["Résumé", text(item.summary, "Non renseigné")], ["Informations détaillées", text(item.details, "Non renseignées")], ["Source", text(item.source_ref || item.source_note, "Non renseignée")]],
-      base_acted_id: item.base_acted_id || null,
+      back: [["Résumé", text(item.summary, "Résumé non renseigné")], ["Informations détaillées", text(item.details, "Informations détaillées non renseignées")], ["Source", text(item.source_ref || item.source_note, "Source non renseignée")], ["Version source", text(item.source_version, "Non renseignée")], ["Auteur", text(item.author, "Non renseigné")]],
+      source_refs: [item.source_ref].filter(Boolean), base_acted_id: item.base_acted_id || null,
+      series_id: item.series_id || null, technical_revision: item.revision || null,
     });
   }
 
   function normalizeLegacyDocument(item) {
     const naming = item.naming || {};
+    const structured = item.structured_extraction || {};
+    const chunks = item.chunk_summary || {};
     const id = item.document_id || item.card_id || item.source_ref || crypto.randomUUID();
+    const category = naming.document_type || item.category || "Document";
+    const chunkSummary = chunks.total == null ? null : `${chunks.total} chunks${chunks.total === 1 ? "" : "s"} · ${chunks.indexed ?? 0} indexé${chunks.indexed === 1 ? "" : "s"}`;
     return card({
-      entity_id: `document:${id}`,
-      entity_type: "document",
-      family: "information",
-      category: naming.document_type || item.category || "Document",
-      title: naming.object_name || item.title || "Document",
-      summary: item.summary || "Document source",
-      status: item.status || item.analysis_status || "partial",
-      date: item.document_date || item.date || item.created_at || null,
-      subject_tags: item.subject_tags || item.tags || [],
-      back: [["Résumé", text(item.summary, "Non renseigné")], ["Source", text(item.source_ref, "Non exposée")]],
+      entity_id: `document:${id}`, entity_type: "document", family: "information", presentation_family: "information",
+      category, title: naming.object_name || item.title || category,
+      summary: item.summary || chunkSummary || [naming.document_type, naming.phase_code].filter(Boolean).join(" · ") || "Document source",
+      status: item.status || item.analysis_status || "partial", index: naming.revision_index || item.index || null,
+      date: item.document_date || item.date || item.created_at || null, author: item.author || naming.issuer || item.issuer || null,
+      type_tags: item.type_tags || [slug(category)], subject_tags: item.subject_tags || item.tags || [], limits: item.limits || [],
+      available_actions: item.available_actions || (chunks.total == null ? [] : ["Inspecter les chunks"]),
+      back: [["Résumé", text(item.summary, "Résumé non renseigné")], ["Informations détaillées", text(item.details, "À produire dans une Information métier")], ["Extraction structurée", text(structured.status, "Non disponible")], ["Unités", text(structured.unit_count, "Non renseigné")], ["Pages / tableaux", `${structured.page_count ?? "—"} / ${structured.table_count ?? "—"]`], ["Anomalies", text(structured.anomaly_count, "Non renseigné")], ["Chunks /indexés", `${chunks.total ?? "—"} / ${chunks.indexed ?? "—"]`], ["Chunks signalés", text(chunks.with_quality_flags, "Non renseigné")], ["Vérification source", chunks.verification_status === "not_observed" ? "Non observée" : text(chunks.verification_status, "Non renseignée")], ["Source", text(item.source_ref, "Source non exposée.")]],
+      source_refs: [item.source_ref].filter(Boolean),
     });
   }
 
   function normalizeKnowledge(item) {
-    return card({
-      entity_id: `knowledge:${item.knowledge_id || item.card_id || crypto.randomUUID()}`,
-      entity_type: "knowledge",
-      family: "information",
-      category: item.family || "Référence",
-      title: item.title || "Knowledge",
-      summary: item.summary || `Version ${item.version || 1}`,
-      status: item.review_status || "generated_unreviewed",
-      date: item.updated_at || null,
-      subject_tags: item.subject_tags || item.tags || [],
-      limits: item.limits || ["consultatif"],
-      back: [["Informations détaillées", text(item.markdown, "Contenu non exposé")]],
-    });
+    return card({ entity_id: `knowledge:${item.knowledge_id || item.card_id || crypto.randomUUID()}`, entity_type: "knowledge", family: "information", presentation_family: "information", category: item.family || "Référence", title: item.title || "Knowledge", summary: item.summary || `Version ${item.version || 1}`, status: item.review_status || "generated_unreviewed", date: item.updated_at || null, author: item.author || null, type_tags: item.type_tags || ["etude"], subject_tags: item.subject_tags || item.tags || [], limits: item.limits || ["consultatif"], back: [["Informations détaillées", text(item.markdown, "Contenu non exposé")]] });
   }
 
   function normalizeWork(projection) {
     const issue = workData(projection);
     const id = issue.issue_id || crypto.randomUUID();
-    return card({
-      entity_id: `work:${id}`,
-      entity_type: "work_issue",
-      family: "work",
-      category: "Travail",
-      title: issue.title || "Travail",
-      summary: issue.description || "Objectif non renseigné",
-      status: issue.status || "open",
-      subject_tags: issue.tags || [],
-      back: [["Objectif", text(issue.description, "Non renseigné")]],
-      source_work_id: id,
-    });
+    const milestones = issue.milestones || issue.steps || [];
+    const resources = [...(issue.responsibilities || []), ...issue.skills || []), ...issue.functions || []), ...issue.tools || []];
+    return card({ entity_id: `work:${id}`, entity_type: "work_issue", family: "work", presentation_family: "work", category: "Travail", title: issue.title || "Travail", summary: issue.description || "Objectif de travail non renseigné", status: issue.status || "open", subject_tags: issue.tags || [], back: [["Objectif", text(issue.description, "Non renseigné")], ["Jalons", milestones.length ? milestones.map(step => typeof step === "string" ? step : step.label || step.title).filter(Boolean).join("\n") : "Non renseignés"], ["Responsabilités ÷ Skills ÷ Fonctions · Outils", resources.length ? resources.map(String).join(" · ") : "Non renseignés"], ["Résultat attendu", text(issue.result_ref || issue.output_ref || issue.requested_effect, "Non renseigné")]], source_work_id: id });
   }
 
   function normalizeWorkDecision(projection) {
     const issue = workData(projection);
     const id = issue.issue_id || crypto.randomUUID();
-    return card({
-      entity_id: `decision:work:${id}`,
-      entity_type: "work_decision",
-      family: "decision",
-      category: "Décision · Travail",
-      title: issue.decision_title || issue.title || "Validation du travail",
-      summary: issue.decision_question || "Le Travail demande une validation humaine.",
-      status: "review",
-      available_actions: ["Refuser", "Valider"],
-      back: [["Travail", text(issue.title, id)], ["Question", text(issue.decision_question, "Valider la proposition ?")]],
-      source_work_id: id,
-    });
+    return card({ entity_id: `decision:work:${id}`, entity_type: "work_decision", family: "decision", presentation_family: "decision", category: "Décision · Travail", title: issue.decision_title || issue.title || "Validation du travail", summary: issue.decision_question || "Le Travail demande une validation humaine.", status: "review", subject_tags: issue.tags || [], available_actions: ["Refuser", "Valider"], back: [["Travail", text(issue.title, id)], ["Question", text(issue.decision_question, "Valider le résultat ou l’orientation proposée ?")], ["Résultat présenté", text(issue.result_summary || issue.description, "Non renseigné")], ["Effet demandé", text(issue.requested_effect, "Non renseigné")]], source_work_id: id });
+  }
+
+  function candidateFieldTitle(key) {
+    const field = (state.projectSchema?.fields || []).find(item => item.key === key);
+    return field?.title || field?.label || key.replaceAll("_", " ");
+  }
+
+  function candidateChangeLine(change) {
+    const field = (state.projectSchema?.fields || []).find(item => item.key === change.field);
+    return `${candidateFieldTitle(change.field)} : ${formattedValue(field, change.before)} → dd{formattedValue(field, change.proposed)}`;
   }
 
   function normalizeChangeCandidate(item) {
     const changes = Array.isArray(item.changes) ? item.changes : [];
-    return card({
-      entity_id: `decision:change:${item.candidate_id}`,
-      entity_type: "project_change_candidate",
-      family: "decision",
-      category: "Décision · Modification",
-      title: changes.length === 1 ? `Modifier ${changes[0].field}` : `Modifier ${changes.length} champs du Projet`,
-      summary: item.reason || "Proposition de modification à examiner.",
-      status: item.status || "pending_review",
-      date: item.created_at || null,
-      available_actions: item.status === "pending_review" ? ["Refuser", "Valider"] : [],
-      back: [["Projet", text(item.entity_id, state.project)], ["Motif", text(item.reason, "Non renseigné")]],
-      source_candidate_id: item.candidate_id,
-      source_project_id: item.entity_id,
-    });
+    return card({ entity_id: `decision:change:${item.candidate_id}`, entity_type: "project_change_candidate", family: "decision", presentation_family: "decision", category: "Décision · Modification", title: changes.length === 1 ? `Modifier ${candidateFieldTitle(changes[0].field)}` : `Modifier ${changes.length} champs du Projet`, summary: item.reason || changes.map(candidateChangeLine).join(" · ") || "Proposition de modification À examiner.", status: item.status || "pending_review", date: item.created_at || null, available_actions: item.status === "pending_review" ? ["Refuser", "Valider"] : [], back: [["Projet", text(item.entity_id, state.project)], ["Proposition", changes.map(candidateChangeLine).join("\n") || "Aucun diff exposé"], ["Proposé par", `${text(item.proposer, "Innconu"} · ${text(item.proposer_kind, "inconnu"}`], ["Révision de base", text(item.base_revision, "Non renseignée"], ["Motif", text(item.reason, "Non renseigné")], ["Sources", (item.source_refs || []).join("\n") || "Aucune source déclarée"]], source_candidate_id: item.candidate_id, source_project_id: item.entity_id });
   }
 
   function normalizeCurrentRun(item) {
     const runId = item.run_id || item.execution_id || item.id || crypto.randomUUID();
-    return card({
-      entity_id: `run:${runId}`,
-      entity_type: item.entity_type || "hermes_run",
-      family: item.family || "work",
-      category: item.category || "Run en cours",
-      title: item.title || item.task_title || `Run ${runId}`,
-      summary: item.summary || item.task_summary || "Exécution Hermès en cours.",
-      status: item.status || item.run_status || "in_progress",
-      available_actions: item.available_actions || [],
-      back: item.back || [["Runtime", text(item.runtime || item.runtime_owner, "Non renseigné")]],
-      source_run_id: runId,
-    });
+    return card({ entity_id: `run:${runId}`, entity_type: item.entity_type || "hermes_run", family: item.family || "work", presentation_family: item.presentation_family || item.family || "work", category: item.category || "Run en cours", title: item.title || item.task_title || `Run ${runId}`, summary: item.summary || item.task_summary || "Exécution Hermès en cours.", status: item.status || item.run_status || "in_progress", date: item.started_at || item.created_at || null, subject_tags: item.subject_tags || item.tags || [], limits: item.limits || [], available_actions: item.available_actions || [], back: item.back || [["Runtime", text(item.runtime || item.runtime_owner, "Non renseigné")], ["Scope", text(item.scope_ref || item.scope, "Non renseigné")], ["Démarré", text(item.started_at, "Non renseigné")]], source_run_id: runId });
   }
 
   function currentRunItems() {
     return state.currentRuns.filter(item => ["active", "in_progress", "running", "waiting"].includes(item.status || item.run_status));
   }
 
+  function contactDisplay(item) {
+    const identity = [item.name, item.organization].filter(Boolean).join(" · ");
+    const role = item.role ? ` — ${item.role}` : "";
+    const details = [item.email, item.phone].filter(Boolean).join(" · ");
+    return `${identity || "Contact non renseigné"}${role}${details ? `\n${details}` : ""}`;
+  }
+
   function normalizeContacts(projectId, contacts = []) {
     const groups = new Map(CONTACT_GROUPS.map(name => [name, []]));
-    for (const item of contacts) groups.get(CONTACT_GROUPS.includes(item.group) ? item.group : "Autres intervenants").push(item);
-    const back = [...groups.entries()]
-      .filter(([, items]) => items.length)
-      .map(([group, items]) => [group, items.map(item => [item.name, item.organization, item.role, item.email, item.phone].filter(Boolean).join(" · ")).join("\n")]);
-    return card({
-      entity_id: `project:${projectId}:contacts`,
-      entity_type: "project_contacts",
-      family: "contact",
-      category: "Contacts",
-      title: "Contacts",
-      summary: `${contacts.length} contact(s)`,
-      identity_accent: stableAccent(projectId),
-      back: back.length ? back : [["Contacts", "Aucun contact renseigné pour cette affaire."]],
-      source_project_id: projectId,
-    });
+    for (const item of Array.isArray(contacts) ? contacts : []) {
+      const group = CONTACT_GROUPS.includes(item.group) ? item.group : "Autres intervenants";
+      groups.get(group).push(item);
+    }
+    const back = [];
+    for (const group of CONTACT_GROUPS) {
+      const values = groups.get(group) || [];
+      if (values.length) back.push([group, values.map(contactDisplay).join("\n")]);
+    }
+    return card({ entity_id: `project:${projectId}:contacts`, entity_type: "project_contacts", family: "contact", presentation_family: "contact", category: "Contacts", title: "Contacts", summary: `${Array.isArray(contacts) ? contacts.length : 0} contact(s)`, status: "neutral", identity_accent: stableAccent(projectId), back: back.length ? back : [["Contacts", "Aucun contact renseigné pour cette affaire."]], source_project_id: projectId });
+  }
+
+  function toolStatus(item) {
+    if (item.governance_state === "approved") return "reviewed";
+    if (item.governance_state === "candidate") return "candidate";
+    if (item.governance_state === "watch") return "watch";
+    if (item.health_state === "observed_ready") return "ready";
+    if (item.governance_state === "unreviewed") return "unreviewed";
+    return "neutral";
+  }
+
+  function permissionLines(permissions = {}) {
+    return Object.entries(permissions).map(([key, value]) => `${key.replaceAll("_", " ")} : ${value}`).join("\n");
   }
 
   function normalizeTool(item) {
-    return card({
-      entity_id: `tool:${item.tool_id}`,
-      entity_type: "tool",
-      family: "tool",
-      category: item.category || item.resource_type || "Outil",
-      title: item.name || item.tool_id,
-      summary: item.short_description || "Outil ou binding candidat.",
-      status: item.governance_state === "approved" ? "reviewed" : item.governance_state || "neutral",
-      subject_tags: item.capability_slots || [],
-      back: [["Description", text(item.long_description || item.short_description, "Non renseignée")], ["Runtime", text(item.runtime_owner, "Non renseigné")], ["Santé observée", text(item.health_state, "unknown")], ["Gouvernance", text(item.governance_state, "unknown")]],
-    });
+    const slots = Array.isArray(item.capability_slots) ? item.capability_slots : [];
+    const runtimeCapabilities = Array.isArray(item.capabilities) ? item.capabilities : [];
+    const permissions = item.permissions && typeof item.permissions === "object" && !Array.isArray(item.permissions) ? item.permissions : {};
+    return card({ entity_id: `tool:${item.tool_id}`, entity_type: "tool", family: "tool", presentation_family: "tool", category: item.category || item.resource_type || "Outil", type_tags: ["outil"], subject_tags: slots, title: item.name || item.tool_id, summary: item.short_description || "Outil ou binding candidat.", status: toolStatus(item), date: item.observed_at || null, back: [["Description", text(item.long_description || item.short_description, "Non renseignée")], ["Capability Slots", slots.length ? slots.join("\n") : "Aucun slot déclaré"], ["Provenance", text(item.provenance_mode, "Non renseignée")], ["Owner runtime", text(item.runtime_owner, "Non renseigné")], ["Installation", text(item.installation_state, "unknown")], ["État natif", text(item.native_state, "unknown")], ["Santé observée", text(item.health_state, "unknown")], ["Gouvernance", text(item.governance_state, "unknown")], ["Activation scope", text(item.activation_state, "unknown")], ["Mise à jour", text(item.update_state, "unknown")], ["Permissions", permissionLines(permissions) || "Non qualifiées"], ["Capacités runtime", runtimeCapabilities.length ? runtimeCapabilities.join("\n") : "Non observées"], ["Evidence attendue", text(item.evidence_expectation, "À définir avant usage conséquent")], ["Rollback", text(item.rollback_posture, "Non renseigné")], ["Prochaine décision humaine", text(item.next_human_decision, "Aucune")], ["Risques connus", (item.known_risks || []).join("\n") || "Non renseignés"], ["Interdits", (item.forbidden || []).join("\n") || "Aucun interdit déclaré"]] });
   }
 
   function buildToolCards() {
     if (state.toolCatalog.length) return state.toolCatalog.map(normalizeTool);
-    return [card({ entity_id: "tools:catalog-unavailable", entity_type: "tool_container", family: "tool", category: "Outil", title: "Catalogue indisponible", summary: "Aucun état runtime n’est inventé.", back: [["Principe", "Catalogue absent ≠ outil absent."]] })];
+    return [card({ entity_id: "tools:catalog-unvailable", entity_type: "tool_container", role: "container", family: "tool", presentation_family: "tool", category: "Outil", type_tags: ["outil"], title: "Catalogue indisponible", summary: "Aucun éstat runtime n’est inventé lorsque le catalogue ne peut pas ºtre chargé.", status: "neutral", back: [["Principe", "Catalogue absent ≠ outil absent · runtime non observé ≠ non installé."]] })];
   }
 
   function projectLookup() {
@@ -322,44 +300,16 @@
   function rebuildGraph() {
     state.cards.clear();
     state.children.clear();
-    rootCards().forEach(putCard);
+    for (const model of rootCards()) putCard(model);
     const selected = projectLookup();
     const selectedProjectId = selected?.project_id || state.project || null;
     const selectedCardId = selected ? projectEntityId(selected) : selectedProjectId ? `project:${selectedProjectId}` : null;
-
-    childAssembler.assemble({
-      rootItemIds: navigationProjection.rootItemIds,
-      sourcesFor: navigationProjection.sourcesFor,
-      state,
-      selected,
-      selectedProjectId,
-      selectedCardId,
-      putCard,
-      setChildren,
-      normalizeProject,
-      normalizeKnowledge,
-      normalizeWorkDecision,
-      normalizeChangeCandidate,
-      normalizeCurrentRun,
-      normalizeContacts,
-      normalizeInformation,
-      normalizeLegacyDocument,
-      normalizeWork,
-      buildToolCards,
-      workData,
-      currentRunItems,
-    });
-
+    childAssembler.assemble({ rootItemIds: navigationProjection.rootItemIds, sourcesFor: navigationProjection.sourcesFor, state, selected, selectedProjectId, selectedCardId, putCard, setChildren, normalizeProject, normalizeKnowledge, normalizeWorkDecision, normalizeChangeCandidate, normalizeCurrentRun, normalizeContacts, normalizeInformation, normalizeLegacyDocument, normalizeWork, buildToolCards, workData, currentRunItems });
     state.navigator = window.PantheonSpatialNavigation.create();
   }
 
-  function currentModel() {
-    return state.cards.get(state.navigator?.currentId()) || null;
-  }
-
-  function breadcrumbLabels() {
-    return state.navigator.snapshot().path.map(part => state.cards.get(part.current_id)?.title).filter(Boolean);
-  }
+  function currentModel() { return state.cards.get(state.navigator?.currentId()) || null; }
+  function breadcrumbLabels() { return state.navigator.snapshot().path.map(part => state.cards.get(part.current_id)?.title).filter(Boolean); }
 
   function renderFallbackCard(model) {
     const article = document.createElement("article");
@@ -374,23 +324,18 @@
     title.className = "card-title v2-card-title";
     title.textContent = model.title;
     const summary = document.createElement("p");
-    summary.className = "card-summary v2-card-summary";
+    sumary.className = "card-summary v2-card-summary";
     summary.textContent = model.summary;
     front.append(title, summary);
     const back = document.createElement("div");
     back.className = "card-face card-back v2-card-face v2-card-back";
     for (const [heading, value] of model.back || []) {
       const section = document.createElement("section");
-      const h3 = document.createElement("h3");
-      h3.textContent = heading;
-      const p = document.createElement("p");
-      p.textContent = value;
-      section.append(h3, p);
-      back.append(section);
+      const h3 = document.createElement("h3"); h3.textContent = heading;
+      const p = document.createElement("p"); p.textContent = value;
+      section.append(h3, p); back.append(section);
     }
-    inner.append(front, back);
-    article.append(inner);
-    return article;
+    inner.append(front, back); article.append(inner); return article;
   }
 
   function updateChrome(snapshot, model) {
@@ -398,10 +343,10 @@
     $("v2-previous").disabled = !snapshot.can_move_previous;
     $("v2-next").disabled = !snapshot.can_move_next;
     $("v2-ascend").disabled = !snapshot.can_ascend;
-    $("v2-descend").disabled = !model || !(state.children.get(model.entity_id) || []).length;
+    $("v2-descend").disabled = !model || (!(state.children.get(model.entity_id) || []).length && model.entity_type !== "project");
     $("v2-flip").disabled = !model;
     const rootCurrent = snapshot.path[0]?.current_id;
-    document.querySelectorAll("[data-space]").forEach(button => button.classList.toggle("is-active", `space:${button.dataset.space}` === rootCurrent));
+    for (const button of document.querySelectorAll("[data-space]")) button.classList.toggle("is-active", `space:${button.dataset.space}` === rootCurrent);
   }
 
   function render() {
@@ -410,14 +355,7 @@
     const siblings = snapshot.sibling_ids.map(id => state.cards.get(id)).filter(Boolean);
     const model = currentModel();
     if (window.PANTHEON_COCKPIT_SWIPER?.mount) {
-      window.PANTHEON_COCKPIT_SWIPER.mount({
-        models: siblings,
-        activeIndex: snapshot.current_index,
-        onActiveChange(active) {
-          if (active?.entity_id) state.navigator.selectSibling(active.entity_id);
-          updateChrome(state.navigator.snapshot(), active);
-        },
-      });
+      window.PANTHEON_COCKPIT_SWIPER.mount({ models: siblings, activeIndex: snapshot.current_index, onActiveChange(active) { if (active?.entity_id) state.navigator.selectSibling(active.entity_id); updateChrome(state.navigator.snapshot(), active); } });
     } else {
       const stage = $("v2-stage");
       stage.replaceChildren(model ? renderFallbackCard(model) : document.createTextNode("Aucune carte dans cette collection."));
@@ -425,17 +363,13 @@
     updateChrome(snapshot, model);
   }
 
-  function moveHorizontal(delta) {
-    state.lastMove = delta < 0 ? "right" : "left";
-    state.navigator.moveHorizontal(delta);
-    render();
-  }
+  function moveHorizontal(delta) { state.lastMove = delta < 0 ? "right" : "left"; state.navigator.moveHorizontal(delta); render(); }
 
   async function descend() {
     const model = currentModel();
     if (!model) return;
     const children = state.children.get(model.entity_id) || [];
-    if (!children.length && model.entity_type === "project" && model.source_project_id !== state.project) {
+    if (!children.length && model.entity_type === "project" && model.source_project_id && model.source_project_id !== state.project) {
       $("v2-project").value = model.source_project_id;
       await loadProject({ focusProject: true });
       return;
@@ -445,27 +379,10 @@
     render();
   }
 
-  function ascend() {
-    state.navigator.ascend();
-    render();
-  }
-
-  function toggleFlip() {
-    const model = currentModel();
-    if (!model) return;
-    if (state.flipped.has(model.entity_id)) state.flipped.delete(model.entity_id);
-    else state.flipped.add(model.entity_id);
-    render();
-  }
-
-  function jumpToSpace(space) {
-    state.navigator.returnToRoot(`space:${space}`);
-    render();
-  }
-
-  function setMessage(message) {
-    $("v2-status").textContent = message;
-  }
+  function ascend() { state.navigator.ascend(); render(); }
+  function toggleFlip() { const model = currentModel(); if (!model) return; if (state.flipped.has(model.entity_id)) state.flipped.delete(model.entity_id); else state.flipped.add(model.entity_id); render(); }
+  function jumpToSpace(space) { state.navigator.returnToRoot(`space:${space}`); render(); }
+  function setMessage(message) { $("v2-status").textContent = message; }
 
   async function loadProject({ focusProject = false } = {}) {
     const requested = $("v2-project").value.trim();
@@ -473,23 +390,12 @@
     if (!state.token) return setMessage("Clé d’accès requise pour lire Agency Data.");
     $("v2-load").disabled = true;
     try {
-      [state.projects, state.projectSchema] = await Promise.all([
-        dataLoader.loadAgencyProjects(state.token),
-        dataLoader.loadProjectSchema(state.token),
-      ]);
+      [state.projects, state.projectSchema] = await Promise.all([dataLoader.loadAgencyProjects(state.token), dataLoader.loadProjectSchema(state.token)]);
       state.project = requested;
       const matched = projectLookup();
       if (matched?.project_id) state.project = matched.project_id;
-      if (state.project) {
-        const bundle = await dataLoader.loadProjectBundle(state.project, state.token);
-        Object.assign(state, bundle);
-      } else {
-        state.information = [];
-        state.legacyDocuments = [];
-        state.knowledge = [];
-        state.workIssues = [];
-        state.changeCandidates = [];
-      }
+      if (state.project) Object.assign(state, await dataLoader.loadProjectBundle(state.project, state.token));
+      else Object.assign(state, { information: [], legacyDocuments: [], knowledge: [], workIssues: [], changeCandidates: [] });
       rebuildGraph();
       state.navigator.returnToRoot("space:affaires");
       if (focusProject || state.project) {
@@ -498,7 +404,7 @@
         if (target) state.navigator.descend({ parent_entity_id: "space:affaires", collection_id: "children:space:affaires", item_ids: projectIds, initial_entity_id: target });
       }
       render();
-      setMessage(state.project ? `Affaire ${state.project} chargée.` : `${state.projects.length} affaire(s) chargée(s).`);
+      setMessage(state.project ? `Affaire ${matched?.display_name || matched?.code || state.project} chargée · ${state.changeCandidates.length} modification(s) à valider.` : `${state.projects.length} affaire(s) chargée(s).`);
     } catch (error) {
       setMessage(`Chargement refusé : ${error.message}`);
     } finally {
@@ -520,11 +426,7 @@
     state.toolCatalog = await dataLoader.loadToolCatalog();
     rebuildGraph();
     bindControls();
-    window.addEventListener("pantheon:current-runs", event => {
-      state.currentRuns = Array.isArray(event.detail?.runs) ? event.detail.runs : [];
-      rebuildGraph();
-      render();
-    });
+    window.addEventListener("pantheon:current-runs", event => { state.currentRuns = Array.isArray(event.detail?.runs) ? event.detail.runs : []; rebuildGraph(); render(); });
     render();
   }
 
