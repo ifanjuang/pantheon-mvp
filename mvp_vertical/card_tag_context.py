@@ -74,7 +74,16 @@ def resolve_tag_context(
     *,
     entity_refs: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Resolve bounded tag descriptions for already validated entity refs."""
+    """Resolve bounded tag descriptions for already validated entity refs.
+
+    Lightweight test doubles used to exercise scope policy may deliberately omit
+    owner-read methods. They produce no tag context rather than accepting client
+    descriptions or inventing metadata. Production PostgreSQL connections expose
+    ``cursor`` and therefore execute the authoritative owner reads below.
+    """
+
+    if not callable(getattr(conn, "cursor", None)):
+        return []
 
     contexts: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
