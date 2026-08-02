@@ -1,9 +1,9 @@
 """Strict Cockpit projection of the governed Work Issue aggregate.
 
 The source aggregate remains authoritative. This module only derives a bounded
-read model from fields already admitted by ``work_issue_slice.schema.yaml``.
-It does not infer runtime ownership, human requests, Evidence status or task
-authorization from absent fields.
+read model from fields already admitted by ``work_issue_slice.schema.yaml`` and
+explicit Work Card presentation metadata. It does not infer runtime ownership,
+human requests, Evidence status or task authorization from absent fields.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ VOCABULARY = (
 )
 PROJECTION_SCHEMA_ID = "cockpit.work_activity"
 PROJECTION_SCHEMA_REVISION = 1
+MAX_SUBJECT_TAGS = 5
 
 
 class WorkActivityProjectionError(ValueError):
@@ -57,6 +58,22 @@ def _sequence(value: Any, *, field: str) -> list[dict[str, Any]]:
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
         raise WorkActivityProjectionError(f"{field} must be an array of objects")
     return value
+
+
+def _strings(value: Any, *, limit: int | None = None) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in value:
+        item = str(raw).strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+        if limit is not None and len(result) >= limit:
+            break
+    return result
 
 
 def _title(entries: dict[str, Any], key: Any, *, field: str) -> str:
@@ -162,6 +179,12 @@ def project_work_activity(aggregate: dict[str, Any]) -> dict[str, Any]:
         "version": issue.get("version"),
         "task_contract_ref": issue.get("task_contract_ref"),
         "context_pack_ref": issue.get("context_pack_ref"),
+        "type_tags": _strings(issue.get("type_tags")),
+        "subject_tags": _strings(
+            issue.get("subject_tags") or issue.get("tags"),
+            limit=MAX_SUBJECT_TAGS,
+        ),
+        "limits": _strings(issue.get("limits")),
     }
 
     latest_run = _latest(
