@@ -61,6 +61,8 @@ Demo mode loads `v3/demo_collection_app.js` and `shell_controls.js` from `cockpi
 - `projection/navigation_registry_adapter.js`: applies registered root identity and order at the navigation boundary.
 - `projection/child_collection_assembler.js`: resolves abstract registry sources and assembles root and selected-project child collections. It owns no transport, authorization or Evidence semantics.
 
+Swiper must remain isolated behind `v3/collection/motion_adapter.js` for instance construction and navigation APIs.
+
 ### Rendering and projection
 
 - `rendering/card_renderer.js`: canonical structural card renderer.
@@ -106,13 +108,15 @@ Demo mode loads `v3/demo_collection_app.js` and `shell_controls.js` from `cockpi
 
 ## Dead-code proof
 
-Before deleting a JavaScript file or compatibility token, establish:
+Before deleting a JavaScript file or compatibility token, establish all of the following reference classes:
 
-- HTML or ordered script inclusion;
-- static and dynamic imports;
-- global produced and consumed;
+- HTML script inclusion;
+- static import;
+- dynamic import;
+- ordered classic-script inclusion;
+- global produced and global consumed;
 - CSS selector consumption;
-- tests and published route dependencies.
+- test or published regression surface dependency.
 
 Removal is allowed only when every dependency category is empty.
 
