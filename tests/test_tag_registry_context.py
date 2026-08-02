@@ -23,6 +23,11 @@ DEMO = COCKPIT / "demo-data.json"
 DEMO_WORK = COCKPIT / "demo-work-activity.json"
 
 
+class _OwnerReadableConnection:
+    def cursor(self):  # pragma: no cover - owner read is monkeypatched in this unit test
+        raise AssertionError("unexpected SQL owner read")
+
+
 def test_unified_tag_registry_is_contextual_and_replaces_split_files() -> None:
     payload = json.loads(REGISTRY.read_text(encoding="utf-8"))
     loaded = tag_registry.load_registry()
@@ -93,7 +98,7 @@ def test_card_tag_context_uses_owner_projection_without_inference(monkeypatch) -
     )
 
     contexts = card_tag_context.resolve_tag_context(
-        object(),
+        _OwnerReadableConnection(),
         entity_refs=[{"entity_id": "information:test", "entity_type": "information"}],
     )
 
@@ -105,6 +110,14 @@ def test_card_tag_context_uses_owner_projection_without_inference(monkeypatch) -
         "options",
     }
     assert contexts[0]["unregistered_tags"] == []
+
+
+def test_scope_only_connection_does_not_accept_client_tag_meaning() -> None:
+    contexts = card_tag_context.resolve_tag_context(
+        object(),
+        entity_refs=[{"entity_id": "project:test", "entity_type": "project"}],
+    )
+    assert contexts == []
 
 
 def test_work_activity_projection_is_strict_and_keeps_bounded_card_fields() -> None:
