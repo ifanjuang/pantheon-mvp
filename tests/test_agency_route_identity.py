@@ -65,4 +65,4 @@ def test_other_route_families_are_not_folded_into_agency_migration() -> None:
     demo = (COCKPIT / "demo_bootstrap.js").read_text(encoding="utf-8")
 
     assert "../v1/projects/" in loader
-    assert "/v1/projects/" in demo
+    assert "\\/v1\\/projects\\/" in demo
