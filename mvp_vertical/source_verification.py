@@ -116,6 +116,12 @@ class SourceVerificationReport:
             "parameters_profile",
         ):
             object.__setattr__(self, field, _require_text(field, getattr(self, field)))
+        if not isinstance(self.coverage_complete, bool):
+            raise ValueError("coverage_complete must be a boolean observation")
+        observations = tuple(self.observations)
+        if any(not isinstance(item, SourceVerificationObservation) for item in observations):
+            raise ValueError("observations must contain SourceVerificationObservation values")
+        object.__setattr__(self, "observations", observations)
         object.__setattr__(
             self,
             "inconclusive_reasons",
