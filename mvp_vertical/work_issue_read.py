@@ -11,6 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from . import work_issues
+from .work_activity_projection import project_work_activity
 
 
 _STATUS_ORDER = {
@@ -87,8 +88,9 @@ def list_issue_projections(
     """Return governed Work Issue aggregates for one exact case reference.
 
     `case_ref` is matched exactly. The function does not infer project identity,
-    traverse parents or broaden scope. Work Card metadata is joined only for the
-    Cockpit read projection; it does not schedule, dispatch or authorize.
+    traverse parents or broaden scope. Work Card metadata and activity are joined
+    only for the Cockpit read projection; they do not schedule, dispatch or
+    authorize.
     """
     if not case_ref.strip():
         raise work_issues.WorkIssueError("case_ref is required")
@@ -118,6 +120,7 @@ def list_issue_projections(
                 issue,
                 _metadata(conn, issue["issue_id"]),
             )
+        projection["work_activity"] = project_work_activity(projection)
 
     projections.sort(
         key=lambda projection: _STATUS_ORDER.get(
