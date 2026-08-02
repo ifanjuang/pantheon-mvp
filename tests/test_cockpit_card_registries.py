@@ -30,19 +30,23 @@ def _slugs(payload: dict, group: str) -> set[str]:
     return {item["slug"] for item in payload["tags"] if item["group"] == group}
 
 
-def test_type_and_subject_tag_groups_are_explicit_and_disjoint() -> None:
+def test_type_and_subject_tag_groups_are_explicit_and_contextual() -> None:
     payload = _tag_registry()
-    group_ids = {item["id"] for item in payload["groups"]}
+    groups = {item["id"]: item for item in payload["groups"]}
 
     assert payload["schema_id"] == "cockpit.tag_registry"
     assert payload["revision"] == 1
-    assert {"type", "subject"} <= group_ids
-    assert next(item for item in payload["groups"] if item["id"] == "subject")["max_per_card"] == 5
+    assert {"type", "subject"} <= groups.keys()
+    assert groups["subject"]["max_per_card"] == 5
+    assert groups["type"]["description"].strip()
+    assert groups["subject"]["description"].strip()
+    assert groups["type"]["hermes_context_role"].strip()
+    assert groups["subject"]["hermes_context_role"].strip()
 
-    type_tags = _slugs(payload, "type")
-    subject_tags = _slugs(payload, "subject")
-    overlap = type_tags & subject_tags
-    assert not overlap, f"tag slugs must belong to one vocabulary only: {sorted(overlap)}"
+    identities = [(item["group"], item["slug"]) for item in payload["tags"]]
+    assert len(identities) == len(set(identities))
+    assert _slugs(payload, "type")
+    assert _slugs(payload, "subject")
 
 
 def test_tag_registry_entries_have_complete_context_and_presentation_metadata() -> None:
