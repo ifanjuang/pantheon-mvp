@@ -1,0 +1,57 @@
+{
+  "schema_id": "cockpit.demo_tags",
+  "revision": 1,
+  "type_tags": {
+    "schema_id": "cockpit.type_tags",
+    "revision": 1,
+    "kind": "type_tags",
+    "tags": [
+      {"slug":"analyse","title":"Analyse","description":"Analyse professionnelle ou réglementaire.","icon_provider":"material-symbols","icon_key":"manage_search","color":"blue"},
+      {"slug":"tableau","title":"Tableau","description":"Tableau de données, surfaces ou quantités.","icon_provider":"material-symbols","icon_key":"table_chart","color":"cyan"},
+      {"slug":"estimation","title":"Estimation","description":"Estimation économique ou budgétaire.","icon_provider":"material-symbols","icon_key":"calculate","color":"green"},
+      {"slug":"marche","title":"Marché","description":"Marché, engagement ou montant contractualisé.","icon_provider":"material-symbols","icon_key":"contract","color":"orange"},
+      {"slug":"constat","title":"Constat","description":"Constat professionnel ou contradictoire.","icon_provider":"material-symbols","icon_key":"fact_check","color":"red"},
+      {"slug":"note","title":"Note","description":"Note de travail ou synthèse.","icon_provider":"material-symbols","icon_key":"edit_note","color":"amber"},
+      {"slug":"programme","title":"Programme","description":"Programme fonctionnel ou architectural.","icon_provider":"material-symbols","icon_key":"view_list","color":"violet"},
+      {"slug":"diagnostic","title":"Diagnostic","description":"Diagnostic technique ou réglementaire.","icon_provider":"material-symbols","icon_key":"troubleshoot","color":"red"},
+      {"slug":"planning","title":"Planning","description":"Planning, séquence ou calendrier.","icon_provider":"material-symbols","icon_key":"calendar_month","color":"blue"},
+      {"slug":"plan","title":"Plan","description":"Plan, coupe ou document graphique.","icon_provider":"material-symbols","icon_key":"architecture","color":"indigo"},
+      {"slug":"photo","title":"Photo","description":"Photographie ou image de constat.","icon_provider":"material-symbols","icon_key":"image","color":"green"},
+      {"slug":"research","title":"Recherche","description":"Travail de recherche borné.","icon_provider":"material-symbols","icon_key":"search","color":"blue"},
+      {"slug":"verification","title":"Vérification","description":"Travail de vérification ou de contrôle.","icon_provider":"material-symbols","icon_key":"verified","color":"cyan"},
+      {"slug":"correction","title":"Correction","description":"Travail correctif.","icon_provider":"material-symbols","icon_key":"build","color":"orange"},
+      {"slug":"drafting","title":"Rédaction","description":"Travail de rédaction.","icon_provider":"material-symbols","icon_key":"edit_document","color":"violet"},
+      {"slug":"decision","title":"Décision","description":"Travail préparant une décision humaine.","icon_provider":"material-symbols","icon_key":"gavel","color":"amber"},
+      {"slug":"action","title":"Action","description":"Action ou suite à donner.","icon_provider":"material-symbols","icon_key":"task_alt","color":"green"}
+    ]
+  },
+  "subject_tags": {
+    "schema_id": "cockpit.subject_tags",
+    "revision": 1,
+    "kind": "subject_tags",
+    "tags": [
+      {"slug":"maison-neuve","title":"Maison neuve","description":"Projet de maison individuelle neuve.","icon_provider":"material-symbols","icon_key":"home_work","color":"amber"},
+      {"slug":"renovation","title":"Rénovation","description":"Rénovation ou transformation d’un bâtiment existant.","icon_provider":"material-symbols","icon_key":"renovation","color":"orange"},
+      {"slug":"re2020","title":"RE2020","description":"Réglementation environnementale RE2020.","icon_provider":"material-symbols","icon_key":"energy_savings_leaf","color":"green"},
+      {"slug":"paysage","title":"Paysage","description":"Paysage, sol, végétation ou insertion du projet.","icon_provider":"material-symbols","icon_key":"landscape","color":"green"},
+      {"slug":"urbanisme","title":"Urbanisme","description":"Urbanisme, PLU et autorisations.","icon_provider":"material-symbols","icon_key":"location_city","color":"blue"},
+      {"slug":"surfaces","title":"Surfaces","description":"Surfaces, emprises et métrés.","icon_provider":"material-symbols","icon_key":"square_foot","color":"cyan"},
+      {"slug":"budget","title":"Budget","description":"Budget, estimation ou incidence financière.","icon_provider":"material-symbols","icon_key":"payments","color":"green"},
+      {"slug":"chantier","title":"Chantier","description":"Exécution, suivi et réception des travaux.","icon_provider":"material-symbols","icon_key":"construction","color":"slate"},
+      {"slug":"assurance","title":"Assurance","description":"Assurance, déclaration ou expertise.","icon_provider":"material-symbols","icon_key":"shield","color":"blue"},
+      {"slug":"reprise","title":"Reprise","description":"Travaux correctifs ou scénario de reprise.","icon_provider":"material-symbols","icon_key":"build","color":"orange"},
+      {"slug":"erp","title":"ERP","description":"Établissement recevant du public.","icon_provider":"material-symbols","icon_key":"groups","color":"red"},
+      {"slug":"accessibilite","title":"Accessibilité","description":"Accessibilité et usage PMR.","icon_provider":"material-symbols","icon_key":"accessible","color":"blue"},
+      {"slug":"ssi","title":"SSI","description":"Sécurité incendie et système de sécurité incendie.","icon_provider":"material-symbols","icon_key":"local_fire_department","color":"red"},
+      {"slug":"ecole","title":"École","description":"Établissement scolaire ou projet éducatif.","icon_provider":"material-symbols","icon_key":"school","color":"cyan"},
+      {"slug":"marche-public","title":"Marché public","description":"Commande publique et consultation.","icon_provider":"material-symbols","icon_key":"account_balance","color":"blue"},
+      {"slug":"bois","title":"Bois","description":"Structure, enveloppe ou finition bois.","icon_provider":"material-symbols","icon_key":"forest","color":"green"},
+      {"slug":"planning","title":"Planning","description":"Calendrier et phasage.","icon_provider":"material-symbols","icon_key":"calendar_month","color":"blue"},
+      {"slug":"securite","title":"Sécurité","description":"Sécurité des personnes et du chantier.","icon_provider":"material-symbols","icon_key":"health_and_safety","color":"red"},
+      {"slug":"desenfumage","title":"Désenfumage","description":"Désenfumage et évacuation des fumées.","icon_provider":"material-symbols","icon_key":"air","color":"slate"},
+      {"slug":"clos-couvert","title":"Clos-couvert","description":"Étanchéité, couverture et fermeture du bâtiment.","icon_provider":"material-symbols","icon_key":"roofing","color":"orange"},
+      {"slug":"options","title":"Options","description":"Options, variantes et arbitrages différables.","icon_provider":"material-symbols","icon_key":"tune","color":"violet"},
+      {"slug":"site-occupe","title":"Site occupé","description":"Travaux réalisés en présence d’usagers.","icon_provider":"material-symbols","icon_key":"groups","color":"amber"}
+    ]
+  }
+}
