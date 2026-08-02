@@ -229,6 +229,10 @@
     const issue = workData(projection);
     const activity = workActivity(projection);
     const id = issue.issue_id || crypto.randomUUID();
+    const projectedIssue = activity && !activity.invalid ? activity.issue : null;
+    const typeTags = projectedIssue?.type_tags || issue.type_tags || [];
+    const subjectTags = projectedIssue?.subject_tags || issue.subject_tags || issue.tags || [];
+    const issueLimits = projectedIssue?.limits || issue.limits || [];
     if (activity?.invalid || (!activity && !window.PANTHEON_COCKPIT_DEMO)) {
       return card({
         entity_id: `work:${id}`,
@@ -239,7 +243,9 @@
         title: issue.title || "Travail",
         summary: activity?.reason || "Projection d’activité absente.",
         status: "conflict",
-        subject_tags: issue.tags || [],
+        type_tags: typeTags,
+        subject_tags: subjectTags,
+        limits: issueLimits,
         back: [["Refus", activity?.reason || "Le serveur n’a pas fourni le contrat d’activité attendu."], ["Limite", "Aucune activité runtime n’est reconstruite dans le navigateur."]],
         source_work_id: id,
       });
@@ -265,7 +271,8 @@
         if (result.evidence_candidate_refs.length) back.push(["Evidence candidates", result.evidence_candidate_refs.join("\n")]);
       }
       if (activity.trace_refs.length) back.push(["Traces", activity.trace_refs.join("\n")]);
-      if (activity.limits?.length) back.push(["Limites", activity.limits.join(" · ")]);
+      const allLimits = [...issueLimits, ...(activity.limits || [])];
+      if (allLimits.length) back.push(["Limites", [...new Set(allLimits)].join(" · ")]);
     }
     back.push(["Jalons", milestones.length ? milestones.map(step => typeof step === "string" ? step : step.label || step.title).filter(Boolean).join("\n") : "Non renseignés"]);
     back.push(["Responsabilités · Skills · Fonctions · Outils", resources.length ? resources.map(String).join(" · ") : "Non renseignés"]);
@@ -279,8 +286,10 @@
       category: "Travail",
       title: issue.title || "Travail",
       summary: issue.description || "Objectif de travail non renseigné",
-      status: issue.status || "open",
-      subject_tags: issue.tags || [],
+      status: projectedIssue?.status || issue.status || "open",
+      type_tags: typeTags,
+      subject_tags: subjectTags,
+      limits: issueLimits,
       back,
       source_work_id: id,
       source_run_id: activity?.latest_run?.run_id || null,
@@ -293,6 +302,7 @@
     const issue = workData(projection);
     const activity = workActivity(projection);
     const id = issue.issue_id || crypto.randomUUID();
+    const projectedIssue = activity && !activity.invalid ? activity.issue : null;
     const result = activity && !activity.invalid ? activity.result_candidate : null;
     return card({
       entity_id: `decision:work:${id}`,
@@ -303,7 +313,9 @@
       title: issue.decision_title || issue.title || "Validation du travail",
       summary: issue.decision_question || result?.summary || "Le Travail demande une validation humaine.",
       status: "review",
-      subject_tags: issue.tags || [],
+      type_tags: ["decision"],
+      subject_tags: projectedIssue?.subject_tags || issue.subject_tags || issue.tags || [],
+      limits: projectedIssue?.limits || issue.limits || [],
       available_actions: ["Refuser", "Valider"],
       back: [
         ["Travail", text(issue.title, id)],
