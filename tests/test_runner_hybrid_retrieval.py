@@ -103,9 +103,11 @@ def test_runner_uses_hybrid_order_and_preserves_candidate_boundaries(monkeypatch
     assert result["external_action_authorized"] is False
     assert evidence["status"] == "candidate"
     assert [item["retrieval_metrics"]["rank"] for item in evidence["evidence_items"]] == [1, 2]
-    assert evidence["evidence_items"][0]["retrieval_metrics"]["metric"] == (
-        "hybrid_weighted_reciprocal_rank_fusion"
-    )
+    first_metrics = evidence["evidence_items"][0]["retrieval_metrics"]
+    assert first_metrics["metric"] == "cosine_distance"
+    assert "semantic_rank=2" in first_metrics["profile"]
+    assert "lexical_rank=1" in first_metrics["profile"]
+    assert "hybrid_score=0.032000000000" in first_metrics["profile"]
     assert evidence["evidence_items"][0]["support_status"] == "sourced_not_verified"
     assert any("score ne mesure ni la vérité" in item for item in evidence["limitations"])
 
