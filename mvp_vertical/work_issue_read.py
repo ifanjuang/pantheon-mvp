@@ -7,6 +7,8 @@ grants no Hermes authority.
 
 from __future__ import annotations
 
+from typing import Any
+
 import psycopg
 from psycopg.rows import dict_row
 
@@ -14,6 +16,7 @@ from . import work_issues
 from .work_activity_projection import project_work_activity
 
 
+MAX_SUBJECT_TAGS = 5
 _STATUS_ORDER = {
     "review": 0,
     "waiting": 1,
@@ -22,6 +25,22 @@ _STATUS_ORDER = {
     "done": 4,
     "cancelled": 5,
 }
+
+
+def _string_list(value: Any, *, limit: int | None = None) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        text = str(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+        if limit is not None and len(result) >= limit:
+            break
+    return result
 
 
 def _metadata(conn: psycopg.Connection, issue_id: str) -> dict:
@@ -43,7 +62,7 @@ def _metadata(conn: psycopg.Connection, issue_id: str) -> dict:
 
 
 def _card_projection(issue: dict, metadata: dict) -> dict:
-    """Expose workflow metadata without changing the governed Work Issue object."""
+    """Expose explicit presentation metadata without changing Work Issue semantics."""
     projected = dict(issue)
     workflow = metadata.get("workflow") if isinstance(metadata.get("workflow"), dict) else {}
     decision = (
@@ -58,6 +77,16 @@ def _card_projection(issue: dict, metadata: dict) -> dict:
     projected["skills"] = workflow.get("skills") or []
     projected["functions"] = workflow.get("functions") or []
     projected["tools"] = workflow.get("tools") or []
+    projected["type_tags"] = _string_list(
+        workflow.get("type_tags") or [issue.get("issue_type")]
+    )
+    projected["subject_tags"] = _string_list(
+        workflow.get("subject_tags"), limit=MAX_SUBJECT_TAGS
+    )
+    # Temporary compatibility for the current Cockpit card normalizer. This is a
+    # projection alias only; the governed Work Issue schema does not acquire tags.
+    projected["tags"] = list(projected["subject_tags"])
+    projected["limits"] = _string_list(workflow.get("limits"))
     projected["information_ref"] = metadata.get("information_ref")
     projected["result_ref"] = metadata.get("result_ref")
     projected["decision_title"] = decision.get("title")
