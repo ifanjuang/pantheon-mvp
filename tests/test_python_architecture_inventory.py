@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -9,9 +10,11 @@ TOOL_PATH = ROOT / "tools" / "audit_python_architecture.py"
 
 
 def _load_tool():
-    spec = importlib.util.spec_from_file_location("audit_python_architecture", TOOL_PATH)
+    module_name = "audit_python_architecture"
+    spec = importlib.util.spec_from_file_location(module_name, TOOL_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -56,7 +59,7 @@ def test_inventory_markdown_is_deterministic_and_report_only(tmp_path: Path) -> 
     assert "sample/beta.py" in first
 
 
-def test_repository_python_paths_do_not_introduce_generation_names() -> None:
+def test_repository_python_paths_do_not_use_generation_names() -> None:
     tool = _load_tool()
     records = tool.build_inventory(ROOT)
     version_named = [record.path for record in records if record.version_named]
