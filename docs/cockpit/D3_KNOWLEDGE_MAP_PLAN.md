@@ -32,12 +32,17 @@ The map covers the **knowledge/project domain only** — the objects that have
 lineage, corroboration, provenance and temporal accretion:
 
 - in scope: project, information, document, knowledge, work, work_decision,
-  project_change_candidate, hermes_run, project_contacts;
+  project_change_candidate, hermes_run;
+- **contacts** are **project info**, rendered as a **facet of the Project card**
+  (a section / flip group), not a standalone graph node — this removes the only
+  `d3-force` case, so the whole map is static hierarchy + chains (no force
+  anywhere);
 - **out of scope (deliberately not a graph)**: tools and competences
   (skills/workflow). These are inventories with orthogonal state, not a growing
-  web. They stay a **catalogue + state matrix/radar**; a workflow may use a
-  linear spine template. Their relations surface *from* a work node (ego), never
-  as a standalone tools graph.
+  web. They stay a **catalogue + state matrix/radar**; a workflow renders as a
+  **linear chain or an action DAG** (node = action, edge = order/dependency)
+  depending on whether its `governed_phases` branch. Their relations surface
+  *from* a work node (ego), never as a standalone tools graph.
 
 Rationale: a graph is justified only where there are many-to-many links + growth
 + lineage to reveal. Forcing a catalogue into a graph produces a star/hairball —
@@ -87,10 +92,10 @@ Terminé · Conflit · Échec · Obsolète · Candidat · À observer).
 | Work decision | question, résultat présenté, effet demandé, limite | **gate node** (diamond) | link(→work) · salience: validation zone | Refuser · Valider · rubrics: Question · Résultat présenté · Effet demandé · Limite |
 | Change candidate | proposal before→after, proposer, base revision, motif, sources | **diff (before→after)** | link(→project fields) · salience: validation zone | À valider · Appliqué · Refusé · rubrics: Proposition · Proposé par · Révision de base · Motif · Sources |
 | Hermès run | runtime, scope, started, live status | **live node** (motion, ephemeral) | lineage origin (run→info→doc→knowledge) | Run en cours · Runtime · Scope · Démarré · *no fabricated %* |
-| Contacts | grouped people (name·org·role·email·phone) | **grouped network / org chart** (the one place force is justified, stopped after convergence) | containment(project) | Maîtrise d'ouvrage · Maîtrise d'œuvre · Bureaux d'études · Bureau de contrôle · SSI · Entreprises de travaux · Autres intervenants |
+| Contacts | grouped people (name·org·role·email·phone) | **Project facet** (a grouped section / flip of the Project card) — **not a graph node**, no force | belongs to project (facet) | Maîtrise d'ouvrage · Maîtrise d'œuvre · Bureaux d'études · Bureau de contrôle · SSI · Entreprises de travaux · Autres intervenants |
 | Tool | 6 state axes + permissions/capabilities/evidence/rollback/risks/forbidden | **matrix / radar — NOT a graph** (virtualised catalogue) | referenced *from* work (ego) | Approuvé · Candidat · À observer · Prêt · axes: Installation · État natif · Santé · Gouvernance · Activation · Mise à jour · « installé ≠ approuvé » |
 | Competence — skill | capability, `capability_slot` | **catalogue** (list) | referenced *from* work | (like tool, lighter) |
-| Competence — workflow | `governed_phases` (sequence) | **linear spine** (template, like `*_spine_d3`) | — | governed phases |
+| Competence — workflow | `governed_phases` (sequence or branching) | **linear chain** (like `*_spine_d3`) **or action DAG** (node = action, edge = order/dependency) | — | governed phases |
 
 ## 5. Link kinds
 
@@ -131,7 +136,7 @@ motion off; validation done → hull off); reduced-motion → static ring.
 | 0 | start | 4 spaces | 4–5 | anchored (local) | SVG |
 | 1 | open space/project | project constellation, **families collapsed** | ~8 meta-nodes | radial / pack | SVG |
 | 2 | open a card | family interior (info flow+lineage · work spine · tool matrix) | ≤30 | dedicated | SVG |
-| 3 | toggle overlay | provenance (bases) + corroboration | +~12 bases, edges capped | force stopped / bundling | SVG |
+| 3 | toggle overlay | provenance (bases) + corroboration | +~12 bases, edges capped | ego + bundling (no force) | SVG |
 | 4 | click doc/base | chunks | 10s–100s → aggregated | drill-down | canvas if massively expanded |
 
 ## 8. Budgets (grounded in IFJA fixtures + loader caps)

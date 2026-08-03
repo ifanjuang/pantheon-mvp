@@ -98,8 +98,11 @@ mirroring the existing `test_cockpit_v2_*` discipline.
 ## 5. Layout
 
 - **Radial hub**: project at centre; N2 families as **collapsed meta-nodes**
-  (`Contacts`, `Informations (n)`, `Documents (n)`, `Travaux (n)`) → ~5–8 nodes
-  at rest even for a ~120-item project.
+  (`Informations (n)`, `Documents (n)`, `Travaux (n)`) → ~5–8 nodes at rest even
+  for a ~120-item project.
+- **Contacts are a Project facet**, not a meta-node: they render inside the
+  Project card (a grouped section / flip), so there is **no force layout** in the
+  map at all.
 - **Expand a family** → its items around that meta-node (LOD2), still `d3-hierarchy`
   (pack/tree), **no force**.
 - **Version lineage**: within the Information family, chain items by
