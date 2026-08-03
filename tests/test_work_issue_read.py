@@ -139,7 +139,10 @@ def test_batched_list_preserves_governed_aggregate_and_card_metadata(conn) -> No
     assert actual["work_issue"]["subject_tags"] == ["chantier", "responsabilité"]
     assert actual["work_issue"]["information_ref"] == "information:info-1"
     assert actual["work_issue"]["decision_options"] == ["accept", "correct"]
-    assert actual["work_activity"]["schema_id"] == "cockpit.work_activity"
+    assert actual["work_activity"]["schema"] == {
+        "id": "cockpit.work_activity",
+        "revision": 1,
+    }
 
 
 def test_list_issue_projections_refuses_unbounded_limit(conn) -> None:
