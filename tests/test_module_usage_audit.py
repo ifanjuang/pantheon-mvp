@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -9,9 +10,11 @@ TOOL = ROOT / "tools" / "audit_module_usage.py"
 
 
 def _load_tool():
-    spec = importlib.util.spec_from_file_location("pantheon_module_usage_audit", TOOL)
+    name = "pantheon_module_usage_audit"
+    spec = importlib.util.spec_from_file_location(name, TOOL)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
