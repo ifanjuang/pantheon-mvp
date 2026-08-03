@@ -31,6 +31,7 @@ def _clean_payloads() -> tuple[dict, dict]:
                 {
                     "repository": "pantheon-mvp",
                     "path": "mvp_vertical/api.py",
+                    "posture": "implementation",
                     "generation_named": False,
                     "versioned_routes": [],
                     "parse_error": None,
@@ -63,7 +64,7 @@ def test_clean_inventories_pass_permanent_closure_guard() -> None:
     ) == []
 
 
-def test_generation_names_and_versioned_routes_are_permanent_violations() -> None:
+def test_generation_names_and_versioned_routes_are_permanent_active_violations() -> None:
     guard = _load_tool()
     architecture, usage = _clean_payloads()
     architecture["artifacts"][0]["generation_named"] = True
@@ -73,6 +74,33 @@ def test_generation_names_and_versioned_routes_are_permanent_violations() -> Non
 
     assert any("generation-named active artifact" in item for item in violations)
     assert any("versioned internal route" in item for item in violations)
+
+
+def test_history_and_retired_route_tests_remain_auditable_without_becoming_debt() -> None:
+    guard = _load_tool()
+    architecture, usage = _clean_payloads()
+    architecture["artifacts"].extend(
+        [
+            {
+                "repository": "Pantheon-Next",
+                "path": "ai_logs/2026-07-03-hermes-v018-release-review.md",
+                "posture": "history",
+                "generation_named": True,
+                "versioned_routes": [],
+                "parse_error": None,
+            },
+            {
+                "repository": "pantheon-mvp",
+                "path": "tests/test_retired_routes.py",
+                "posture": "test",
+                "generation_named": False,
+                "versioned_routes": ["/v1/retired"],
+                "parse_error": None,
+            },
+        ]
+    )
+
+    assert guard.evaluate(architecture, usage) == []
 
 
 def test_unreferenced_implementation_candidate_is_a_permanent_violation() -> None:
