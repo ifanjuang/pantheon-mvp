@@ -113,3 +113,9 @@ def test_parse_errors_are_refused() -> None:
 
     assert any("Python parse error" in item for item in violations)
     assert any("module parse error" in item for item in violations)
+
+
+def test_temporary_decreasing_debt_baseline_remains_removed() -> None:
+    assert not (ROOT / "docs/architecture/ARCHITECTURE_DEBT_BASELINE.json").exists()
+    assert not (ROOT / "tools/check_architecture_debt_baseline.py").exists()
+    assert not (ROOT / "tests/test_architecture_debt_baseline.py").exists()
