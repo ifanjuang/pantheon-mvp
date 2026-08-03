@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cockpit knowledge map — read-only lens (demo)</title>
+  <style>
+    :root { color-scheme: light dark; --line:#d9dfe8; --ink:#1b2431; --ink3:#8592a8; --surface:#fff; --bg:#eef1f5; }
+    @media (prefers-color-scheme: dark){ :root{ --line:#2c3542; --ink:#e7ecf3; --ink3:#6c7789; --surface:#1a1f29; --bg:#12161d; } }
+    body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+    .wrap { max-width:1120px; margin:0 auto; padding:24px 18px; }
+    h1 { font-size:18px; margin:0 0 4px; }
+    p.sub { color:var(--ink3); font-size:13px; margin:0 0 16px; max-width:70ch; }
+    .bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    button { font:inherit; font-size:13px; padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; }
+    button[aria-pressed="true"] { border-color:#3f6597; color:#3f6597; font-weight:600; }
+    .canvas { background:var(--surface); border:1px solid var(--line); border-radius:12px; }
+    svg { display:block; width:100%; height:auto; }
+    circle:focus { outline:2px solid #3f6597; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Cockpit knowledge map — read-only lens</h1>
+    <p class="sub">Prototype branché sur le contrat de projection (<code>state.cards</code> / <code>state.children</code>).
+      Aucun réseau, aucun build. Données d'exemple en mémoire.</p>
+    <div class="bar" id="bar" role="group" aria-label="Type de graphe">
+      <button data-layout="cluster" aria-pressed="true">Cluster</button>
+      <button data-layout="radial">Radial</button>
+      <button data-layout="grid">Grille</button>
+      <button data-layout="chain">Chaîne</button>
+    </div>
+    <div class="canvas"><svg id="map" role="img" aria-label="Carte de connaissance"></svg></div>
+  </div>
+
+  <script src="map_graph_model.js"></script>
+  <script src="map_layouts.js"></script>
+  <script src="map_view.js"></script>
+  <script>
+    // Minimal in-memory projection mirroring cockpit_projection.js output shape.
+    const SUBJECT_COLOR = { surfaces:"#37a9bd", assurance:"#5f83b8", budget:"#3aa564",
+      cctp:"#df8b3c", reservations:"#df8b3c", plan:"#5b62b0", structure:"#cf5b5b" };
+    const SUBJECTS = Object.keys(SUBJECT_COLOR);
+    const cards = new Map();
+    const children = new Map();
+    const kids = [];
+    let s = 3; const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const pick = a => a[Math.floor(rnd() * a.length)];
+    for (let i = 0; i < 90; i++) {
+      const fam = rnd() < 0.45 ? "document" : rnd() < 0.6 ? "work_issue" : "information";
+      const id = `${fam}:${i}`;
+      cards.set(id, {
+        entity_id: id, entity_type: fam, presentation_family: fam === "work_issue" ? "work" : "information",
+        title: `${fam} #${i}`, status: pick(["draft", "acted", "review", "in_progress"]),
+        subject_tags: [pick(SUBJECTS)], date: `2026-0${1 + (i % 8)}-01`,
+      });
+      kids.push(id);
+    }
+    // one project hub + containment (the map renders sub-cards; hub kept for links only)
+    cards.set("project:demo", { entity_id: "project:demo", entity_type: "project", presentation_family: "project", title: "Résidence Les Tilleuls", subject_tags: [] });
+    children.set("project:demo", kids);
+    // a version lineage
+    ["information:0", "information:1", "information:2"].forEach((id, j) => {
+      const c = cards.get(id); if (c) { c.series_id = "surf"; c.subject_tags = ["surfaces"]; c.status = j < 2 ? "superseded" : "acted"; c.title = `surfaces v${j + 1}`; }
+    });
+
+    const view = window.PantheonMapView.create(document.getElementById("map"), { cards, children }, {
+      layout: "cluster", groupBy: "subject",
+      subjectColor: s => SUBJECT_COLOR[s] || "#66758c",
+    });
+    document.getElementById("bar").addEventListener("click", e => {
+      const b = e.target.closest("button"); if (!b) return;
+      document.querySelectorAll("#bar button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      view.setGroupBy(b.dataset.layout === "radial" || b.dataset.layout === "chain" ? "family" : "subject");
+      view.setLayout(b.dataset.layout);
+    });
+  </script>
+</body>
+</html>
