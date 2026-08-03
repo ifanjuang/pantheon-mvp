@@ -65,7 +65,8 @@ swappable at runtime** without touching the model or the renderer.
 
 - a **layout registry** keyed by name: `radial`, `grid`, `chain`
   (lineage), `cluster` (by subject, organic hulls), `dag` (workflow actions),
-  `matrix` (tools, non-graph);
+  `bundle` (hierarchical edge bundling — support overlay), `matrix`
+  (tools, non-graph);
 - each strategy is a **pure function** `(graphModel, opts) -> positionedNodes`;
 - a **default layout per scope / card kind**, plus a **user override**:
 
@@ -210,6 +211,18 @@ Edge budgets: containment + lineage ≈ 1:1 with nodes (negligible). Corroborati
 is many-to-many and **not trivial** at ~100 corroborable items per project:
 **ego-network by default** (selected node only) + **aggregated certainty ring
 always** + **cap ~250 edges** on the full overlay.
+
+**Support-overlay renderer — candidate: hierarchical edge bundling (`bundle`).**
+For a *global* view of the corroboration / contradiction web across Information +
+Documents + Knowledge (many-to-many, sharing the project→family→item or subject
+hierarchy), hierarchical edge bundling is the right renderer — deterministic (no
+force), grouped by subject like the clusters. Scope: **support overlay only**,
+never lineage (1→1) nor Pantheon (few directed links). It is **Phase 2/3 and
+gated on edge density, not node count**: the positive corroboration signal does
+not exist yet (only the negative `contradictory_review`), so today the ring
+would render empty. Bascule rule: once corroboration is populated, measure
+density — rich → `bundle` as an audit/relations view; sparse → stay on
+ego-network + certainty rings.
 
 ## 9. Data gaps to wire before the rich layers
 
