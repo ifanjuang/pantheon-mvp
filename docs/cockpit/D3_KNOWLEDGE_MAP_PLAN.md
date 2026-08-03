@@ -58,6 +58,47 @@ Consequence: the ongoing route de-versioning (`/v1/agency/*` → `/agency/*`,
 PR #178) and the V2→V3 rename are invisible to the map — they change only
 `cockpit/data/cockpit_data_loader.js`, one file below the projection seam.
 
+## 2a. Swappable layout system (graph type is pluggable)
+
+The map is layered **model → layout → render**, and the **layout must be
+swappable at runtime** without touching the model or the renderer.
+
+- a **layout registry** keyed by name: `radial`, `tree`, `pack`, `chain`
+  (lineage), `dag` (workflow actions), `cluster` (by tag), `matrix`
+  (tools, non-graph);
+- each strategy is a **pure function** `(graphModel, opts) -> positionedNodes`;
+- a **default layout per card kind / scope** (project → radial, information →
+  chain, knowledge → cluster, workflow → chain|dag) plus a **user override**;
+- switching layout changes **positions only** → animate with a D3 transition;
+  the graph model and the read contract are untouched;
+- adding a graph type = one new strategy module + one registry line. Nothing
+  else changes.
+
+This is what makes "changing graph type" cheap and is the reason no force layout
+is required (all strategies are deterministic/static).
+
+## 2b. Harmonized read contract (dates · structuration · retrieval)
+
+Because several executor tools (Docling / Marker / chunkers / retrieval paths)
+fill the data, the map reads **one normalized schema**, harmonized **below the
+map** (in the projection + the extraction/retrieval contracts). The map never
+sees tool-specific shapes.
+
+- **Dates** — one canonical `timestamp` + `date_kind`
+  (created / updated / acted / occurred / observed / started), resolved once for
+  every family (generalising the existing `informationTimestamp` fallback
+  `information_date || acted_at || updated_at || created_at`). Timelines and
+  lineage order are consistent; the map does no per-family date guessing.
+- **Structuration** — one normalized structural-unit schema (`content_type`,
+  `section_path`, `parent_heading`, `page_start/end`, `quality_flags`,
+  `table_data`), the `extraction_units` shape, that every converter maps into.
+- **Retrieval** — one normalized relevance record (`score`, `semantic_rank`,
+  `lexical_rank`, `methods`) across retrieval paths (hybrid fusion already
+  provides it), read only in the query-result mode.
+
+Principle: harmonisation lives under the map, so the map stays tool-agnostic
+(§ tool choice) and layout-swappable (§ 2a) over a stable contract.
+
 ## 3. Provenance tiers (a load-bearing dimension)
 
 Every node/base carries a provenance tier. The map must never let a lower tier
