@@ -19,6 +19,27 @@ user can answer *faster than with the card stack* at least one of:
 
 If neither wins against the card stack, navigation is untouched and we stop.
 
+## 0. Prerequisite — vendoring d3 (not present today)
+
+There is **no d3.js in the cockpit today**: `cockpit/vendor/` holds only `swiper`
+and `radix-icons`, and no cockpit JS/HTML references d3. The only d3 in the
+monorepo is `Pantheon-Next/docs/js/d3-utils.js` + static doc assets, which use a
+**global** d3 (documentation pattern) — not reusable as-is here.
+
+Phase 1 therefore has a setup step, aligned with existing conventions:
+
+- **vendor d3 locally** under `cockpit/vendor/d3/` (like `swiper` / `radix-icons`),
+  no CDN — keeps the self-contained / CSP posture;
+- **submodules only**: `d3-selection` + `d3-hierarchy` (opt. `d3-shape`,
+  `d3-scale`) → ~30–50 KB, not the full ~90 KB bundle;
+- **dynamic import** via a `map/d3_loader.js`, mirroring
+  `navigation/swiper_loader.js`;
+- reuse the *helper style* of `d3-utils.js` (box / text / path primitives), not
+  its global-d3 loading.
+
+No force module is needed in Phase 1 (static hierarchy only), so `d3-force` is
+deliberately excluded until a later phase.
+
 ## 2. Scope
 
 In scope:
@@ -114,6 +135,8 @@ phase). Reduced-motion trivially satisfied.
 
 ## 9. Definition of done
 
+0. d3 is vendored locally (submodules) and loaded via a dynamic-import loader,
+   no CDN;
 1. From a selected project, the constellation renders from the projection with no
    extra network call;
 2. families are collapsed by default and expand on click;
