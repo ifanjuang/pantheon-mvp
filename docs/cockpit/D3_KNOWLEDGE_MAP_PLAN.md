@@ -313,6 +313,33 @@ on node groups, arrow navigation, enter to open, escape to reset, visible focus
 ring. Hover ≠ selection ≠ focus (three distinct visual states). Nothing essential
 behind hover only.
 
+## 10b. Improvement backlog (additional info to exploit)
+
+Ranked by value × data availability. "Now" = no new data required.
+
+**Available now (no new data):**
+- **Node size = magnitude** — `page_count` / `chunk_count` / `unit_count` (√-scaled): a quantitative channel; big documents and long lineages stand out.
+- **Freshness + time scrubber** — harmonised `timestamp`: fade old items and replay the dossier's accretion over time ("au fil de l'eau").
+- **Salience / exergue mode** — `status` + `anomaly_count`/`quality_flags` + human-review set (decisions, change_candidates, `needs_review`): the actionable "where to look" layer (production / validation / urgent).
+- **Second facet: type** — `type_tags` (email, plan, contrat, cctp, dce…): a "type lens" alongside the subject lens.
+- **Search / filter** — subject · type · status · author · date · text.
+- **Author** — `author`: filter/cluster by who produced.
+- **Tool provenance in inspector** — `converter` + `converter_version`, `contract_id`, `ingestion_id`: the one place the ingestion tool is visible.
+
+**Contextual (available, meaningful in a mode):**
+- **Query-result mode** — retrieval `distance` / `semantic_rank` / `lexical_rank` when Hermès queries: highlight retrieved items + rank.
+- **Chunk drill-down** — `content_type` / `section_path` / `table_data` / `quality_flags` (gated `compilation_id`).
+- **Live work** — milestones + activity `occurred_at` + running-run pulse.
+
+**Gated on missing data (wire first):**
+- run→info→doc→knowledge lineage (`derived_from_*`);
+- corroboration/contradiction positive signal → unlocks `bundle` (HEB);
+- project↔knowledge edge.
+
+**Cross-cutting UX/tech:** zoom/pan + semantic zoom; arrow-key node navigation; multi-select / compare; scope breadcrumb; light hover tooltip vs pinned inspector.
+
+Highest-ROI now: **node size = magnitude**, **freshness + time scrubber**, **salience/exergue**, **type facet + search** — the first two are prototyped in the demo.
+
 ## 11. Non-goals
 
 The map does not: fetch data, run or launch a Hermès run, promote memory, admit
