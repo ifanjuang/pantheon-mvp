@@ -258,6 +258,61 @@ replacement**.
 Timing: plan now, **build after** cockpit-v3 / PR #178 land, since they rename
 exactly the projection/loader files the map sits above.
 
+## 10a. Technical & aesthetic details
+
+Decisions and known risks below the section level.
+
+**Colour is not a subject key (critical).** The `tag_registry` collapses ~33
+subjects onto ~9 colour tokens, so **two subjects in the same view can share a
+colour**. Therefore:
+- the **subject icon (`icon_key`) is mandatory**, not optional — colour + icon
+  together identify a subject;
+- within a scope, if two visible subjects share a token, disambiguate by icon
+  (and optionally a secondary tint/pattern);
+- icons must be **inline SVG** (the CSP blocks font CDNs — no Material Symbols
+  webfont), shipped as a small symbol sheet.
+
+**Subject lives on cards, not chunks.** `subject_tags` exists on Information
+(agency data) and on Documents (`document_classifications`), consumed by card
+projections. `extraction_units` / `retrieval_chunk_projections` have **no
+subject** — a chunk's channel is `content_type`
+(heading/paragraph/list/table/figure/page); a chunk inherits its document's
+subject only if tinted.
+
+**Tag coverage degrades gracefully.** `subject_tags` defaults to `[]`; the lens
+cannot invent a subject. Untagged item → **neutral membership colour** or a
+"non classé" bucket. Colour quality tracks classification coverage.
+
+**Channels stay orthogonal & redundant.** subject = colour **+ icon** · family =
+shape/icon · provenance = border/opacity/glyph (off hue) · status = badge · a
+same-token disambiguation never leaks into the provenance or status channels.
+
+**Palette.** Per-theme subject tokens (light/dark variants — some hues go muddy
+on dark); ensure the present subjects are perceptually separable; neutral has a
+slate-blue bias (chosen, not pure grey); membership colour muted so it never
+fights subjects.
+
+**Layouts are pure & deterministic.** No force; any jitter is seeded. Positions
+memoised per (layout, node-set); layout choice persisted; enter/exit handled
+(enter from parent centroid, exit fade), not only position tweens.
+
+**Rendering.** SVG ≤ ~1.5k marks → **canvas beyond** (Knowledge at scale), shared
+model/layout, quadtree hit-testing on canvas. **Zoom/pan + semantic zoom** for
+large scopes. Hulls: convex-smoothed by default; **concave hull / metaballs** if
+a truly organic blob is wanted (convex encloses empty space). At high density,
+prefer a status **arc segment** over a corner dot and a **ring notch** over a
+floating "!", to avoid collisions.
+
+**Motion.** ~600 ms ease-in-out (no bounce — reads AI-generic); hull morph on
+switch is the signature moment; **no idle/ambient animation** except the
+observed live-run pulse; reduced-motion snaps; no hover animation (card
+contract).
+
+**Accessibility.** Keyboard in SVG is real work: `tabindex`/`role`/`aria-label`
+on node groups, arrow navigation, enter to open, escape to reset, visible focus
+ring. Hover ≠ selection ≠ focus (three distinct visual states). Nothing essential
+behind hover only.
+
 ## 11. Non-goals
 
 The map does not: fetch data, run or launch a Hermès run, promote memory, admit
