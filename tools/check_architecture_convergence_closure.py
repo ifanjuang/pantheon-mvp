@@ -2,9 +2,9 @@
 """Enforce permanent architecture-convergence invariants after debt closure.
 
 This guard consumes the report-only architecture and module-usage inventories.
-It replaces the temporary decreasing-debt baseline once the measured debt is zero.
-Passing the guard does not grant semantic authority, deletion authorization or
-runtime approval.
+It replaces the temporary decreasing-debt baseline once the measured active debt
+is zero. Passing the guard does not grant semantic authority, deletion
+authorization or runtime approval.
 """
 
 from __future__ import annotations
@@ -13,6 +13,10 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any, Iterable
+
+
+ACTIVE_GENERATION_EXCLUSIONS = {"history", "migration", "reference"}
+VERSIONED_ROUTE_POSTURES = {"implementation", "projection"}
 
 
 class ConvergenceClosureError(ValueError):
@@ -61,10 +65,15 @@ def evaluate(
         if not isinstance(artifact, dict):
             continue
         ref = f"{artifact.get('repository', '?')}:{artifact.get('path', '?')}"
-        if artifact.get("generation_named") is True:
+        posture = str(artifact.get("posture") or "")
+        if (
+            artifact.get("generation_named") is True
+            and posture not in ACTIVE_GENERATION_EXCLUSIONS
+        ):
             violations.append(f"generation-named active artifact: {ref}")
-        for route in artifact.get("versioned_routes") or []:
-            violations.append(f"versioned internal route: {ref}: {route}")
+        if posture in VERSIONED_ROUTE_POSTURES:
+            for route in artifact.get("versioned_routes") or []:
+                violations.append(f"versioned internal route: {ref}: {route}")
         if artifact.get("parse_error"):
             violations.append(f"Python parse error: {ref}: {artifact['parse_error']}")
 
@@ -115,12 +124,12 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     print(
         "Architecture convergence closure guard passed: "
-        "no generation-named active artifact, internal versioned route, "
-        "parse error or unreferenced implementation candidate detected."
+        "no generation-named active artifact, implementation/projection internal "
+        "versioned route, parse error or unreferenced implementation candidate detected."
     )
     print(
-        "Limits: guard success != semantic authority; "
-        "zero candidates != deletion authorization."
+        "Limits: historical references and retired-route tests remain auditable; "
+        "guard success != semantic authority; zero candidates != deletion authorization."
     )
     return 0
 
