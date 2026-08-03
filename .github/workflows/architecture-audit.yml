@@ -57,12 +57,18 @@ jobs:
             --expected-repository Pantheon-Next
 
       - name: Publish job summary
+        if: always()
         run: |
-          cat audit-output/PANTHEON_ARCHITECTURE_INVENTORY.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f audit-output/PANTHEON_ARCHITECTURE_INVENTORY.md ]; then
+            cat audit-output/PANTHEON_ARCHITECTURE_INVENTORY.md >> "$GITHUB_STEP_SUMMARY"
+          fi
           printf '\n---\n\n' >> "$GITHUB_STEP_SUMMARY"
-          cat audit-output/PANTHEON_MODULE_USAGE.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f audit-output/PANTHEON_MODULE_USAGE.md ]; then
+            cat audit-output/PANTHEON_MODULE_USAGE.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload architecture inventory
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pantheon-architecture-inventory
