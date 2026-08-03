@@ -63,14 +63,26 @@ PR #178) and the V2→V3 rename are invisible to the map — they change only
 The map is layered **model → layout → render**, and the **layout must be
 swappable at runtime** without touching the model or the renderer.
 
-- a **layout registry** keyed by name: `radial`, `tree`, `pack`, `chain`
-  (lineage), `dag` (workflow actions), `cluster` (by tag), `matrix`
-  (tools, non-graph);
+- a **layout registry** keyed by name: `radial`, `grid`, `chain`
+  (lineage), `cluster` (by subject, organic hulls), `dag` (workflow actions),
+  `matrix` (tools, non-graph);
 - each strategy is a **pure function** `(graphModel, opts) -> positionedNodes`;
-- a **default layout per card kind / scope** (project → radial, information →
-  chain, knowledge → cluster, workflow → chain|dag) plus a **user override**;
-- switching layout changes **positions only** → animate with a D3 transition;
-  the graph model and the read contract are untouched;
+- a **default layout per scope / card kind**, plus a **user override**:
+
+  | Scope / kind | Default layout | Why |
+  |---|---|---|
+  | Project (overview) | **radial** (families as satellites) | the project is a hub; a family overview |
+  | Documents | **chain** (lineage) | documents are versioned (revision indices) |
+  | Information | **chain** (lineage) | version series (`series_id` / `base_acted_id`) |
+  | Knowledge | **grid** (dense scan, sorted) | large corpus (~50/project, thousands global) |
+  | Subject view (transverse) | **cluster** (organic hulls) | "everything on subject X", available everywhere as the subject lens |
+  | Workflow (competence) | **chain or DAG** | sequential vs branching `governed_phases` |
+
+  Nodes render **without a central hub** (sub-cards are the primary nodes); a
+  group is read from its **organic hull** + label, not a hub node.
+- switching layout changes **positions only** → animate with a transition; hulls
+  are recomputed each frame for an organic morph; the model and read contract are
+  untouched;
 - adding a graph type = one new strategy module + one registry line. Nothing
   else changes.
 
