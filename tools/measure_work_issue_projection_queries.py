@@ -62,6 +62,14 @@ def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
 
 
+def _truncate(connection: Any) -> None:
+    connection.execute(
+        "TRUNCATE issue_events, hermes_runs, issue_comments, work_issues "
+        "RESTART IDENTITY CASCADE"
+    )
+    connection.commit()
+
+
 def measure(*, issue_count: int = 3) -> dict[str, Any]:
     if issue_count < 1:
         raise ValueError("issue_count must be positive")
@@ -69,11 +77,7 @@ def measure(*, issue_count: int = 3) -> dict[str, Any]:
     connection = work_issues.connect(os.getenv("MVP_PG_DSN"))
     case_ref = _id("query-baseline")
     try:
-        connection.execute(
-            "TRUNCATE issue_events, hermes_runs, issue_comments, work_issues "
-            "RESTART IDENTITY CASCADE"
-        )
-        connection.commit()
+        _truncate(connection)
         for index in range(issue_count):
             work_issues.create_issue(
                 connection,
@@ -99,7 +103,10 @@ def measure(*, issue_count: int = 3) -> dict[str, Any]:
             ),
         }
     finally:
-        connection.close()
+        try:
+            _truncate(connection)
+        finally:
+            connection.close()
 
 
 def main() -> None:
