@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 
 from mvp_vertical.entity_ref import EntityRef, EntityRefError, unique_entity_refs
@@ -59,17 +62,14 @@ def test_unique_entity_refs_enforces_caller_owned_collection_limit() -> None:
         )
 
 
-def test_entity_ref_is_identity_only_not_scope_or_authority() -> None:
-    source = __import__("pathlib").Path(
-        __import__("mvp_vertical.entity_ref", fromlist=["EntityRef"]).__file__
-    ).read_text(encoding="utf-8")
+def test_entity_ref_has_no_database_http_or_adapter_dependency() -> None:
+    path = Path(__import__("mvp_vertical.entity_ref", fromlist=["EntityRef"]).__file__)
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    imported_roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_roots.add(node.module.split(".", 1)[0])
 
-    for forbidden in (
-        "psycopg",
-        "FastAPI",
-        "authorize",
-        "Evidence",
-        "source_refs",
-        "get_project",
-    ):
-        assert forbidden not in source
+    assert imported_roots <= {"__future__", "collections", "dataclasses", "typing"}
