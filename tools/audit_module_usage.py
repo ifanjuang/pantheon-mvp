@@ -6,10 +6,15 @@ relative imports such as ``from . import agency_directory`` and
 ``from .app_lifecycle import install`` must be resolved against the importing
 package before a module can be described as unreferenced.
 
-A ``candidate_unreferenced`` result is not deletion proof. It means that no static
-Python importer, route, main entry, package entry, dynamic module reference or
-non-historical configuration reference was found. Runtime/deployment review and a
-human decision remain required before removal.
+A ``candidate_unreferenced`` result is not deletion proof. It is reserved for an
+implementation module for which no static Python importer, route, main entry,
+package entry, dynamic module reference or non-historical configuration reference
+was found. Runtime/deployment review and an explicit human decision remain required
+before removal.
+
+Test modules and tooling are classified separately. A test file is not dead code
+because no other test imports it, and an unreferenced maintenance script requires
+an operational review rather than automatic deletion.
 """
 
 from __future__ import annotations
@@ -141,7 +146,10 @@ def _string(node: ast.AST) -> str | None:
     return None
 
 
-def _inspect_python(root: Path, path: Path) -> tuple[list[str], int, bool, list[str], str | None]:
+def _inspect_python(
+    root: Path,
+    path: Path,
+) -> tuple[list[str], int, bool, list[str], str | None]:
     module = _module_name(root, path)
     package = _package_for(module, path)
     try:
@@ -168,18 +176,26 @@ def _inspect_python(root: Path, path: Path) -> tuple[list[str], int, bool, list[
             else:
                 for alias in node.names:
                     if alias.name != "*":
-                        imports.add(".".join(part for part in (base, alias.name) if part))
+                        imports.add(
+                            ".".join(part for part in (base, alias.name) if part)
+                        )
         elif isinstance(node, ast.If):
             if (
                 isinstance(node.test, ast.Compare)
                 and isinstance(node.test.left, ast.Name)
                 and node.test.left.id == "__name__"
-                and any(_string(item) == "__main__" for item in node.test.comparators)
+                and any(
+                    _string(item) == "__main__" for item in node.test.comparators
+                )
             ):
                 has_main = True
         elif isinstance(node, ast.Call):
             name = _call_name(node.func)
-            if name in ROUTE_METHODS and node.args and _string(node.args[0]) is not None:
+            if (
+                name in ROUTE_METHODS
+                and node.args
+                and _string(node.args[0]) is not None
+            ):
                 routes += 1
             if name in {"import_module", "find_spec"} and node.args:
                 value = _string(node.args[0])
@@ -201,8 +217,26 @@ def _local_targets(imported: str, local_modules: set[str]) -> set[str]:
     }
 
 
-def _configuration_references(spec: RepositorySpec, modules: set[str]) -> dict[str, list[str]]:
+def _configuration_references(
+    spec: RepositorySpec,
+    path_by_module: dict[str, Path],
+) -> dict[str, list[str]]:
     references: dict[str, list[str]] = defaultdict(list)
+    needles: dict[str, tuple[str, ...]] = {}
+    for module, python_path in path_by_module.items():
+        relative = python_path.relative_to(spec.root).as_posix()
+        without_suffix = relative.removesuffix(".py")
+        needles[module] = tuple(
+            value
+            for value in {
+                module,
+                relative,
+                without_suffix,
+                module.replace(".", "/") + ".py",
+            }
+            if value
+        )
+
     for path in sorted(spec.root.rglob("*")):
         if (
             not path.is_file()
@@ -216,9 +250,20 @@ def _configuration_references(spec: RepositorySpec, modules: set[str]) -> dict[s
         except (OSError, UnicodeError):
             continue
         relative = path.relative_to(spec.root).as_posix()
-        for module in modules:
-            if re.search(rf"(?<![\w.]){re.escape(module)}(?![\w.])", text):
-                references[module].append(relative)
+        for module, module_needles in needles.items():
+            for needle in module_needles:
+                if "/" in needle:
+                    found = needle in text
+                else:
+                    found = bool(
+                        re.search(
+                            rf"(?<![\w.]){re.escape(needle)}(?![\w.])",
+                            text,
+                        )
+                    )
+                if found:
+                    references[module].append(relative)
+                    break
     return references
 
 
@@ -269,7 +314,7 @@ def inspect_repository(spec: RepositorySpec) -> list[ModuleRecord]:
             for target in _local_targets(referenced, local_modules):
                 records[target].dynamic_references.append(importer)
 
-    config = _configuration_references(spec, local_modules)
+    config = _configuration_references(spec, path_by_module)
     for module, paths_for_module in config.items():
         records[module].config_references.extend(paths_for_module)
 
@@ -279,6 +324,8 @@ def inspect_repository(spec: RepositorySpec) -> list[ModuleRecord]:
             record.usage_state = "package_initializer"
         elif record.parse_error:
             record.usage_state = "parse_error"
+        elif record.posture == "test":
+            record.usage_state = "test_module"
         elif record.route_count or record.has_main or record.package_entry:
             record.usage_state = "active_entrypoint"
         elif record.imported_by_runtime:
@@ -289,6 +336,8 @@ def inspect_repository(spec: RepositorySpec) -> list[ModuleRecord]:
             record.usage_state = "test_only"
         elif record.posture in {"history", "reference", "migration"}:
             record.usage_state = record.posture
+        elif record.posture == "tooling":
+            record.usage_state = "tooling_unreferenced_review"
         else:
             record.usage_state = "candidate_unreferenced"
             record.removal_candidate = True
@@ -301,12 +350,20 @@ def inspect_repository(spec: RepositorySpec) -> list[ModuleRecord]:
     return sorted(records.values(), key=lambda item: item.path)
 
 
-def render_markdown(specs: list[RepositorySpec], records: list[ModuleRecord]) -> str:
+def render_markdown(
+    specs: list[RepositorySpec],
+    records: list[ModuleRecord],
+) -> str:
     counts: dict[str, int] = defaultdict(int)
     for record in records:
         counts[record.usage_state] += 1
     candidates = [record for record in records if record.removal_candidate]
     test_only = [record for record in records if record.usage_state == "test_only"]
+    tooling_review = [
+        record
+        for record in records
+        if record.usage_state == "tooling_unreferenced_review"
+    ]
 
     lines = [
         "# Pantheon Python module usage inventory",
@@ -316,21 +373,20 @@ def render_markdown(specs: list[RepositorySpec], records: list[ModuleRecord]) ->
         "## Repositories",
         "",
     ]
-    lines.extend(f"- **{spec.name}** — {spec.role} — `{spec.root}`" for spec in specs)
-    lines.extend(["", "## Summary", ""])
-    lines.extend(f"- {state}: **{count}**" for state, count in sorted(counts.items()))
     lines.extend(
-        [
-            "",
-            "## Candidate unreferenced modules",
-            "",
-        ]
+        f"- **{spec.name}** — {spec.role} — `{spec.root}`" for spec in specs
     )
+    lines.extend(["", "## Summary", ""])
+    lines.extend(
+        f"- {state}: **{count}**" for state, count in sorted(counts.items())
+    )
+    lines.extend(["", "## Candidate unreferenced implementation modules", ""])
     if not candidates:
         lines.append("None detected.")
     for record in candidates:
         lines.append(f"- `{record.repository}:{record.path}` (`{record.module}`)")
-    lines.extend(["", "## Test-only modules", ""])
+
+    lines.extend(["", "## Test-only implementation modules", ""])
     if not test_only:
         lines.append("None detected.")
     for record in test_only:
@@ -338,12 +394,19 @@ def render_markdown(specs: list[RepositorySpec], records: list[ModuleRecord]) ->
             f"- `{record.repository}:{record.path}` — imported by "
             + ", ".join(f"`{item}`" for item in record.imported_by_tests)
         )
+
+    lines.extend(["", "## Tooling requiring operational review", ""])
+    if not tooling_review:
+        lines.append("None detected.")
+    for record in tooling_review:
+        lines.append(f"- `{record.repository}:{record.path}` (`{record.module}`)")
+
     lines.extend(
         [
             "",
             "## Review rule",
             "",
-            "A module may be removed only after runtime/deployment references are checked, its consumers are proven absent, and the change passes full CI. A candidate state alone never authorizes deletion.",
+            "A module may be removed only after runtime/deployment references are checked, its consumers are proven absent, the change passes full CI, and an explicit human decision reviews the removal. A candidate state alone never authorizes deletion.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -379,13 +442,25 @@ def main(argv: Iterable[str] | None = None) -> int:
         ],
         "summary": {
             "modules": len(records),
-            "candidate_unreferenced": sum(item.removal_candidate for item in records),
-            "test_only": sum(item.usage_state == "test_only" for item in records),
+            "candidate_unreferenced": sum(
+                item.removal_candidate for item in records
+            ),
+            "test_only": sum(
+                item.usage_state == "test_only" for item in records
+            ),
+            "test_modules": sum(
+                item.usage_state == "test_module" for item in records
+            ),
+            "tooling_unreferenced_review": sum(
+                item.usage_state == "tooling_unreferenced_review"
+                for item in records
+            ),
         },
         "modules": [asdict(record) for record in records],
         "limits": [
             "static usage evidence != runtime deployment proof",
             "candidate_unreferenced != deletion authorization",
+            "tooling reference absence != deletion authorization",
             "CI success != semantic or operational authority",
         ],
     }
