@@ -27,6 +27,7 @@ PROFILE_KEY = "hermes-profile-lab-key"
 DEFAULT_KEY = "hermes-default-lab-key"
 PANTHEON_KEY = "pantheon-lab-key"
 EXPECTED_TOOLS = {"pantheon_context_manifest", "pantheon_context_entity"}
+EXPECTED_COMPONENTS = {"run-binding", "context-bridge", "runtime-observer"}
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
@@ -180,7 +181,9 @@ def _require(condition: bool, message: str) -> None:
 def validate(artifacts: Path) -> dict[str, Any]:
     artifacts = artifacts.resolve()
     version = (artifacts / "hermes-version.txt").read_text(encoding="utf-8").strip()
-    wheel_digest = (artifacts / "hermes-wheel.sha256").read_text(encoding="utf-8").strip()
+    source_artifact_digest = (
+        artifacts / "hermes-source-artifact.sha256"
+    ).read_text(encoding="utf-8").strip()
     distribution = _load_json(artifacts / "distribution-verification.json")
     memory = _load_json(artifacts / "memory-status-launch.json")
     observation = _load_json(artifacts / "runtime-observation.json")
@@ -188,10 +191,31 @@ def validate(artifacts: Path) -> dict[str, Any]:
     terminal = _load_json(artifacts / "run-terminal.json")
     reconciliation = _load_json(artifacts / "return-receipt.json")
     fixture_state = _load_json(artifacts / "fixture-state.json")
+    rollback = _load_json(artifacts / "rollback.json")
 
     _require("0.20.0" in version, f"unexpected Hermes version: {version}")
-    _require(SHA256_RE.fullmatch(wheel_digest) is not None, "wheel digest is invalid")
-    _require(distribution.get("status") == "candidate", "distribution lock was not verified as candidate")
+    _require(
+        SHA256_RE.fullmatch(source_artifact_digest) is not None,
+        "source artifact digest is invalid",
+    )
+    _require(
+        distribution.get("status") == "candidate",
+        "distribution lock was not verified as candidate",
+    )
+    components = distribution.get("components") or []
+    _require(
+        {str(item.get("component_id")) for item in components if isinstance(item, dict)}
+        == EXPECTED_COMPONENTS,
+        "verified distribution component identities differ from the standard composition",
+    )
+    _require(
+        distribution.get("verified_component_digest_count") == 3,
+        "not all standard component digests were verified",
+    )
+    _require(
+        distribution.get("authority_effect") == "none",
+        "distribution verification reported an authority effect",
+    )
 
     _require(memory.get("status") == "qualified", "fresh launch memory receipt is not qualified")
     for key in (
@@ -205,10 +229,19 @@ def validate(artifacts: Path) -> dict[str, Any]:
 
     _require(observation.get("runs_api_status") == "compatible", "Runs API is not compatible")
     _require(observation.get("safety_status") == "qualified", "runtime posture is not qualified")
-    _require(observation.get("profile_surface", {}).get("observed_profile") == PROFILE, "wrong profile route observed")
-    _require(observation.get("memory_posture", {}).get("status") == "qualified", "memory posture is not qualified")
+    _require(
+        observation.get("profile_surface", {}).get("observed_profile") == PROFILE,
+        "wrong profile route observed",
+    )
+    _require(
+        observation.get("memory_posture", {}).get("status") == "qualified",
+        "memory posture is not qualified",
+    )
     tool_surface = observation.get("tool_surface") or {}
-    _require(set(tool_surface.get("active_tools") or []) == EXPECTED_TOOLS, "unexpected active Hermes tools")
+    _require(
+        set(tool_surface.get("active_tools") or []) == EXPECTED_TOOLS,
+        "unexpected active Hermes tools",
+    )
     _require(observation.get("session_memory_header_sent") is False, "observer sent a memory header")
 
     _require(launch.get("runtime_submission_performed") is True, "Hermes run was not submitted")
@@ -220,10 +253,16 @@ def validate(artifacts: Path) -> dict[str, Any]:
     _require(launch.get("model_override_performed") is False, "binding overrode the model")
 
     _require(terminal.get("status") == "completed", f"Hermes run did not complete: {terminal}")
-    _require("LAB_ACCEPTANCE_COMPLETED" in str(terminal.get("output") or ""), "synthetic run did not complete the context checks")
+    _require(
+        "LAB_ACCEPTANCE_COMPLETED" in str(terminal.get("output") or ""),
+        "synthetic run did not complete the context checks",
+    )
 
     _require(reconciliation.get("pantheon_return_recorded") is True, "Pantheon return was not recorded")
-    _require(reconciliation.get("technical_receipt_is_evidence") is False, "technical receipt was misclassified as Evidence")
+    _require(
+        reconciliation.get("technical_receipt_is_evidence") is False,
+        "technical receipt was misclassified as Evidence",
+    )
     _require(reconciliation.get("scheduler_effect") is False, "reconciliation introduced scheduler effect")
     _require(reconciliation.get("retry_effect") is False, "reconciliation introduced retry effect")
     recorded = reconciliation.get("recorded") or {}
@@ -234,8 +273,14 @@ def validate(artifacts: Path) -> dict[str, Any]:
     reads = fixture_state.get("pantheon_reads") or []
     _require(any(path.endswith("/active-context") for path in reads), "manifest was not read")
     _require(any(path.endswith("/project/project-lab") for path in reads), "admitted entity was not read")
-    _require(any(path.endswith("/project/project-outside") for path in reads), "outside entity refusal was not exercised")
-    _require(int(fixture_state.get("provider_calls") or 0) >= 4, "model loop did not exercise all tool steps")
+    _require(
+        any(path.endswith("/project/project-outside") for path in reads),
+        "outside entity refusal was not exercised",
+    )
+    _require(
+        int(fixture_state.get("provider_calls") or 0) >= 4,
+        "model loop did not exercise all tool steps",
+    )
 
     journal_path = artifacts / "fixture-journal.jsonl"
     journal = [
@@ -249,13 +294,21 @@ def validate(artifacts: Path) -> dict[str, Any]:
         "X-Hermes-Session-Key was observed by a lab service",
     )
 
+    _require(rollback.get("plugin_disabled") is True, "plugin rollback was not verified")
+    _require(rollback.get("gateway_stopped") is True, "gateway rollback was not verified")
+    _require(
+        rollback.get("profile_route_unreachable") is True,
+        "profile route remained reachable after rollback",
+    )
+
     summary = {
         "kind": "hermes_020_ephemeral_lab_acceptance",
         "status": "passed",
         "hermes_version": "0.20.0",
-        "wheel_digest": wheel_digest,
+        "source_artifact_digest": source_artifact_digest,
         "profile": PROFILE,
         "profile_route": f"/p/{PROFILE}",
+        "distribution_components": sorted(EXPECTED_COMPONENTS),
         "tool_surface": sorted(EXPECTED_TOOLS),
         "memory_posture": "qualified_off",
         "synthetic_run_completed": True,
