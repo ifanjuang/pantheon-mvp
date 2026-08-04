@@ -38,6 +38,60 @@ source archive digest != production installation digest
 editable source installed in lab != production installed
 ```
 
+## Runtime facts observed on live runs
+
+The acceptance runs established four distinctions that were not safely inferable from configuration alone.
+
+### API and CLI toolsets are separate
+
+`hermes memory status` evaluates the `cli` platform toolset. The Runs API evaluates `api_server`. Restricting only `platform_toolsets.api_server` leaves the built-in memory tool active on the CLI surface.
+
+The governed profile must therefore declare both surfaces explicitly:
+
+```yaml
+platform_toolsets:
+  api_server:
+    - pantheon_context
+  cli:
+    - pantheon_context
+```
+
+```text
+API toolset restricted != CLI memory tool disabled
+memory provider off != memory tool off
+```
+
+### A multiplexed secondary profile must not own a port-binding API server
+
+The default profile owns the shared listener. If a secondary profile keeps `API_SERVER_ENABLED=true`, Hermes skips that profile as a port-binding conflict. The resulting `/p/<profile>/...` response cannot qualify the intended named profile.
+
+The named profile must retain its own key while keeping its local port binding disabled:
+
+```text
+API_SERVER_ENABLED=false
+API_SERVER_KEY=<profile-specific-key>
+```
+
+The default profile remains the only listener and authenticates `/p/pantheon-governed/...` with the named profile key.
+
+```text
+profile key present != secondary listener enabled
+shared profile route reachable != named profile loaded
+HTTP 200 != governed profile qualified
+```
+
+### `/v1/toolsets` remains a list contract
+
+A run observed a non-list response only after Hermes had skipped the named profile. The official 0.20.0 API contract still returns a list of resolved toolsets. The observer contract was therefore not relaxed; the secondary profile configuration was corrected instead.
+
+### SQLite safety fallback was observed
+
+The GitHub runner linked SQLite `3.45.1`. Hermes identified the WAL-reset vulnerability range and selected DELETE journal mode instead of WAL. This was a safe runtime fallback for the laboratory, not proof that the production host has a patched SQLite build.
+
+```text
+safe DELETE fallback observed != production SQLite qualified
+```
+
 ## Scope
 
 The workflow creates only an ephemeral GitHub-hosted laboratory environment:
@@ -65,7 +119,9 @@ archive exact 0.20.0 release source
 → execute the installed Hermes 0.20.0 CLI
 → verify three-component Pantheon lock
 → create isolated profile
+→ configure API and CLI toolsets independently
 → configure all memory axes off
+→ keep the secondary API port binding disabled
 → install plugin disabled
 → inspect plugin copy
 → enable plugin explicitly
@@ -129,6 +185,7 @@ The workflow fails closed when any of these is observed:
 - exact source archive digest is absent;
 - distribution composition differs from the three reviewed components;
 - profile route differs from `/p/pantheon-governed`;
+- the secondary profile activates its own API port binding;
 - any memory axis is active or unknown;
 - any tool beyond the two Pantheon context tools is active;
 - `X-Hermes-Session-Key` reaches a fixture;
@@ -150,4 +207,5 @@ real Pantheon API and admission
 real operator identity
 real activation scope and expiry
 real rollback target and proof
+production SQLite version or verified safe journal fallback
 ```
