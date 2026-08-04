@@ -3,7 +3,9 @@
 
 The fixture provides a local OpenAI-compatible provider and a bounded synthetic
 Pantheon API. It exercises Hermes' native progressive tool disclosure:
-``tool_search`` -> ``tool_describe`` -> ``tool_call``. The journal retains only
+``tool_search`` -> ``tool_describe`` -> ``tool_call``. Successful provider
+responses honor the runtime's ``stream: true`` request with OpenAI-compatible
+SSE chunks; errors remain bounded JSON responses. The journal retains only
 sanitized routes, header presence, body keys and tool schema names/shapes. It
 never stores prompts, tool arguments, credentials or raw provider payloads.
 """
@@ -17,7 +19,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import unquote, urlsplit
 
 ADMISSION_ID = "admission-hermes-020-lab"
@@ -134,7 +136,7 @@ class LabState:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PantheonHermesLab/3"
+    server_version = "PantheonHermesLab/4"
 
     @property
     def state(self) -> LabState:
@@ -158,6 +160,122 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
+
+    def _send_sse(self, events: Iterable[dict[str, Any]]) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        for event in events:
+            encoded = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+            self.wfile.write(f"data: {encoded}\n\n".encode("utf-8"))
+        self.wfile.write(b"data: [DONE]\n\n")
+        self.wfile.flush()
+
+    def _send_completion(
+        self,
+        request_body: dict[str, Any],
+        response: dict[str, Any],
+    ) -> None:
+        if request_body.get("stream") is not True:
+            self._send(HTTPStatus.OK, response)
+            return
+
+        choices = response.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            self._send(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "laboratory completion has no valid choice"},
+            )
+            return
+        choice = choices[0]
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            self._send(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "laboratory completion has no valid message"},
+            )
+            return
+
+        completion_id = str(response.get("id") or "chatcmpl-hermes-020-lab")
+        created = int(response.get("created") or time.time())
+        model = str(response.get("model") or "lab-model")
+
+        def chunk(delta: dict[str, Any], finish_reason: str | None) -> dict[str, Any]:
+            return {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": delta,
+                        "finish_reason": finish_reason,
+                    }
+                ],
+            }
+
+        events: list[dict[str, Any]] = []
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            streamed_calls: list[dict[str, Any]] = []
+            for index, raw_call in enumerate(tool_calls):
+                if not isinstance(raw_call, dict):
+                    continue
+                function = raw_call.get("function")
+                if not isinstance(function, dict):
+                    continue
+                streamed_calls.append(
+                    {
+                        "index": index,
+                        "id": str(raw_call.get("id") or f"call-hermes-020-lab-{index}"),
+                        "type": str(raw_call.get("type") or "function"),
+                        "function": {
+                            "name": str(function.get("name") or ""),
+                            "arguments": str(function.get("arguments") or ""),
+                        },
+                    }
+                )
+            if not streamed_calls:
+                self._send(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {"error": "laboratory completion has no valid streamed tool call"},
+                )
+                return
+            events.append(chunk({"role": "assistant", "tool_calls": streamed_calls}, None))
+            events.append(chunk({}, str(choice.get("finish_reason") or "tool_calls")))
+        else:
+            content = message.get("content")
+            events.append(
+                chunk(
+                    {
+                        "role": "assistant",
+                        "content": "" if content is None else str(content),
+                    },
+                    None,
+                )
+            )
+            events.append(chunk({}, str(choice.get("finish_reason") or "stop")))
+
+        stream_options = request_body.get("stream_options")
+        if (
+            isinstance(stream_options, dict)
+            and stream_options.get("include_usage") is True
+            and isinstance(response.get("usage"), dict)
+        ):
+            events.append(
+                {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [],
+                    "usage": response["usage"],
+                }
+            )
+        self._send_sse(events)
 
     def _journal(self, body: dict[str, Any] | None = None) -> None:
         metadata = _tool_metadata(body)
@@ -425,7 +543,7 @@ class Handler(BaseHTTPRequestHandler):
                 ],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
             }
-        self._send(HTTPStatus.OK, response)
+        self._send_completion(body, response)
 
 
 def main() -> int:
