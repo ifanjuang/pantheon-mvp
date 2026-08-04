@@ -9,12 +9,13 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+import uuid
 
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from . import agency_change_candidates
+from . import agency_change_candidates, agency_data
 
 
 MIGRATION = Path(__file__).resolve().parent / "sql" / "005_change_candidate_review.sql"
@@ -147,6 +148,32 @@ def normalize_annotations(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return normalized
 
 
+def list_revision_requested_project_candidates(
+    conn: psycopg.Connection,
+    *,
+    project_id: str,
+    limit: int = 100,
+) -> list[dict]:
+    ensure_schema(conn)
+    if limit < 1 or limit > 500:
+        raise ChangeCandidateReviewError("candidate list limit must be between 1 and 500")
+    agency_data.get_project(conn, project_id)
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT *
+              FROM agency_change_candidates
+             WHERE entity_id = %s
+               AND status = 'revision_requested'
+             ORDER BY created_at DESC, candidate_id
+             LIMIT %s
+            """,
+            (project_id, limit),
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+    return _jsonable(rows)
+
+
 def get_project_candidate_review(
     conn: psycopg.Connection,
     *,
@@ -211,12 +238,10 @@ def request_project_candidate_revision(
             """
             INSERT INTO agency_change_candidate_events (
                 event_id, candidate_id, event_type, actor, actor_kind, idempotency_key, payload
-            ) VALUES (
-                'change-event-' || md5(random()::text || clock_timestamp()::text),
-                %s, 'revision_requested', %s, 'human', %s, %s
-            )
+            ) VALUES (%s, %s, 'revision_requested', %s, 'human', %s, %s)
             """,
             (
+                f"change-event-{uuid.uuid4().hex}",
                 candidate_id,
                 normalized_actor,
                 normalized_key,
