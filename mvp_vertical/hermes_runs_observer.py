@@ -34,6 +34,8 @@ REQUIRED_RUN_FEATURES = (
     "run_stop",
 )
 MAX_MEMORY_STATUS_CHARS = 64_000
+MAX_MEMORY_OBSERVATION_AGE_SECONDS = 300.0
+MAX_FUTURE_CLOCK_SKEW_SECONDS = 30.0
 _PROFILE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ANSI_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -85,6 +87,18 @@ def _memory_provider(text: str) -> str:
     if value.startswith("(none") or "built-in only" in value or "builtin only" in value:
         return "off"
     return "selected"
+
+
+def _observation_time(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def parse_memory_status(
@@ -198,8 +212,17 @@ def qualify_memory_observation(
     receipt: dict[str, Any] | None,
     *,
     expected_profile: str | None,
+    observed_at: datetime | None = None,
+    max_age_seconds: float = MAX_MEMORY_OBSERVATION_AGE_SECONDS,
 ) -> dict[str, Any]:
-    """Fail closed when a supplied receipt is incomplete, mismatched or active."""
+    """Fail closed when a supplied receipt is incomplete, stale or active."""
+
+    if max_age_seconds <= 0:
+        raise HermesMemoryObservationError("Hermes memory observation max age must be positive")
+    reference_time = observed_at or datetime.now(timezone.utc)
+    if reference_time.tzinfo is None:
+        raise HermesMemoryObservationError("Hermes memory observation reference time must be timezone-aware")
+    reference_time = reference_time.astimezone(timezone.utc)
 
     if receipt is None:
         return {
@@ -220,6 +243,8 @@ def qualify_memory_observation(
             ],
             "active_axes": [],
             "observation_source": None,
+            "captured_at": None,
+            "age_seconds": None,
             "stdout_digest": None,
             "raw_output_retained": False,
         }
@@ -250,6 +275,19 @@ def qualify_memory_observation(
         reasons.append("no expected profile was supplied")
     elif observed_profile != expected:
         reasons.append("memory observation profile differs from expected profile")
+
+    if receipt.get("observation_source") != "hermes_memory_status_cli":
+        reasons.append("memory observation has an unexpected source")
+    captured_at = _observation_time(receipt.get("captured_at"))
+    age_seconds: float | None = None
+    if captured_at is None:
+        reasons.append("memory observation has no valid timezone-aware capture time")
+    else:
+        age_seconds = (reference_time - captured_at).total_seconds()
+        if age_seconds > max_age_seconds:
+            reasons.append("memory observation is stale")
+        elif age_seconds < -MAX_FUTURE_CLOCK_SKEW_SECONDS:
+            reasons.append("memory observation capture time is in the future")
 
     command = receipt.get("command")
     expected_tail = ["-p", observed_profile, "memory", "status"]
@@ -287,6 +325,8 @@ def qualify_memory_observation(
         "missing_axes": missing,
         "active_axes": active,
         "observation_source": receipt.get("observation_source"),
+        "captured_at": captured_at.isoformat() if captured_at is not None else None,
+        "age_seconds": round(age_seconds, 3) if age_seconds is not None else None,
         "stdout_digest": digest or None,
         "raw_output_retained": receipt.get("raw_output_retained") is True,
     }
@@ -419,6 +459,7 @@ class HermesRunsApiObserver:
         *,
         expected_profile: str | None = None,
         memory_observation: dict[str, Any] | None = None,
+        memory_observation_max_age_seconds: float = MAX_MEMORY_OBSERVATION_AGE_SECONDS,
         allowed_tools: Iterable[str] | None = None,
         required_tools: Iterable[str] | None = None,
         timeout: float = 5.0,
@@ -429,10 +470,13 @@ class HermesRunsApiObserver:
             raise HermesRunsObservationError("Hermes base_url is required")
         if not api_key:
             raise HermesRunsObservationError("Hermes API key is required")
+        if memory_observation_max_age_seconds <= 0:
+            raise HermesRunsObservationError("Hermes memory observation max age must be positive")
         self._base_url = base_url
         self._api_key = api_key
         self._expected_profile = expected_profile
         self._memory_observation = memory_observation
+        self._memory_observation_max_age_seconds = memory_observation_max_age_seconds
         self._allowed_tools = _string_set(allowed_tools, label="allowed_tools")
         self._required_tools = _string_set(required_tools, label="required_tools")
         if self._required_tools and self._allowed_tools is not None:
@@ -499,6 +543,7 @@ class HermesRunsApiObserver:
         memory_posture = qualify_memory_observation(
             self._memory_observation,
             expected_profile=self._expected_profile,
+            max_age_seconds=self._memory_observation_max_age_seconds,
         )
 
         safety_status = _combined_safety_status(
@@ -545,6 +590,7 @@ class HermesRunsApiObserver:
                 "profile route answered != governed profile qualified",
                 "hermes memory off != built-in memory injection off",
                 "memory tool absent != memory injection disabled",
+                "fresh memory observation != task authorized",
                 "Runs API available != run authorized",
                 "toolset configured != toolset approved",
                 "tool surface qualified != production activated",
