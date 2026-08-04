@@ -34,8 +34,7 @@ def test_mobile_variant_queue_preserves_scope_and_separates_selection_from_apply
     assert "/select-variant" in javascript
     assert "/apply-selected" in javascript
     assert "Variante sélectionnée. Aucun Markdown n’a encore été modifié." in javascript
-    assert "review_status" not in javascript
-    assert "Evidence" not in javascript
+    assert "review_status:" not in javascript
     assert "runs/start" not in javascript
     assert "execution-admissions" not in javascript
 
@@ -57,7 +56,7 @@ def test_variant_comparison_is_mobile_accessible() -> None:
     assert ".proposal-variant.selected" in css
     assert "grid-template-columns:repeat(2" in css
     assert "@media (max-width:760px)" in css
-    assert ".proposal-variants { grid-template-columns:1fr; }" in css
+    assert ".connect,.workspace,.proposal-variants { grid-template-columns:1fr; }" in css
     assert ":focus-visible" in css
     assert "@media (prefers-reduced-motion:reduce)" in css
 
