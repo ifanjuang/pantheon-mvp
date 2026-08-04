@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import agency_change_candidates, agency_data
+from .agency_change_candidate_review_api import install_agency_change_candidate_review_routes
 from .agency_claims_api import install_agency_claim_routes
 
 
@@ -157,6 +158,14 @@ def install_agency_change_candidate_routes(
             "applied": False,
             "change_candidate": candidate,
         }
+
+    install_agency_change_candidate_review_routes(
+        app,
+        with_connection=with_connection,
+        require_read_key=require_read_key,
+        require_human_writer=require_human_writer,
+        require_actor=require_actor,
+    )
 
     # Sibling semantic surface: same read/human writer gates, separate domain.
     install_agency_claim_routes(
