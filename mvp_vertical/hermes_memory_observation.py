@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 MAX_MEMORY_STATUS_CHARS = 64_000
 _PROFILE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ANSI_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
@@ -196,6 +197,7 @@ def qualify_memory_observation(
             "active_axes": [],
             "observation_source": None,
             "stdout_digest": None,
+            "raw_output_retained": False,
         }
     if not isinstance(receipt, dict):
         raise HermesMemoryObservationError("Hermes memory observation must be an object")
@@ -224,10 +226,27 @@ def qualify_memory_observation(
         reasons.append("no expected profile was supplied")
     elif observed_profile != expected:
         reasons.append("memory observation profile differs from expected profile")
+
+    command = receipt.get("command")
+    expected_tail = ["-p", observed_profile, "memory", "status"]
+    if not isinstance(command, list) or len(command) < 5 or command[-4:] != expected_tail:
+        reasons.append("memory observation command does not target the observed profile")
     if receipt.get("exit_code") != 0:
         reasons.append("memory status command did not exit successfully")
     if receipt.get("status") != "qualified":
         reasons.append("memory observation is not qualified")
+    if receipt.get("raw_output_retained") is not False:
+        reasons.append("memory observation retained raw command output")
+    if receipt.get("write_effect") is not False or receipt.get("activation_changed") is not False:
+        reasons.append("memory observation reports a mutation effect")
+    if receipt.get("authority_effect") != "none":
+        reasons.append("memory observation reports an authority effect")
+    if receipt.get("technical_receipt_is_evidence") is not False:
+        reasons.append("memory observation is incorrectly classified as Evidence")
+
+    digest = str(receipt.get("stdout_digest") or "")
+    if not _DIGEST_PATTERN.fullmatch(digest):
+        reasons.append("memory observation has no valid output digest")
     if missing:
         reasons.append("memory observation has missing axes")
     if active:
@@ -244,6 +263,6 @@ def qualify_memory_observation(
         "missing_axes": missing,
         "active_axes": active,
         "observation_source": receipt.get("observation_source"),
-        "stdout_digest": receipt.get("stdout_digest"),
+        "stdout_digest": digest or None,
         "raw_output_retained": receipt.get("raw_output_retained") is True,
     }
