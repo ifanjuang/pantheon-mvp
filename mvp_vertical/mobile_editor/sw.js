@@ -1,6 +1,14 @@
-const CACHE = "pantheon-knowledge-shell-r3";
+const CACHE = "pantheon-knowledge-shell-r4";
 const CACHE_PREFIX = "pantheon-knowledge-shell-";
-const SHELL = ["./", "index.html", "styles.css", "app.js", "manifest.webmanifest", "icon.svg"];
+const SHELL = [
+  "./",
+  "index.html",
+  "styles.css",
+  "app.js",
+  "variant_review.js",
+  "manifest.webmanifest",
+  "icon.svg",
+];
 const API_PREFIXES = [
   "/projects/",
   "/documents/",
