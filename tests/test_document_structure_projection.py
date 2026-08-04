@@ -59,7 +59,6 @@ def _compiled():
 def test_projection_reuses_compiled_units_as_fragments() -> None:
     compiled = _compiled()
     cref = compilation_id("extraction.demo")
-
     projected = project_document_structure(
         document_ref="document.demo",
         extraction_ref="extraction.demo",
@@ -67,16 +66,10 @@ def test_projection_reuses_compiled_units_as_fragments() -> None:
         compiled=compiled,
         created_at=datetime(2026, 8, 4, 12, 0, tzinfo=UTC),
     )
-
     assert projected["structure_id"] == cref
-    assert [unit["unit_kind"] for unit in projected["native_units"]] == [
-        "page",
-        "page",
-    ]
+    assert [unit["unit_kind"] for unit in projected["native_units"]] == ["page", "page"]
     assert [fragment["fragment_kind"] for fragment in projected["fragments"]] == [
-        "section",
-        "text",
-        "text",
+        "section", "text", "text"
     ]
     assert projected["fragments"][0]["label"] == "Variante A"
     assert projected["fragments"][1]["unit_ref"].endswith("page.0001")
@@ -88,9 +81,7 @@ def test_chunk_keeps_all_source_fragments_and_one_contract_anchor() -> None:
     compiled = _compiled()
     cref = compilation_id("extraction.demo")
     chunk = compiled.chunks[0]
-
     refs = fragment_refs_for_chunk(cref, chunk)
-
     assert len(refs) == len(chunk.unit_ordinals)
     assert primary_fragment_ref(cref, chunk) == refs[0]
     assert len(set(refs)) == len(refs)
@@ -99,11 +90,10 @@ def test_chunk_keeps_all_source_fragments_and_one_contract_anchor() -> None:
 def test_page_less_document_uses_one_neutral_native_unit() -> None:
     compiled = compile_document(
         markdown="# Introduction\n\nContenu sans page.",
-        document_json=None,
+        document_json={},
         converter="direct_text",
     )
     cref = compilation_id("extraction.markdown")
-
     projected = project_document_structure(
         document_ref="document.markdown",
         extraction_ref="extraction.markdown",
@@ -111,7 +101,6 @@ def test_page_less_document_uses_one_neutral_native_unit() -> None:
         compiled=compiled,
         created_at="2026-08-04T12:00:00+00:00",
     )
-
     assert projected["native_units"] == [
         {
             "unit_id": f"{cref}.section.0000",
@@ -120,6 +109,6 @@ def test_page_less_document_uses_one_neutral_native_unit() -> None:
             "label": "Document",
         }
     ]
-    assert {
-        fragment["unit_ref"] for fragment in projected["fragments"]
-    } == {f"{cref}.section.0000"}
+    assert {fragment["unit_ref"] for fragment in projected["fragments"]} == {
+        f"{cref}.section.0000"
+    }
