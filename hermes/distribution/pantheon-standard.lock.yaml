@@ -20,7 +20,7 @@ components:
     source_repository: pantheon-mvp
     path: mvp_vertical/hermes_run_binding.py
     digest_mode: file
-    content_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    content_digest: sha256:7190e658f3a71e5475dfc5ba6c438210f5bba31719db1c6e285e7ed3f3f00904
     required: true
     enabled_by_default: false
     capabilities:
@@ -34,7 +34,7 @@ components:
     source_repository: pantheon-mvp
     path: hermes/plugins/pantheon-context-bridge
     digest_mode: tree
-    content_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    content_digest: sha256:ebca63061f1d64cd2a62953c93b656e4370f69a336a17c581fb591b0ff568681
     required: true
     enabled_by_default: false
     capabilities:
@@ -46,7 +46,7 @@ components:
     source_repository: pantheon-mvp
     path: mvp_vertical/hermes_runs_observer.py
     digest_mode: file
-    content_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    content_digest: sha256:9af906cb560264ed019c964147627fdd9051efc65807a8f05df9b91b9c056867
     required: true
     enabled_by_default: false
     capabilities:
