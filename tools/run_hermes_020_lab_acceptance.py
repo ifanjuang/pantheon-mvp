@@ -48,7 +48,7 @@ def _write_env(path: Path, values: dict[str, str]) -> None:
 
 
 def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
-    """Create a default listener and one non-port-binding governed profile."""
+    """Create one listener and one non-port-binding governed profile."""
 
     hermes_home = hermes_home.resolve()
     profile_home = hermes_home / "profiles" / PROFILE
@@ -71,14 +71,12 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
             "plugins": {"enabled": [], "disabled": []},
         },
     )
-    _write_env(
-        hermes_home / ".env",
-        {
-            "API_SERVER_KEY": DEFAULT_KEY,
-        },
-    )
+    _write_env(hermes_home / ".env", {"API_SERVER_KEY": DEFAULT_KEY})
 
-    governed_toolsets = ["pantheon_context"]
+    # The gateway plugin registry is process-scoped and is installed once in
+    # the default HERMES_HOME. The profile does not own another plugin copy; it
+    # only selects the registered API toolset. Its CLI surface is explicitly
+    # empty so `hermes memory status` cannot inherit the memory tool.
     _write_yaml(
         profile_home / "config.yaml",
         {
@@ -89,25 +87,17 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
                 "api_mode": "chat_completions",
             },
             "memory": dict(memory_off),
-            # Hermes 0.20 evaluates the CLI and API tool surfaces separately.
-            # Both must be explicit so the default hermes-cli composite cannot
-            # silently re-enable the built-in memory tool.
             "platform_toolsets": {
-                "api_server": list(governed_toolsets),
-                "cli": list(governed_toolsets),
+                "api_server": ["pantheon_context"],
+                "cli": [],
             },
-            # The named profile needs its own API key for /p/<profile>/ auth,
-            # but the default profile owns the only listener in multiplex mode.
-            # Hermes 0.20 preserves the key while respecting this explicit
-            # false marker; an env-only API_SERVER_ENABLED=false is insufficient.
+            # The named profile keeps its own route key but must never own the
+            # shared listener. Hermes 0.20 requires this explicit marker;
+            # an env-only API_SERVER_ENABLED=false is insufficient.
             "platforms": {
                 "api_server": {
                     "enabled": False,
                 },
-            },
-            "plugins": {
-                "enabled": ["pantheon-context-bridge"],
-                "disabled": [],
             },
         },
     )
@@ -129,9 +119,11 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
         "profile_api_prefix": f"/p/{PROFILE}",
         "profile_api_key_present": True,
         "profile_port_binding_enabled": False,
+        "gateway_plugin_scope": "default_process",
+        "profile_plugin_copy": False,
         "platform_toolsets_expected": {
-            "api_server": list(governed_toolsets),
-            "cli": list(governed_toolsets),
+            "api_server": ["pantheon_context"],
+            "cli": [],
         },
         "memory_axes_expected": {
             "external_provider": "off",
