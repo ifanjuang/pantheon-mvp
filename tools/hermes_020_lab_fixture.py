@@ -2,9 +2,10 @@
 """Deterministic local services for the Hermes 0.20.0 lab acceptance.
 
 The fixture provides a local OpenAI-compatible provider and a bounded synthetic
-Pantheon API. It journals only sanitized request metadata: routes, header
-presence, body keys and tool schema names/shapes. It never retains prompts,
-arguments, credentials or raw provider payloads.
+Pantheon API. It exercises Hermes' native progressive tool disclosure:
+``tool_search`` -> ``tool_describe`` -> ``tool_call``. The journal retains only
+sanitized routes, header presence, body keys and tool schema names/shapes. It
+never stores prompts, tool arguments, credentials or raw provider payloads.
 """
 
 from __future__ import annotations
@@ -24,49 +25,74 @@ PANTHEON_KEY = "pantheon-lab-key"
 PROFILE_ENTITY_TYPE = "project"
 PROFILE_ENTITY_ID = "project-lab"
 OUTSIDE_ENTITY_ID = "project-outside"
-REQUIRED_TOOLS = {"pantheon_context_manifest", "pantheon_context_entity"}
+GOVERNED_TOOLS = {"pantheon_context_manifest", "pantheon_context_entity"}
+BRIDGE_TOOLS = {"tool_search", "tool_describe", "tool_call"}
 
 
 def _tool_name(item: Any) -> str:
-    """Read a function name from reviewed Chat Completions or flat tool shape."""
-
     if not isinstance(item, dict):
         return ""
     function = item.get("function")
     if isinstance(function, dict):
-        value = str(function.get("name") or "").strip()
-        if value:
-            return value
+        nested = str(function.get("name") or "").strip()
+        if nested:
+            return nested
     return str(item.get("name") or "").strip()
 
 
 def _tool_metadata(body: dict[str, Any] | None) -> dict[str, Any]:
-    if not isinstance(body, dict):
-        return {
-            "tool_count": 0,
-            "tool_names": [],
-            "tool_entry_shapes": [],
-        }
-    tools = body.get("tools")
+    tools = body.get("tools") if isinstance(body, dict) else None
     if not isinstance(tools, list):
-        return {
-            "tool_count": 0,
-            "tool_names": [],
-            "tool_entry_shapes": [],
-        }
-    names = sorted({name for name in (_tool_name(item) for item in tools) if name})
-    shapes = sorted(
-        {
-            ",".join(sorted(str(key) for key in item))
-            if isinstance(item, dict)
-            else type(item).__name__
-            for item in tools
-        }
-    )
+        return {"tool_count": 0, "tool_names": [], "tool_entry_shapes": []}
     return {
         "tool_count": len(tools),
-        "tool_names": names,
-        "tool_entry_shapes": shapes,
+        "tool_names": sorted({name for name in map(_tool_name, tools) if name}),
+        "tool_entry_shapes": sorted(
+            {
+                ",".join(sorted(str(key) for key in item))
+                if isinstance(item, dict)
+                else type(item).__name__
+                for item in tools
+            }
+        ),
+    }
+
+
+def _tool_result_messages(messages: list[Any]) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in messages
+        if isinstance(item, dict) and item.get("role") == "tool"
+    ]
+
+
+def _tool_call_message(step: int, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": f"chatcmpl-hermes-020-lab-{step}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": "lab-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": f"call-hermes-020-lab-{step}",
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": json.dumps(arguments),
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
     }
 
 
@@ -81,8 +107,11 @@ class LabState:
         self.last_provider_tool_shapes: list[str] = []
 
     def record(self, payload: dict[str, Any]) -> None:
-        payload = {"recorded_at": time.time(), **payload}
-        rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        rendered = json.dumps(
+            {"recorded_at": time.time(), **payload},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         with self.lock:
             self.journal.parent.mkdir(parents=True, exist_ok=True)
             with self.journal.open("a", encoding="utf-8") as handle:
@@ -105,7 +134,7 @@ class LabState:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PantheonHermesLab/2"
+    server_version = "PantheonHermesLab/3"
 
     @property
     def state(self) -> LabState:
@@ -130,7 +159,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
-    def _journal(self, *, body: dict[str, Any] | None = None) -> None:
+    def _journal(self, body: dict[str, Any] | None = None) -> None:
         metadata = _tool_metadata(body)
         if urlsplit(self.path).path == "/v1/chat/completions":
             self.state.note_provider_tools(metadata)
@@ -154,7 +183,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = unquote(urlsplit(self.path).path)
         self._journal()
-
         if path == "/health":
             self._send(HTTPStatus.OK, {"status": "ok"})
             return
@@ -164,11 +192,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "object": "list",
                     "data": [
-                        {
-                            "id": "lab-model",
-                            "object": "model",
-                            "owned_by": "pantheon-lab",
-                        }
+                        {"id": "lab-model", "object": "model", "owned_by": "pantheon-lab"}
                     ],
                 },
             )
@@ -221,7 +245,6 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": "entity is outside the admitted Context Pack"},
                 )
                 return
-
         self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -232,8 +255,7 @@ class Handler(BaseHTTPRequestHandler):
             self._journal()
             self._send(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
-        self._journal(body=body)
-
+        self._journal(body)
         if path == "/v1/chat/completions":
             self._handle_chat(body)
             return
@@ -262,10 +284,7 @@ class Handler(BaseHTTPRequestHandler):
                             ),
                             "field_projection_version": "hermes-020-lab",
                             "entities": [
-                                {
-                                    "entity_type": PROFILE_ENTITY_TYPE,
-                                    "entity_id": PROFILE_ENTITY_ID,
-                                }
+                                {"entity_type": PROFILE_ENTITY_TYPE, "entity_id": PROFILE_ENTITY_ID}
                             ],
                         },
                     },
@@ -294,7 +313,6 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 )
                 return
-
         self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def _handle_chat(self, body: dict[str, Any]) -> None:
@@ -302,97 +320,93 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(messages, list):
             self._send(HTTPStatus.BAD_REQUEST, {"error": "messages required"})
             return
-
-        tools = body.get("tools")
-        available = {
-            name
-            for name in (
-                _tool_name(item) for item in tools if isinstance(tools, list)
-            )
-            if name
-        }
-        if not REQUIRED_TOOLS.issubset(available):
+        available = set(_tool_metadata(body)["tool_names"])
+        if not BRIDGE_TOOLS.issubset(available):
             self._send(
                 HTTPStatus.BAD_REQUEST,
                 {
-                    "error": "expected Pantheon context tools are not available",
+                    "error": "Hermes progressive disclosure bridge is incomplete",
                     "available_tool_names": sorted(available),
-                    "required_tool_names": sorted(REQUIRED_TOOLS),
-                    "tool_entry_shapes": _tool_metadata(body)["tool_entry_shapes"],
+                    "required_tool_names": sorted(BRIDGE_TOOLS),
                 },
             )
             return
 
-        tool_messages = [
-            item
-            for item in messages
-            if isinstance(item, dict) and item.get("role") == "tool"
-        ]
-        step = len(tool_messages)
+        results = _tool_result_messages(messages)
+        step = len(results)
         with self.state.lock:
             self.state.provider_calls += 1
 
         if step == 0:
-            name = "pantheon_context_manifest"
-            arguments = "{}"
+            response = _tool_call_message(
+                step,
+                "tool_search",
+                {"query": "pantheon context manifest entity", "limit": 5},
+            )
         elif step == 1:
-            name = "pantheon_context_entity"
-            arguments = json.dumps(
-                {"entity_type": PROFILE_ENTITY_TYPE, "entity_id": PROFILE_ENTITY_ID}
+            response = _tool_call_message(
+                step,
+                "tool_describe",
+                {"name": "pantheon_context_manifest"},
             )
         elif step == 2:
-            name = "pantheon_context_entity"
-            arguments = json.dumps(
-                {"entity_type": PROFILE_ENTITY_TYPE, "entity_id": OUTSIDE_ENTITY_ID}
+            response = _tool_call_message(
+                step,
+                "tool_call",
+                {"name": "pantheon_context_manifest", "arguments": {}},
             )
-        else:
-            admitted = tool_messages[1].get("content", "") if len(tool_messages) > 1 else ""
-            refused = tool_messages[2].get("content", "") if len(tool_messages) > 2 else ""
-            if PROFILE_ENTITY_ID not in str(admitted):
-                self._send(
-                    HTTPStatus.BAD_REQUEST,
-                    {"error": "admitted entity was not returned"},
-                )
-                return
-            if "HTTP 404" not in str(refused) and "outside" not in str(refused):
-                self._send(
-                    HTTPStatus.BAD_REQUEST,
-                    {"error": "outside entity was not refused"},
-                )
-                return
-            self._send(
-                HTTPStatus.OK,
+        elif step == 3:
+            response = _tool_call_message(
+                step,
+                "tool_describe",
+                {"name": "pantheon_context_entity"},
+            )
+        elif step == 4:
+            response = _tool_call_message(
+                step,
+                "tool_call",
                 {
-                    "id": "chatcmpl-hermes-020-lab-final",
-                    "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": "lab-model",
-                    "choices": [
-                        {
-                            "index": 0,
-                            "message": {
-                                "role": "assistant",
-                                "content": (
-                                    "LAB_ACCEPTANCE_COMPLETED: manifest read, admitted "
-                                    "entity read, outside entity refused."
-                                ),
-                            },
-                            "finish_reason": "stop",
-                        }
-                    ],
-                    "usage": {
-                        "prompt_tokens": 10,
-                        "completion_tokens": 10,
-                        "total_tokens": 20,
+                    "name": "pantheon_context_entity",
+                    "arguments": {
+                        "entity_type": PROFILE_ENTITY_TYPE,
+                        "entity_id": PROFILE_ENTITY_ID,
                     },
                 },
             )
-            return
-
-        self._send(
-            HTTPStatus.OK,
-            {
-                "id": f"chatcmpl-hermes-020-lab-{step}",
+        elif step == 5:
+            response = _tool_call_message(
+                step,
+                "tool_call",
+                {
+                    "name": "pantheon_context_entity",
+                    "arguments": {
+                        "entity_type": PROFILE_ENTITY_TYPE,
+                        "entity_id": OUTSIDE_ENTITY_ID,
+                    },
+                },
+            )
+        else:
+            search_result = str(results[0].get("content", "")) if len(results) > 0 else ""
+            manifest_result = str(results[2].get("content", "")) if len(results) > 2 else ""
+            admitted_result = str(results[4].get("content", "")) if len(results) > 4 else ""
+            refused_result = str(results[5].get("content", "")) if len(results) > 5 else ""
+            checks = {
+                "search_found_manifest": "pantheon_context_manifest" in search_result,
+                "search_found_entity": "pantheon_context_entity" in search_result,
+                "manifest_returned": "active_context_manifest" in manifest_result,
+                "admitted_entity_returned": PROFILE_ENTITY_ID in admitted_result,
+                "outside_entity_refused": (
+                    "HTTP 404" in refused_result or "outside" in refused_result
+                ),
+            }
+            if not all(checks.values()):
+                self._send(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "progressive tool checks failed", "checks": checks},
+                )
+                return
+            response = {
+                "id": "chatcmpl-hermes-020-lab-final",
                 "object": "chat.completion",
                 "created": int(time.time()),
                 "model": "lab-model",
@@ -401,28 +415,17 @@ class Handler(BaseHTTPRequestHandler):
                         "index": 0,
                         "message": {
                             "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": f"call-hermes-020-lab-{step}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": name,
-                                        "arguments": arguments,
-                                    },
-                                }
-                            ],
+                            "content": (
+                                "LAB_ACCEPTANCE_COMPLETED: progressive discovery, "
+                                "manifest read, admitted entity read, outside entity refused."
+                            ),
                         },
-                        "finish_reason": "tool_calls",
+                        "finish_reason": "stop",
                     }
                 ],
-                "usage": {
-                    "prompt_tokens": 10,
-                    "completion_tokens": 5,
-                    "total_tokens": 15,
-                },
-            },
-        )
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            }
+        self._send(HTTPStatus.OK, response)
 
 
 def main() -> int:
