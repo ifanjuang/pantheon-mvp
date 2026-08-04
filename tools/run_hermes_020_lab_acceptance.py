@@ -108,6 +108,11 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
     _write_env(
         profile_home / ".env",
         {
+            # The default profile owns the only HTTP listener in multiplex
+            # mode. The named profile remains explicitly disabled as a
+            # port-binding platform while retaining its own authentication
+            # key for the shared /p/<profile>/ route.
+            "API_SERVER_ENABLED": "false",
             "API_SERVER_KEY": PROFILE_KEY,
             "PANTHEON_HERMES_API_BASE": fixture_url.rstrip("/"),
             "PANTHEON_HERMES_API_KEY": PANTHEON_KEY,
@@ -121,6 +126,7 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
         "profile": PROFILE,
         "multiplex_profiles": True,
         "profile_api_prefix": f"/p/{PROFILE}",
+        "profile_port_binding_enabled": False,
         "platform_toolsets_expected": {
             "api_server": list(governed_toolsets),
             "cli": list(governed_toolsets),
