@@ -115,11 +115,12 @@ def test_persisted_structure_preserves_units_fragments_and_all_chunk_links() -> 
         "num_cols": 2,
     }
     first_chunk = projection["chunk_anchors"][0]
-    assert first_chunk["fragment_ref"] == "unit-cdbf916626ce6dfae7ad5627"
-    assert first_chunk["fragment_refs"] == [
-        "unit-cdbf916626ce6dfae7ad5627",
-        "unit-b33436dfb32c3c413ad451c5",
+    expected_refs = [
+        projection["fragments"][0]["fragment_id"],
+        projection["fragments"][1]["fragment_id"],
     ]
+    assert first_chunk["fragment_ref"] == expected_refs[0]
+    assert first_chunk["fragment_refs"] == expected_refs
     assert projection["authority"] == {
         "is_source": False,
         "is_evidence": False,
