@@ -67,7 +67,13 @@ def install_agency_change_candidate_routes(
     @app.get("/agency/projects/{project_id}/change-candidates")
     def list_change_candidates(
         project_id: str,
-        status: Literal["pending_review", "applied", "rejected", "stale"] | None = None,
+        status: Literal[
+            "pending_review",
+            "revision_requested",
+            "applied",
+            "rejected",
+            "stale",
+        ] | None = None,
         limit: int = 100,
         _authorized: None = Depends(require_read_key),
     ) -> dict:
