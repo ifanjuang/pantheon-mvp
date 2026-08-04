@@ -4,6 +4,7 @@ from mvp_vertical import (
     agency_change_candidate_review,
     cockpit_composed,
     contradictory_review_store,
+    knowledge_edit_variants,
 )
 
 
@@ -41,6 +42,11 @@ def test_composed_app_mounts_candidate_review_routes_without_startup_effects():
     assert "POST" in methods_by_path["/projects/{project_id}/contradictory-reviews"]
     assert "GET" in methods_by_path["/projects/{project_id}/contradictory-reviews"]
     assert "GET" in methods_by_path["/contradictory-reviews/{review_id}"]
+    assert "POST" in methods_by_path["/knowledge/{knowledge_id}/variant-edit-requests"]
+    assert "PUT" in methods_by_path["/edit-requests/{request_id}/variants/{variant_label}"]
+    assert "GET" in methods_by_path["/knowledge/{knowledge_id}/edit-reviews"]
+    assert "POST" in methods_by_path["/edit-requests/{request_id}/select-variant"]
+    assert "POST" in methods_by_path["/edit-requests/{request_id}/apply-selected"]
     assert "/v1/projects/{project_id}/contradictory-reviews" not in methods_by_path
     assert "/v1/contradictory-reviews/{review_id}" not in methods_by_path
 
@@ -53,15 +59,17 @@ def test_composed_initializer_replays_review_migrations_after_dependencies(monke
 
     assert connection.commits == 1
     assert connection.closed is True
-    assert len(connection.statements) == 4
-    assert "CREATE TABLE IF NOT EXISTS work_issues" in connection.statements[0]
-    assert "agency" in connection.statements[1].lower()
-    assert "revision_requested" in connection.statements[2]
-    assert "CREATE TABLE IF NOT EXISTS contradictory_review_candidates" in connection.statements[3]
+    assert len(connection.statements) == 5
+    assert "knowledge_edit_variants" in connection.statements[0]
+    assert "CREATE TABLE IF NOT EXISTS work_issues" in connection.statements[1]
+    assert "agency" in connection.statements[2].lower()
+    assert "revision_requested" in connection.statements[3]
+    assert "CREATE TABLE IF NOT EXISTS contradictory_review_candidates" in connection.statements[4]
 
 
 def test_review_migrations_are_packaged_under_sql_directory():
     for migration, expected_name in (
+        (knowledge_edit_variants.MIGRATION, "009_knowledge_edit_variants.sql"),
         (agency_change_candidate_review.MIGRATION, "005_change_candidate_review.sql"),
         (contradictory_review_store.MIGRATION, "003_contradictory_review_candidates.sql"),
     ):
