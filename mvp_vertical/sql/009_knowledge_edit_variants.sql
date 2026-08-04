@@ -11,9 +11,20 @@ ALTER TABLE knowledge_edit_requests
     ADD COLUMN IF NOT EXISTS selected_by TEXT;
 ALTER TABLE knowledge_edit_requests
     ADD COLUMN IF NOT EXISTS selected_at TIMESTAMPTZ;
-ALTER TABLE knowledge_edit_requests
-    ADD CONSTRAINT knowledge_edit_requests_variant_count_check
-    CHECK (requested_variant_count IN (1, 2)) NOT VALID;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'knowledge_edit_requests_variant_count_check'
+           AND conrelid = 'knowledge_edit_requests'::regclass
+    ) THEN
+        ALTER TABLE knowledge_edit_requests
+            ADD CONSTRAINT knowledge_edit_requests_variant_count_check
+            CHECK (requested_variant_count IN (1, 2)) NOT VALID;
+    END IF;
+END;
+$$;
 
 CREATE TABLE IF NOT EXISTS knowledge_edit_variants (
     variant_id TEXT PRIMARY KEY,
