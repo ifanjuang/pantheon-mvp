@@ -69,6 +69,17 @@ def test_lab_acceptance_keeps_install_activation_run_and_rollback_separate() -> 
     assert "profile route remained reachable after gateway rollback" in raw
 
 
+def test_governed_profile_closes_api_and_cli_tool_surfaces_independently() -> None:
+    raw = HARNESS.read_text(encoding="utf-8")
+    ast.parse(raw)
+
+    assert '"api_server": list(governed_toolsets)' in raw
+    assert '"cli": list(governed_toolsets)' in raw
+    assert '"platform_toolsets_expected"' in raw
+    assert "neither may" in raw
+    assert "inherit the default ``hermes-cli`` composite" in raw
+
+
 def test_distribution_receipt_exposes_only_verified_composition_fields() -> None:
     raw = DISTRIBUTION.read_text(encoding="utf-8")
     ast.parse(raw)
