@@ -1,211 +1,305 @@
 # Hermes 0.20.0 ephemeral laboratory acceptance — 2026-08-04
 
-Status: candidate implementation on a feature branch. No agency, NAS or production installation has been observed.
+Status: **passed on an ephemeral GitHub-hosted laboratory installation**. No agency, NAS, OpenWebUI or production installation was observed or qualified.
 
-## Objective
-
-Execute the reviewed Pantheon ↔ Hermes distribution against an actual Hermes Agent `0.20.0` installation without requiring or exposing production credentials.
-
-## Verified authorities
+## Authorities and successful run
 
 ```text
 Hermes upstream commit
 3c27eb6234bf91b8ceee9e9071591b31e9b148cb
 
+Hermes package version
+0.20.0
+
 Pantheon-Next authority
 db5506668f06bab05b0cad1b244ff19ab17b5f52
 
-pantheon-mvp implementation baseline
-898eb21a4cb48f8302cb32f02c3240a9867df43e
+pantheon-mvp acceptance head
+3380c563fa6ec33730ec2f05a1baddd215f3b9c6
+
+GitHub Actions run
+30952996146
+
+Observation artifact
+8909893078
+
+Hermes synthetic run
+run_5a640a80e0b9
 ```
 
-The upstream source declares package version `0.20.0`.
-
-## Packaging fact observed on the first live run
-
-Hermes `0.20.0` deliberately refuses wheel and sdist builds:
+The source archive created from the exact upstream commit had this digest:
 
 ```text
-Building wheels or sdists for hermes-agent is not supported.
-Hermes is distributed via the shell installer, Docker image, or Nix.
-For development, use an editable source installation.
+sha256:289ac0a8d61933dc9f15d7aa5ff8a6ca4a81a447ec8971292f15bbd08c25a114
 ```
 
-The laboratory therefore does not invent an unsupported wheel. It creates a deterministic `git archive` from the exact release commit, records the archive SHA-256 digest, extracts it into the ephemeral runner and installs that exact source with the upstream-supported editable `uv pip install -e` path.
+This is the digest of the ephemeral laboratory source artifact, not an agency/NAS installation digest.
+
+## Packaging fact
+
+Hermes `0.20.0` deliberately refuses wheel and sdist builds. The supported development installation is editable source installation.
+
+The laboratory therefore:
+
+```text
+git archive exact release commit
+→ record archive SHA-256
+→ extract into the ephemeral runner
+→ uv pip install -e exact extracted source
+→ execute installed hermes 0.20.0 CLI
+```
 
 ```text
 source archive digest != production installation digest
 editable source installed in lab != production installed
 ```
 
-## Runtime facts observed on live runs
+## Runtime topology verified
 
-The acceptance runs established four distinctions that were not safely inferable from configuration alone.
+### Listener and named profile
 
-### API and CLI toolsets are separate
+The default profile owns the only API listener. The named profile retains its own API key for `/p/pantheon-governed`, but explicitly disables its port-binding platform:
 
-`hermes memory status` evaluates the `cli` platform toolset. The Runs API evaluates `api_server`. Restricting only `platform_toolsets.api_server` leaves the built-in memory tool active on the CLI surface.
+```yaml
+platforms:
+  api_server:
+    enabled: false
+```
 
-The governed profile must therefore declare both surfaces explicitly:
+The successful run proved:
+
+```text
+profile route = /p/pantheon-governed
+profile key accepted = true
+default profile key rejected on named route = true
+secondary listener enabled = false
+```
+
+```text
+profile key present != secondary listener enabled
+route answered != governed profile qualified
+```
+
+### Plugin ownership and profile policy
+
+The Pantheon context plugin is installed and enabled once at the gateway/default-process scope. The profile does not own a duplicate plugin copy; it only selects the registered toolset.
 
 ```yaml
 platform_toolsets:
   api_server:
     - pantheon_context
-  cli:
-    - pantheon_context
+  cli: []
 ```
+
+The empty CLI surface is necessary because `hermes memory status` evaluates the `cli` platform. Restricting only `api_server` leaves the built-in memory tool available through the default CLI composite.
 
 ```text
 API toolset restricted != CLI memory tool disabled
-memory provider off != memory tool off
+plugin globally registered != profile automatically authorized
+plugin enabled != task authorized
 ```
 
-### A multiplexed secondary profile must not own a port-binding API server
+### Official toolset envelope
 
-The default profile owns the shared listener. If a secondary profile keeps `API_SERVER_ENABLED=true`, Hermes skips that profile as a port-binding conflict. The resulting `/p/<profile>/...` response cannot qualify the intended named profile.
+Hermes `0.20.0` returns `/v1/toolsets` as:
 
-The named profile must retain its own key while keeping its local port binding disabled:
-
-```text
-API_SERVER_ENABLED=false
-API_SERVER_KEY=<profile-specific-key>
+```json
+{
+  "object": "list",
+  "platform": "api_server",
+  "data": []
+}
 ```
 
-The default profile remains the only listener and authenticates `/p/pantheon-governed/...` with the named profile key.
+The observer now validates that exact envelope and fails closed on an unexpected object, platform or non-list `data` field. A historical bare list is retained only as an explicitly labelled compatibility surface.
+
+The successful observation resolved exactly:
 
 ```text
-profile key present != secondary listener enabled
-shared profile route reachable != named profile loaded
-HTTP 200 != governed profile qualified
+active toolset: pantheon_context
+active tools:
+- pantheon_context_manifest
+- pantheon_context_entity
+unexpected tools: []
+missing required tools: []
 ```
 
-### `/v1/toolsets` remains a list contract
+### Complete memory posture
 
-A run observed a non-list response only after Hermes had skipped the named profile. The official 0.20.0 API contract still returns a list of resolved toolsets. The observer contract was therefore not relaxed; the secondary profile configuration was corrected instead.
-
-### SQLite safety fallback was observed
-
-The GitHub runner linked SQLite `3.45.1`. Hermes identified the WAL-reset vulnerability range and selected DELETE journal mode instead of WAL. This was a safe runtime fallback for the laboratory, not proof that the production host has a patched SQLite build.
+The fresh launch receipt qualified every required axis:
 
 ```text
-safe DELETE fallback observed != production SQLite qualified
+external_provider = off
+built_in_memory_injection = off
+built_in_user_profile_injection = off
+memory_tool = off
+session_memory_key = absent
+raw_output_retained = false
+active_axes = []
+missing_axes = []
 ```
 
-## Scope
+No `X-Hermes-Session-Key` reached the provider or Pantheon fixtures.
 
-The workflow creates only an ephemeral GitHub-hosted laboratory environment:
+### Progressive tool disclosure
+
+Hermes did not send the governed tools directly to the model. It exposed its native progressive-disclosure bridge:
 
 ```text
-fresh HERMES_HOME
-fresh Python virtual environment
-exact digest-bound source archive
-one default multiplexing gateway
-one pantheon-governed profile
-one locally installed Pantheon context plugin
-one deterministic local OpenAI-compatible fixture
-one deterministic bounded Pantheon API fixture
-one synthetic read-only admission
+tool_search
+tool_describe
+tool_call
 ```
 
-No repository secret, cloud model key, production endpoint or self-hosted runner is used.
-
-## Acceptance path
+The deterministic provider executed the native sequence:
 
 ```text
-archive exact 0.20.0 release source
-→ record source archive digest
-→ install exact source through supported editable path
-→ execute the installed Hermes 0.20.0 CLI
-→ verify three-component Pantheon lock
-→ create isolated profile
-→ configure API and CLI toolsets independently
-→ configure all memory axes off
-→ keep the secondary API port binding disabled
-→ install plugin disabled
-→ inspect plugin copy
-→ enable plugin explicitly
-→ start real multiplexing gateway
-→ observe /p/pantheon-governed
-→ qualify exact two-tool surface
-→ recapture fresh memory receipt
-→ launch one synthetic admitted run
-→ read active Context Pack manifest
-→ read one admitted entity
-→ verify refusal of one outside entity
-→ reconcile once
-→ disable plugin
-→ stop gateway
-→ verify profile route is unreachable
+tool_search for Pantheon context tools
+→ tool_describe pantheon_context_manifest
+→ tool_call pantheon_context_manifest
+→ tool_describe pantheon_context_entity
+→ tool_call admitted project
+→ tool_call outside project
+→ final response
 ```
 
-## Verified-distribution receipt
-
-The distribution validator now returns a bounded projection of the components whose paths and digests were actually checked:
+Seven provider calls were observed. The underlying governed surface remained the two Pantheon tools qualified by `/v1/toolsets`.
 
 ```text
-component_id
-kind
-source_repository
-path
-digest_mode
-content_digest
-required
-enabled_by_default
+model-visible bridge tools != governed runtime tool surface
+progressive discovery != tool authorization
 ```
 
-This technical projection does not alter the lock, install a component, activate a binding or authorize a task.
+### Streaming provider contract
 
-## Boundaries
+The custom provider path sent `stream: true` and `stream_options`. A normal JSON completion was insufficient and produced `EmptyStreamError`.
+
+The laboratory provider was corrected to emit OpenAI-compatible SSE chunks:
 
 ```text
-source installed in laboratory != production installed
+chat.completion.chunk delta
+→ finish_reason = tool_calls or stop
+→ optional usage chunk
+→ data: [DONE]
+```
+
+Streaming remained enabled; no runtime setting was weakened.
+
+### SQLite safety fallback
+
+The runner linked SQLite `3.45.1`. Hermes detected the affected WAL-reset range and selected DELETE journal mode. This was a safe laboratory fallback, not qualification of the production host database stack.
+
+## End-to-end facts observed
+
+The real Hermes run completed with:
+
+```text
+LAB_ACCEPTANCE_COMPLETED
+```
+
+The plugin performed these bounded reads:
+
+```text
+active Context Pack manifest
+admitted entity project/project-lab
+outside entity project/project-outside -> HTTP 404 refusal
+```
+
+The fixture state recorded:
+
+```text
+provider_calls = 7
+pantheon_reads = 3
+pantheon_writes = 3
+```
+
+The Pantheon binding recorded the runtime start and one terminal return. The return remained a technical candidate:
+
+```text
+pantheon_return_recorded = true
+result_accepted = false
+evidence_admitted = false
+project_mutated = false
+technical_receipt_is_evidence = false
+scheduler_effect = false
+retry_effect = false
+```
+
+The binding itself also reported:
+
+```text
+automatic_retry_performed = false
+provider_routing_performed = false
+model_override_performed = false
+session_memory_header_sent = false
+```
+
+## Rollback facts observed
+
+The operator sequence:
+
+```text
+disabled pantheon-context-bridge
+stopped the Hermes gateway
+verified /p/pantheon-governed was unreachable
+```
+
+The rollback receipt reported:
+
+```text
+plugin_disabled = true
+gateway_stopped = true
+profile_route_unreachable = true
+```
+
+## Distribution state deliberately unchanged
+
+The standard distribution still contains exactly:
+
+```text
+run-binding
+context-bridge
+runtime-observer
+```
+
+The lock remains:
+
+```text
+status = candidate
+artifact_digest = null
+installation_state = not_observed
+activation_state = not_activated
+task_authorization_state = not_authorized
+acceptance_state = not_run
+```
+
+The laboratory result does not justify changing those production-facing states.
+
+## Non-equivalences
+
+```text
+lab installed != agency installed
 lab route qualified != agency route qualified
 synthetic run completed != result accepted
 runtime return recorded != Evidence admitted
 plugin enabled in lab != production binding activated
-rollback in lab != production rollback verified
+lab rollback succeeded != production rollback verified
+lab acceptance passed != future tasks authorized
 ```
-
-The distribution lock remains a candidate. The lab summary must state:
-
-```text
-target_installation_observed = false
-production_activated = false
-future_tasks_authorized = false
-result_accepted = false
-evidence_admitted = false
-```
-
-## Criteria
-
-The workflow fails closed when any of these is observed:
-
-- Hermes version differs from `0.20.0`;
-- exact source archive digest is absent;
-- distribution composition differs from the three reviewed components;
-- profile route differs from `/p/pantheon-governed`;
-- the secondary profile activates its own API port binding;
-- any memory axis is active or unknown;
-- any tool beyond the two Pantheon context tools is active;
-- `X-Hermes-Session-Key` reaches a fixture;
-- the outside entity is not refused;
-- the binding retries or selects a model/provider;
-- the result is accepted, Evidence is admitted or a Project is mutated;
-- the plugin is not disabled during rollback;
-- the gateway route remains reachable after rollback.
 
 ## Remaining production proof
 
-Even after a successful lab run, `pantheon-mvp#227` remains open for:
+`pantheon-mvp#227` remains open for:
 
 ```text
 agency/NAS Hermes artifact digest
-real pantheon-governed profile
-real OpenWebUI path
-real Pantheon API and admission
+real pantheon-governed profile and keys
+real OpenWebUI route and enrichment posture
+real Pantheon API and human admission
 real operator identity
 real activation scope and expiry
+real context boundary proof
+real return and decision path
 real rollback target and proof
 production SQLite version or verified safe journal fallback
 ```
