@@ -80,6 +80,18 @@ def test_governed_profile_closes_api_and_cli_tool_surfaces_independently() -> No
     assert "inherit the default ``hermes-cli`` composite" in raw
 
 
+def test_multiplexed_secondary_profile_keeps_its_port_binding_disabled() -> None:
+    raw = HARNESS.read_text(encoding="utf-8")
+    ast.parse(raw)
+
+    assert '"API_SERVER_ENABLED": "true"' in raw
+    assert '"API_SERVER_ENABLED": "false"' in raw
+    assert '"API_SERVER_KEY": PROFILE_KEY' in raw
+    assert '"profile_port_binding_enabled": False' in raw
+    assert "default profile owns the only HTTP listener" in raw
+    assert "shared /p/<profile>/ route" in raw
+
+
 def test_distribution_receipt_exposes_only_verified_composition_fields() -> None:
     raw = DISTRIBUTION.read_text(encoding="utf-8")
     ast.parse(raw)
