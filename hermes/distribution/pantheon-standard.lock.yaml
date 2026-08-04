@@ -5,7 +5,7 @@ status: candidate
 source_pins:
   pantheon_next:
     repository: ifanjuang/Pantheon-Next
-    ref: "de466834ec36720bf905e283406205d8afba3e28"
+    ref: "e32062328d5bbc6c48c164ee53f317e06b1ada32"
   pantheon_mvp:
     repository: ifanjuang/pantheon-mvp
     ref: "d28d20dc3468efb60ded1e4de60b388d54288ff1"
