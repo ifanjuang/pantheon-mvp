@@ -15,18 +15,21 @@ from . import (
     agency_change_candidate_review,
     agency_data,
     contradictory_review_store,
+    knowledge_edit_variants,
     store,
     work_issues,
 )
 from .cockpit_shell import create_cockpit_app
 from .contradictory_review_api import install_contradictory_review_routes
 from .document_structure_api import install_document_structure_routes
+from .knowledge_edit_variant_api import install_knowledge_edit_variant_routes
 
 
 def initialize_composed_schema() -> None:
     """Initialize bounded persistence once, in dependency order."""
     conn = store.connect()
     try:
+        conn.execute(knowledge_edit_variants.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(work_issues.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(agency_data.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(agency_change_candidate_review.MIGRATION.read_text(encoding="utf-8"))
@@ -62,12 +65,32 @@ def create_composed_cockpit_app(**kwargs):
         if not any(hmac.compare_digest(supplied, key) for key in expected):
             raise HTTPException(status_code=401, detail="invalid read API key")
 
+    def require_editor_key(authorization: str | None = Header(default=None)) -> None:
+        expected = app.state.editor_api_key
+        if not expected:
+            raise HTTPException(status_code=503, detail="editor API key is not configured")
+        if not hmac.compare_digest(_bearer_token(authorization), expected):
+            raise HTTPException(status_code=401, detail="invalid editor API key")
+
     def require_hermes_key(authorization: str | None = Header(default=None)) -> None:
         expected = app.state.hermes_api_key
         if not expected:
             raise HTTPException(status_code=503, detail="Hermes API key is not configured")
         if not hmac.compare_digest(_bearer_token(authorization), expected):
             raise HTTPException(status_code=401, detail="invalid Hermes API key")
+
+    def require_human_actor(
+        x_pantheon_human_actor: str | None = Header(
+            default=None,
+            alias="X-Pantheon-Human-Actor",
+        ),
+    ) -> str:
+        if not x_pantheon_human_actor or not x_pantheon_human_actor.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="X-Pantheon-Human-Actor is required for mobile Knowledge review",
+            )
+        return x_pantheon_human_actor.strip()
 
     install_document_structure_routes(
         app,
@@ -79,6 +102,13 @@ def create_composed_cockpit_app(**kwargs):
         with_connection=with_connection,
         require_read_key=require_read_key,
         require_hermes_key=require_hermes_key,
+    )
+    install_knowledge_edit_variant_routes(
+        app,
+        with_connection=with_connection,
+        require_editor_key=require_editor_key,
+        require_hermes_key=require_hermes_key,
+        require_human_actor=require_human_actor,
     )
     return app
 
