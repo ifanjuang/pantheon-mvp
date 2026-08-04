@@ -42,10 +42,16 @@ def test_distribution_lock_keeps_exact_core_separate_and_default_off(tmp_path) -
     assert len(manifest["components"]) == 3
     assert all(item["enabled_by_default"] is False for item in manifest["components"])
     assert all(item["content_digest"].startswith("sha256:") for item in manifest["components"])
-    assert manifest["source_pins"]["hermes_runtime"]["version"] == "0.19.0"
-    assert manifest["source_pins"]["hermes_runtime"]["artifact_digest"] is None
+    runtime = manifest["source_pins"]["hermes_runtime"]
+    assert runtime["version"] == "0.20.0"
+    assert runtime["artifact_digest"] is None
+    assert runtime["observation_ref"] == (
+        "docs/governance/HERMES_V020_RUNTIME_SURFACE_REVIEW.md"
+    )
+    assert manifest["state"]["installation_state"] == "not_observed"
     assert manifest["state"]["activation_state"] == "not_activated"
     assert manifest["state"]["task_authorization_state"] == "not_authorized"
+    assert manifest["state"]["acceptance_state"] == "not_run"
     assert set(manifest["authority"].values()) == {False}
 
 
