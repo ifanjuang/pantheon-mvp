@@ -1,8 +1,8 @@
 # Cockpit knowledge map (read-only lens)
 
 Status: implemented candidate — a bounded, read-only visual lens over the
-existing Cockpit projection. Live mounting is available via a hook but is
-**opt-in** (not auto-wired into the live page yet).
+existing Cockpit projection. Live mounting is wired into the Cockpit page but
+remains **opt-in** behind the dedicated map toggle.
 
 ## Invariants (tested)
 
@@ -75,7 +75,9 @@ subject view        -> cluster (organic grouping)
 A floating toggle (`#v2-map-toggle`) opens the `#v2-map-panel` overlay; the app
 glue `../map_binding.js` (loaded by `../live_bootstrap.js`) builds tokens from
 the loaded tag registry (`PantheonTagIcons`) and mounts the lens via
-`map_mount.mountLive`, refreshing on `pantheon:graph-updated`. Read-only.
+`map_mount.mountLive`, refreshing on `pantheon:graph-updated` while open.
+Closing by toggle, close button or Escape destroys the live mount, removes its
+graph-update subscription and permits a clean remount on the next opening.
 
 ## Data-gated layers
 
