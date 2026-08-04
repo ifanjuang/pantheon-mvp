@@ -16,7 +16,7 @@ from typing import Any, Callable, Literal
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import agency_change_candidates, agency_data
+from . import agency_change_candidate_review, agency_change_candidates, agency_data
 from .agency_change_candidate_review_api import install_agency_change_candidate_review_routes
 from .agency_claims_api import install_agency_claim_routes
 
@@ -77,14 +77,23 @@ def install_agency_change_candidate_routes(
         limit: int = 100,
         _authorized: None = Depends(require_read_key),
     ) -> dict:
-        candidates = operation(
-            lambda conn: agency_change_candidates.list_project_candidates(
-                conn,
-                project_id,
-                status=status,
-                limit=limit,
+        if status == "revision_requested":
+            candidates = operation(
+                lambda conn: agency_change_candidate_review.list_revision_requested_project_candidates(
+                    conn,
+                    project_id=project_id,
+                    limit=limit,
+                )
             )
-        )
+        else:
+            candidates = operation(
+                lambda conn: agency_change_candidates.list_project_candidates(
+                    conn,
+                    project_id,
+                    status=status,
+                    limit=limit,
+                )
+            )
         return {
             "system_of_record": "postgres",
             "entity_type": "project",
