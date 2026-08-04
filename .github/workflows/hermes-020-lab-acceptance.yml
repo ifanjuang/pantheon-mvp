@@ -1,0 +1,331 @@
+name: Hermes 0.20.0 Lab Acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/hermes-020-lab-acceptance.yml"
+      - "tools/hermes_020_lab_fixture.py"
+      - "tools/run_hermes_020_lab_acceptance.py"
+      - "tests/test_hermes_020_lab_acceptance_contract.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-020-lab-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ephemeral-lab:
+    name: build, install, execute and rollback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      HERMES_RELEASE_COMMIT: 3c27eb6234bf91b8ceee9e9071591b31e9b148cb
+      HERMES_VERSION: 0.20.0
+      PANTHEON_NEXT_REF: db5506668f06bab05b0cad1b244ff19ab17b5f52
+      PROFILE: pantheon-governed
+      PROFILE_KEY: hermes-profile-lab-key
+      PANTHEON_KEY: pantheon-lab-key
+      FIXTURE_URL: http://127.0.0.1:9010
+      HERMES_API_BASE: http://127.0.0.1:8642/p/pantheon-governed
+      HERMES_API_KEY: hermes-profile-lab-key
+      PANTHEON_HERMES_API_BASE: http://127.0.0.1:9010
+      PANTHEON_HERMES_API_KEY: pantheon-lab-key
+      PANTHEON_HERMES_ACTOR: hermes-020-lab-binding
+
+    steps:
+      - name: Checkout pantheon-mvp candidate
+        uses: actions/checkout@v4
+        with:
+          path: pantheon-mvp
+
+      - name: Checkout pinned Pantheon-Next authority
+        uses: actions/checkout@v4
+        with:
+          repository: ifanjuang/Pantheon-Next
+          ref: ${{ env.PANTHEON_NEXT_REF }}
+          path: Pantheon-Next
+
+      - name: Checkout exact Hermes 0.20.0 source
+        uses: actions/checkout@v4
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ env.HERMES_RELEASE_COMMIT }}
+          path: hermes-upstream
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Prepare isolated laboratory paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          LAB_ROOT="$RUNNER_TEMP/hermes-020-lab"
+          mkdir -p "$LAB_ROOT/artifacts" "$LAB_ROOT/dist"
+          {
+            echo "LAB_ROOT=$LAB_ROOT"
+            echo "LAB_ARTIFACTS=$LAB_ROOT/artifacts"
+            echo "HERMES_HOME=$LAB_ROOT/hermes-home"
+            echo "HERMES_VENV=$LAB_ROOT/venv"
+          } >> "$GITHUB_ENV"
+
+      - name: Build immutable Hermes wheel from signed release commit
+        working-directory: hermes-upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HERMES_RELEASE_COMMIT"
+          python -m pip install --disable-pip-version-check --upgrade build
+          python -m build --wheel --outdir "$LAB_ROOT/dist"
+          WHEEL="$(find "$LAB_ROOT/dist" -maxdepth 1 -name 'hermes_agent-0.20.0-*.whl' -print -quit)"
+          test -n "$WHEEL"
+          DIGEST="$(sha256sum "$WHEEL" | awk '{print $1}')"
+          printf 'sha256:%s\n' "$DIGEST" > "$LAB_ARTIFACTS/hermes-wheel.sha256"
+          printf '%s\n' "$WHEEL" > "$LAB_ARTIFACTS/hermes-wheel-path.txt"
+          git show -s --format='%H%n%G?%n%GS%n%s' HEAD > "$LAB_ARTIFACTS/hermes-source-commit.txt"
+
+      - name: Install the built Hermes artifact and Pantheon bridge CLI
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$HERMES_VENV"
+          "$HERMES_VENV/bin/python" -m pip install --disable-pip-version-check --upgrade pip
+          WHEEL="$(cat "$LAB_ARTIFACTS/hermes-wheel-path.txt")"
+          "$HERMES_VENV/bin/python" -m pip install "$WHEEL" "aiohttp==3.14.1"
+          "$HERMES_VENV/bin/python" -m pip install -e .
+          echo "$HERMES_VENV/bin" >> "$GITHUB_PATH"
+          "$HERMES_VENV/bin/hermes" --version | tee "$LAB_ARTIFACTS/hermes-version.txt"
+          grep -F "$HERMES_VERSION" "$LAB_ARTIFACTS/hermes-version.txt"
+
+      - name: Verify the three-component Pantheon distribution lock
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_VENV/bin/pantheon-hermes" verify-distribution \
+            --manifest hermes/distribution/pantheon-standard.lock.yaml \
+            --schema "$GITHUB_WORKSPACE/Pantheon-Next/templates/hermes/distribution/distribution-lock.schema.yaml" \
+            --mvp-root "$GITHUB_WORKSPACE/pantheon-mvp" \
+            --next-root "$GITHUB_WORKSPACE/Pantheon-Next" \
+            --output "$LAB_ARTIFACTS/distribution-verification.json"
+          "$HERMES_VENV/bin/python" - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path(os.environ["LAB_ARTIFACTS"]) / "distribution-verification.json"
+          value = json.loads(p.read_text())
+          assert value["status"] == "candidate"
+          assert [item["component_id"] for item in value["components"]] == [
+              "run-binding", "context-bridge", "runtime-observer"
+          ]
+          assert value["authority_effect"] == "none"
+          PY
+
+      - name: Start deterministic local provider and Pantheon fixture
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_VENV/bin/python" tools/hermes_020_lab_fixture.py \
+            --journal "$LAB_ARTIFACTS/fixture-journal.jsonl" \
+            > "$LAB_ARTIFACTS/fixture.log" 2>&1 &
+          echo $! > "$LAB_ROOT/fixture.pid"
+          "$HERMES_VENV/bin/python" tools/run_hermes_020_lab_acceptance.py wait-http \
+            --url "$FIXTURE_URL/health" \
+            --timeout 30 \
+            --output "$LAB_ARTIFACTS/fixture-health.json"
+
+      - name: Create isolated governed profile and configuration
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_VENV/bin/hermes" profile create "$PROFILE" --no-skills --no-alias
+          "$HERMES_VENV/bin/python" tools/run_hermes_020_lab_acceptance.py configure \
+            --hermes-home "$HERMES_HOME" \
+            --fixture-url "$FIXTURE_URL" \
+            --output "$LAB_ARTIFACTS/lab-configuration.json"
+          # Installation must remain distinct from activation. Reset the
+          # allow-list before copying the plugin; enablement occurs later.
+          "$HERMES_VENV/bin/python" - <<'PY'
+          import os
+          from pathlib import Path
+          import yaml
+          path = Path(os.environ["HERMES_HOME"]) / "profiles" / "pantheon-governed" / "config.yaml"
+          data = yaml.safe_load(path.read_text()) or {}
+          data.setdefault("plugins", {})["enabled"] = []
+          path.write_text(yaml.safe_dump(data, sort_keys=False))
+          PY
+
+      - name: Install the context bridge disabled, inspect, then enable explicitly
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLUGIN_SOURCE="file://$GITHUB_WORKSPACE/pantheon-mvp#hermes/plugins/pantheon-context-bridge"
+          "$HERMES_VENV/bin/hermes" -p "$PROFILE" plugins install "$PLUGIN_SOURCE" --no-enable \
+            > "$LAB_ARTIFACTS/plugin-install.txt" 2>&1
+          PLUGIN_DIR="$HERMES_HOME/profiles/$PROFILE/plugins/pantheon-context-bridge"
+          test -f "$PLUGIN_DIR/plugin.yaml"
+          test -f "$PLUGIN_DIR/__init__.py"
+          find "$PLUGIN_DIR" -type f -not -path '*/.git/*' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > "$LAB_ARTIFACTS/plugin-files.sha256"
+          "$HERMES_VENV/bin/hermes" -p "$PROFILE" plugins list \
+            > "$LAB_ARTIFACTS/plugins-before-enable.txt"
+          "$HERMES_VENV/bin/hermes" -p "$PROFILE" plugins enable pantheon-context-bridge \
+            > "$LAB_ARTIFACTS/plugin-enable.txt"
+          "$HERMES_VENV/bin/hermes" -p "$PROFILE" plugins list \
+            > "$LAB_ARTIFACTS/plugins-after-enable.txt"
+
+      - name: Prove complete governed memory posture before gateway start
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_VENV/bin/pantheon-hermes" capture-memory-status \
+            --profile "$PROFILE" \
+            --hermes-command "$HERMES_VENV/bin/hermes" \
+            --output "$LAB_ARTIFACTS/memory-status-prestart.json"
+          "$HERMES_VENV/bin/python" - <<'PY'
+          import json, os
+          from pathlib import Path
+          value = json.loads((Path(os.environ["LAB_ARTIFACTS"]) / "memory-status-prestart.json").read_text())
+          assert value["status"] == "qualified", value
+          assert value["active_axes"] == []
+          assert value["missing_axes"] == []
+          PY
+
+      - name: Start the real Hermes multiplexing gateway
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          HERMES_PLUGINS_DEBUG=1 "$HERMES_VENV/bin/hermes" gateway run \
+            > "$LAB_ARTIFACTS/hermes-gateway.log" 2>&1 &
+          echo $! > "$LAB_ROOT/gateway.pid"
+          "$HERMES_VENV/bin/python" tools/run_hermes_020_lab_acceptance.py wait-http \
+            --url "http://127.0.0.1:8642/health" \
+            --timeout 90 \
+            --output "$LAB_ARTIFACTS/gateway-health.json"
+          "$HERMES_VENV/bin/python" tools/run_hermes_020_lab_acceptance.py wait-http \
+            --url "$HERMES_API_BASE/v1/capabilities" \
+            --bearer "$HERMES_API_KEY" \
+            --timeout 90 \
+            --output "$LAB_ARTIFACTS/profile-capabilities.json"
+
+      - name: Observe exact profile, tools and memory without runtime effect
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_VENV/bin/pantheon-hermes" capture-memory-status \
+            --profile "$PROFILE" \
+            --hermes-command "$HERMES_VENV/bin/hermes" \
+            --output "$LAB_ARTIFACTS/memory-status-observe.json"
+          "$HERMES_VENV/bin/pantheon-hermes" observe \
+            --expected-profile "$PROFILE" \
+            --memory-status-receipt "$LAB_ARTIFACTS/memory-status-observe.json" \
+            --allowed-tool pantheon_context_manifest \
+            --allowed-tool pantheon_context_entity \
+            --required-tool pantheon_context_manifest \
+            --required-tool pantheon_context_entity \
+            --output "$LAB_ARTIFACTS/runtime-observation.json"
+
+      - name: Launch one synthetic human-admitted read-only run
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_VENV/bin/pantheon-hermes" capture-memory-status \
+            --profile "$PROFILE" \
+            --hermes-command "$HERMES_VENV/bin/hermes" \
+            --output "$LAB_ARTIFACTS/memory-status-launch.json"
+          "$HERMES_VENV/bin/pantheon-hermes" launch \
+            --expected-profile "$PROFILE" \
+            --memory-status-receipt "$LAB_ARTIFACTS/memory-status-launch.json" \
+            --allowed-tool pantheon_context_manifest \
+            --allowed-tool pantheon_context_entity \
+            --required-tool pantheon_context_manifest \
+            --required-tool pantheon_context_entity \
+            --admission-id admission-hermes-020-lab \
+            --idempotency-key hermes-020-lab-launch \
+            --output "$LAB_ARTIFACTS/launch-receipt.json"
+          RUN_ID="$($HERMES_VENV/bin/python -c 'import json,os,pathlib; print(json.loads((pathlib.Path(os.environ["LAB_ARTIFACTS"])/"launch-receipt.json").read_text())["run_id"])')"
+          "$HERMES_VENV/bin/python" tools/run_hermes_020_lab_acceptance.py wait-run \
+            --base-url "$HERMES_API_BASE" \
+            --api-key "$HERMES_API_KEY" \
+            --run-id "$RUN_ID" \
+            --timeout 120 \
+            --output "$LAB_ARTIFACTS/run-terminal.json"
+
+      - name: Reconcile exactly once
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_VENV/bin/pantheon-hermes" reconcile \
+            --receipt "$LAB_ARTIFACTS/launch-receipt.json" \
+            --idempotency-key hermes-020-lab-reconcile \
+            --output "$LAB_ARTIFACTS/return-receipt.json"
+          "$HERMES_VENV/bin/python" tools/run_hermes_020_lab_acceptance.py wait-http \
+            --url "$FIXTURE_URL/_lab/state" \
+            --timeout 10 \
+            --output "$LAB_ARTIFACTS/fixture-state.json"
+
+      - name: Disable plugin and verify rollback
+        if: always()
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set +e
+          if [ -x "$HERMES_VENV/bin/hermes" ]; then
+            "$HERMES_VENV/bin/hermes" -p "$PROFILE" plugins disable pantheon-context-bridge \
+              > "$LAB_ARTIFACTS/plugin-disable.txt" 2>&1
+          fi
+          if [ -f "$LAB_ROOT/gateway.pid" ]; then
+            kill "$(cat "$LAB_ROOT/gateway.pid")" 2>/dev/null
+            wait "$(cat "$LAB_ROOT/gateway.pid")" 2>/dev/null
+          fi
+          sleep 1
+          if curl --silent --fail --max-time 2 "$HERMES_API_BASE/v1/capabilities" \
+               -H "Authorization: Bearer $HERMES_API_KEY" >/dev/null; then
+            echo "profile route remained reachable after gateway rollback" >&2
+            exit 1
+          fi
+          printf '{"gateway_stopped":true,"profile_route_unreachable":true,"plugin_disabled":true}\n' \
+            > "$LAB_ARTIFACTS/rollback.json"
+
+      - name: Validate laboratory receipts and boundaries
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_VENV/bin/python" tools/run_hermes_020_lab_acceptance.py validate \
+            --artifacts "$LAB_ARTIFACTS"
+          cat "$LAB_ARTIFACTS/acceptance-summary.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop fixture
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f "$LAB_ROOT/fixture.pid" ]; then
+            kill "$(cat "$LAB_ROOT/fixture.pid")" 2>/dev/null
+            wait "$(cat "$LAB_ROOT/fixture.pid")" 2>/dev/null
+          fi
+
+      - name: Upload laboratory observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-020-ephemeral-lab-${{ github.run_id }}
+          path: ${{ env.LAB_ARTIFACTS }}/
+          if-no-files-found: error
+          retention-days: 14
