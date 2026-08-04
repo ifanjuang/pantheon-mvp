@@ -1,7 +1,8 @@
-"""Static and boundary checks for the read-only Cockpit knowledge-map lens."""
+"""Executable and boundary checks for the read-only Cockpit knowledge-map lens."""
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,6 +15,36 @@ SCRIPTS = sorted(MAP_DIR.glob("*.js"))
 FORBIDDEN = ("fetch(", "XMLHttpRequest", "WebSocket", "localStorage", "sessionStorage")
 
 
+def _node() -> str:
+    executable = shutil.which("node")
+    if executable is None:  # pragma: no cover - depends on the runner image
+        pytest.skip("Node.js is unavailable")
+    return executable
+
+
+def _run_node(source: str) -> None:
+    result = subprocess.run(
+        [_node(), "-e", source],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def _loader(*names: str) -> str:
+    paths = [str(MAP_DIR / name) for name in names]
+    return f"""
+const fs = require('fs');
+const vm = require('vm');
+global.window = global;
+for (const path of {json.dumps(paths)}) {{
+  vm.runInThisContext(fs.readFileSync(path, 'utf8'), {{ filename: path }});
+}}
+"""
+
+
 def test_map_scripts_present() -> None:
     names = {p.name for p in SCRIPTS}
     assert {
@@ -24,11 +55,8 @@ def test_map_scripts_present() -> None:
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.name)
 def test_map_javascript_parses(script: Path) -> None:
-    node = shutil.which("node")
-    if node is None:  # pragma: no cover - depends on the runner image
-        pytest.skip("Node.js is unavailable; JavaScript syntax check skipped")
     result = subprocess.run(
-        [node, "--check", str(script)],
+        [_node(), "--check", str(script)],
         check=False,
         capture_output=True,
         text=True,
@@ -38,7 +66,7 @@ def test_map_javascript_parses(script: Path) -> None:
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.name)
 def test_map_lens_is_read_only(script: Path) -> None:
-    """The lens must reshape/draw only: no network, no persisted side effects."""
+    """The lens must reshape/draw only: no network or persisted side effects."""
     source = script.read_text(encoding="utf-8")
     for token in FORBIDDEN:
         assert token not in source, f"{script.name} must stay read-only (found {token!r})"
@@ -66,7 +94,104 @@ def test_map_modules_expose_globals() -> None:
 
 
 def test_projection_graph_exposure_is_read_only_hook() -> None:
-    """The live hook must expose a frozen snapshot and only dispatch an event."""
     source = (ROOT / "mvp_vertical" / "cockpit" / "projection" / "cockpit_projection.js").read_text(encoding="utf-8")
     assert "window.PantheonCockpitGraph = Object.freeze(" in source
     assert "pantheon:graph-updated" in source
+
+
+def test_graph_model_handles_orphans_cycles_deduplication_and_immutability() -> None:
+    _run_node(_loader("map_graph_model.js") + r"""
+const assert = require('assert');
+const tags = ['structure'];
+const cards = new Map([
+  ['a', {entity_id:'a', entity_type:'information', subject_tags:tags, series_id:'s'}],
+  ['b', {entity_id:'b', entity_type:'information', subject_tags:['structure'], series_id:'s', base_acted_id:'a'}],
+  ['c', {entity_id:'c', entity_type:'document', subject_tags:['cctp']}],
+  ['missing-id', null],
+]);
+const children = new Map([
+  ['a', ['b', 'ghost', 'b']],
+  ['b', ['a']],
+  ['ghost', ['a']],
+]);
+const cardsBefore = JSON.stringify([...cards]);
+const childrenBefore = JSON.stringify([...children]);
+const graph = PantheonMapGraphModel.build(cards, children);
+assert.deepStrictEqual(graph.nodes.map(n => n.id), ['a','b','c']);
+assert.strictEqual(graph.links.filter(x => x.kind === 'lineage' && x.source === 'a' && x.target === 'b').length, 1);
+assert.strictEqual(graph.links.filter(x => x.kind === 'containment' && x.source === 'a' && x.target === 'b').length, 1);
+assert.strictEqual(graph.links.some(x => x.source === 'ghost' || x.target === 'ghost'), false);
+assert.strictEqual(graph.links.some(x => x.source === x.target), false);
+assert.strictEqual(JSON.stringify([...cards]), cardsBefore);
+assert.strictEqual(JSON.stringify([...children]), childrenBefore);
+graph.nodes[0].subject_tags.push('mutated-output');
+assert.deepStrictEqual(tags, ['structure']);
+""")
+
+
+def test_graph_model_accepts_object_inputs_and_falls_back_to_map_key_identity() -> None:
+    _run_node(_loader("map_graph_model.js") + r"""
+const assert = require('assert');
+const graph = PantheonMapGraphModel.build(
+  {alpha:{entity_type:'knowledge', title:'Alpha'}, beta:{entity_id:'beta', entity_type:'document'}},
+  {alpha:['beta']},
+);
+assert.deepStrictEqual(graph.nodes.map(n => n.id), ['alpha','beta']);
+assert.deepStrictEqual(graph.links, [{source:'alpha', target:'beta', kind:'containment'}]);
+""")
+
+
+def test_all_layouts_are_deterministic_finite_and_do_not_mutate_nodes() -> None:
+    _run_node(_loader("map_layouts.js") + r"""
+const assert = require('assert');
+const nodes = Array.from({length:37}, (_, i) => ({id:`n${i}`, subject:`s${i%5}`, family:`f${i%3}`}));
+const before = JSON.stringify(nodes);
+const opts = {width:900, height:560, groupOf:n => n.subject};
+for (const name of PantheonMapLayouts.names) {
+  const first = PantheonMapLayouts.layout(name, nodes, opts);
+  const second = PantheonMapLayouts.layout(name, nodes, opts);
+  assert.deepStrictEqual(first, second, `${name} must be deterministic`);
+  assert.deepStrictEqual(Object.keys(first).sort(), nodes.map(n => n.id).sort());
+  for (const point of Object.values(first)) {
+    assert(Number.isFinite(point.x) && Number.isFinite(point.y), `${name} emitted non-finite coordinates`);
+  }
+}
+assert.strictEqual(JSON.stringify(nodes), before);
+assert.deepStrictEqual(
+  PantheonMapLayouts.layout('unknown-layout', nodes, opts),
+  PantheonMapLayouts.layout('cluster', nodes, opts),
+);
+for (const name of PantheonMapLayouts.names) {
+  assert.deepStrictEqual(PantheonMapLayouts.layout(name, [], opts), {});
+}
+""")
+
+
+def test_renderer_can_destroy_and_remount_without_retained_nodes() -> None:
+    _run_node(_loader("map_graph_model.js", "map_layouts.js") + r"""
+const assert = require('assert');
+class FakeNode {
+  constructor(name) { this.name=name; this.children=[]; this.attrs={}; this.style={}; this._text=''; this.innerHTML=''; }
+  setAttribute(k,v) { this.attrs[k]=String(v); }
+  append(...nodes) { this.children.push(...nodes); }
+  appendChild(node) { this.children.push(node); return node; }
+  set textContent(value) { this._text=String(value); if (value === '') this.children=[]; }
+  get textContent() { return this._text; }
+}
+global.document = { createElementNS(_ns, name) { return new FakeNode(name); } };
+""" + _loader("map_view.js") + r"""
+const tokens = {
+  subjectColor:()=> '#000', subjectIconKey:()=>null, statusColor:()=> '#000',
+  originStroke:()=>({stroke:'#000',dash:''}), radius:()=>9,
+};
+const svg = new FakeNode('svg');
+const data = {cards:new Map(), children:new Map()};
+const first = PantheonMapView.create(svg, data, {tokens});
+assert(svg.children.length > 0);
+first.destroy();
+assert.strictEqual(svg.children.length, 0);
+const second = PantheonMapView.create(svg, data, {tokens});
+assert(svg.children.length > 0);
+second.destroy();
+assert.strictEqual(svg.children.length, 0);
+""")
