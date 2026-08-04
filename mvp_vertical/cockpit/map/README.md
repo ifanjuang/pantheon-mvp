@@ -1,9 +1,10 @@
 # Cockpit knowledge map (read-only lens)
 
 Status: implemented candidate — a bounded, read-only visual lens over the
-existing Cockpit projection. Not wired into the live cockpit page yet.
+existing Cockpit projection. Live mounting is available via a hook but is
+**opt-in** (not auto-wired into the live page yet).
 
-## Invariants
+## Invariants (tested)
 
 ```text
 map view != data model
@@ -12,7 +13,8 @@ read-only : no fetch, no mutation, no run launch, no memory promotion
 ```
 
 The map reshapes and draws the **already-normalised** card graph. It decides
-nothing and admits nothing.
+nothing and admits nothing. `tests/test_cockpit_map.py` enforces the read-only
+boundary (no `fetch`/storage/socket) and the declared invariants.
 
 ## What it binds to
 
@@ -21,23 +23,42 @@ The in-memory projection produced by `../projection/cockpit_projection.js`:
 - `state.cards` — `Map<entity_id, cardModel>`;
 - `state.children` — `Map<parentId, entity_id[]>`.
 
-It reads only projected card fields (`entity_id`, `entity_type`,
+The projection exposes a **read-only snapshot** as
+`window.PantheonCockpitGraph = Object.freeze({ cards, children })` and fires
+`pantheon:graph-updated` after each rebuild. The lens reads that snapshot; it
+never writes back. It reads only projected fields (`entity_id`, `entity_type`,
 `presentation_family`, `title`, `status`, `date`, `subject_tags`, `series_id`,
-`base_acted_id`, `source_run_id`). It does **not** call the HTTP API, so the
-stable-route convergence (no `/v1`) does not affect it — the map sits above the
-transport seam.
+`base_acted_id`, `source_run_id`, and a `magnitude` hint when present). It never
+calls the HTTP API, so the stable-route convergence (no `/v1`) does not affect
+it — the map sits above the transport seam.
 
 ## Modules
 
-- `map_graph_model.js` — pure `build(cards, children) -> { nodes, links }`.
-  Links: `containment` (parent→child) and `lineage` (version series /
-  `base_acted_id`). `node.origin` records the factual source
-  (`agency` / `knowledge` / `hermes`) — it is **not** an authority claim.
+- `map_graph_model.js` — pure `build(cards, children) -> { nodes, links }`
+  (containment + version lineage). `node.origin` records the factual source
+  (`agency` / `knowledge` / `hermes`) — **not** an authority claim.
 - `map_layouts.js` — swappable layout registry, each a pure
   `(nodes, opts) -> {id:{x,y}}` (`cluster`, `radial`, `grid`, `chain`).
   Deterministic, no force. Add a graph type = add one entry.
-- `map_view.js` — read-only SVG renderer: `create(svg, {cards, children}, opts)`
-  → `{ setLayout, setGroupBy, render, destroy }`.
+- `map_tokens.js` — read-only token resolver: subject colour + icon, status
+  colour, origin border, magnitude→radius. Registries are dependency-injected
+  (pass the real `tag_registry` / `status_registry`), with a bundled fallback.
+  Colour is never the sole identifier — an icon disambiguates same-colour
+  subjects (the registry collapses ~33 subjects onto ~9 colour tokens).
+- `map_corroboration.js` — pure support-edge builder (corroboration /
+  contradiction) + candidate certainty aggregation. **Gated**: returns `[]`
+  until cards carry support refs (only the negative `contradictory_review`
+  signal exists upstream today).
+- `map_bundle.js` — hierarchical edge bundling for the support overlay
+  (deterministic, no force). Renders empty when there are no edges.
+- `map_view.js` — read-only SVG renderer wiring the layers: subject colour +
+  icon, origin border, status badge, magnitude sizing, organic metaballs,
+  containment + lineage links, support overlay (HEB), subject focus, and a time
+  scrubber. `create(svg, {cards, children}, opts)` →
+  `{ setLayout, setGroupBy, setLens, setMeta, setSupport, setFocus, setTime,
+  render, destroy }`.
+- `map_mount.js` — live mount hook: `mountLive(svg, opts)` renders from
+  `window.PantheonCockpitGraph` and refreshes on `pantheon:graph-updated`.
 
 ## Default layout per scope (caller's choice)
 
@@ -49,14 +70,16 @@ knowledge           -> grid   (dense scan)
 subject view        -> cluster (organic grouping)
 ```
 
-## Deliberately out of this slice
+## Data-gated layers (prepared, render empty until wired)
 
-Metaballs, subject-colour lens, provenance tiers, time scrubber, magnitude
-sizing, corroboration overlay (hierarchical edge bundling) and canvas scaling
-are demonstrated in the standalone prototype and are later phases — several are
-gated on data not yet wired (`derived_from_*`, a positive corroboration signal).
-Live-cockpit mounting is intentionally deferred until the convergence
-(stages L–O) stabilises; it will read the same projection through a small hook.
+- **Support overlay / HEB** — needs a positive corroboration signal
+  (`corroboration_refs` / `support_refs` on cards). Until then `setSupport(true)`
+  draws nothing.
+- **Magnitude sizing** — uses `magnitude` / `page_count` / `chunk_count` when
+  present; falls back to a base radius otherwise.
+- **Live page mount** — `map_mount` is ready; wiring a container into the live
+  cockpit page is a deliberate one-line opt-in, deferred until the convergence
+  (stages L–O) settles.
 
 ## Try it
 

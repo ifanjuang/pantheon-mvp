@@ -44,6 +44,10 @@
       series_id: card.series_id || null,
       base_acted_id: card.base_acted_id || null,
       source_run_id: card.source_run_id || null,
+      // Optional magnitude hint (pages/chunks) for node sizing; null when absent.
+      magnitude: card.magnitude != null ? card.magnitude
+        : card.page_count != null ? card.page_count
+        : card.chunk_count != null ? card.chunk_count : null,
     };
   }
 
