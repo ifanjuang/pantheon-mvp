@@ -66,7 +66,6 @@ def test_map_javascript_parses(script: Path) -> None:
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.name)
 def test_map_lens_is_read_only(script: Path) -> None:
-    """The lens must reshape/draw only: no network or persisted side effects."""
     source = script.read_text(encoding="utf-8")
     for token in FORBIDDEN:
         assert token not in source, f"{script.name} must stay read-only (found {token!r})"
@@ -168,29 +167,31 @@ for (const name of PantheonMapLayouts.names) {
 
 
 def test_renderer_can_destroy_and_remount_without_retained_nodes() -> None:
-    _run_node(_loader("map_graph_model.js", "map_layouts.js") + r"""
+    view_path = json.dumps(str(MAP_DIR / "map_view.js"))
+    _run_node(_loader("map_graph_model.js", "map_layouts.js") + rf"""
 const assert = require('assert');
-class FakeNode {
-  constructor(name) { this.name=name; this.children=[]; this.attrs={}; this.style={}; this._text=''; this.innerHTML=''; }
-  setAttribute(k,v) { this.attrs[k]=String(v); }
-  append(...nodes) { this.children.push(...nodes); }
-  appendChild(node) { this.children.push(node); return node; }
-  set textContent(value) { this._text=String(value); if (value === '') this.children=[]; }
-  get textContent() { return this._text; }
-}
-global.document = { createElementNS(_ns, name) { return new FakeNode(name); } };
-""" + _loader("map_view.js") + r"""
-const tokens = {
+class FakeNode {{
+  constructor(name) {{ this.name=name; this.children=[]; this.attrs={{}}; this.style={{}}; this._text=''; this.innerHTML=''; }}
+  setAttribute(k,v) {{ this.attrs[k]=String(v); }}
+  append(...nodes) {{ this.children.push(...nodes); }}
+  appendChild(node) {{ this.children.push(node); return node; }}
+  set textContent(value) {{ this._text=String(value); if (value === '') this.children=[]; }}
+  get textContent() {{ return this._text; }}
+}}
+global.document = {{ createElementNS(_ns, name) {{ return new FakeNode(name); }} }};
+const viewPath = {view_path};
+vm.runInThisContext(fs.readFileSync(viewPath, 'utf8'), {{ filename: viewPath }});
+const tokens = {{
   subjectColor:()=> '#000', subjectIconKey:()=>null, statusColor:()=> '#000',
-  originStroke:()=>({stroke:'#000',dash:''}), radius:()=>9,
-};
+  originStroke:()=>({{stroke:'#000',dash:''}}), radius:()=>9,
+}};
 const svg = new FakeNode('svg');
-const data = {cards:new Map(), children:new Map()};
-const first = PantheonMapView.create(svg, data, {tokens});
+const data = {{cards:new Map(), children:new Map()}};
+const first = PantheonMapView.create(svg, data, {{tokens}});
 assert(svg.children.length > 0);
 first.destroy();
 assert.strictEqual(svg.children.length, 0);
-const second = PantheonMapView.create(svg, data, {tokens});
+const second = PantheonMapView.create(svg, data, {{tokens}});
 assert(svg.children.length > 0);
 second.destroy();
 assert.strictEqual(svg.children.length, 0);
