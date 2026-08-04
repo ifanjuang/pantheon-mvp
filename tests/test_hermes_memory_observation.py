@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -115,3 +116,24 @@ def test_qualification_requires_matching_profile_and_all_axes_off() -> None:
     missing = qualify_memory_observation(None, expected_profile="pantheon-governed")
     assert missing["status"] == "not_evaluated"
     assert missing["session_memory_key"] == "absent"
+
+
+def test_qualification_rejects_tampered_or_unsanitized_receipts() -> None:
+    base = parse_memory_status(QUALIFIED_OUTPUT, profile="pantheon-governed")
+    mutations = (
+        ("command", ["hermes", "memory", "status"]),
+        ("stdout_digest", "sha256:bad"),
+        ("raw_output_retained", True),
+        ("write_effect", True),
+        ("authority_effect", "memory"),
+        ("technical_receipt_is_evidence", True),
+    )
+
+    for field, value in mutations:
+        receipt = deepcopy(base)
+        receipt[field] = value
+        observed = qualify_memory_observation(
+            receipt,
+            expected_profile="pantheon-governed",
+        )
+        assert observed["status"] == "not_qualified", field
