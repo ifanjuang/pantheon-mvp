@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""Deterministic local services for the Hermes 0.20.0 laboratory acceptance.
+"""Deterministic local services for the Hermes 0.20.0 lab acceptance.
 
-This fixture is test infrastructure only. It provides:
-
-- a local OpenAI-compatible chat endpoint that deterministically requests the
-  two Pantheon context tools;
-- a bounded fake Pantheon execution API for one synthetic read-only admission;
-- a sanitized request journal used to prove which surfaces were exercised.
-
-It stores no credentials and never calls an external service.
+The fixture provides a local OpenAI-compatible provider and a bounded synthetic
+Pantheon API. It journals only sanitized request metadata: routes, header
+presence, body keys and tool schema names/shapes. It never retains prompts,
+arguments, credentials or raw provider payloads.
 """
 
 from __future__ import annotations
@@ -28,6 +24,50 @@ PANTHEON_KEY = "pantheon-lab-key"
 PROFILE_ENTITY_TYPE = "project"
 PROFILE_ENTITY_ID = "project-lab"
 OUTSIDE_ENTITY_ID = "project-outside"
+REQUIRED_TOOLS = {"pantheon_context_manifest", "pantheon_context_entity"}
+
+
+def _tool_name(item: Any) -> str:
+    """Read a function name from reviewed Chat Completions or flat tool shape."""
+
+    if not isinstance(item, dict):
+        return ""
+    function = item.get("function")
+    if isinstance(function, dict):
+        value = str(function.get("name") or "").strip()
+        if value:
+            return value
+    return str(item.get("name") or "").strip()
+
+
+def _tool_metadata(body: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(body, dict):
+        return {
+            "tool_count": 0,
+            "tool_names": [],
+            "tool_entry_shapes": [],
+        }
+    tools = body.get("tools")
+    if not isinstance(tools, list):
+        return {
+            "tool_count": 0,
+            "tool_names": [],
+            "tool_entry_shapes": [],
+        }
+    names = sorted({name for name in (_tool_name(item) for item in tools) if name})
+    shapes = sorted(
+        {
+            ",".join(sorted(str(key) for key in item))
+            if isinstance(item, dict)
+            else type(item).__name__
+            for item in tools
+        }
+    )
+    return {
+        "tool_count": len(tools),
+        "tool_names": names,
+        "tool_entry_shapes": shapes,
+    }
 
 
 class LabState:
@@ -37,14 +77,21 @@ class LabState:
         self.provider_calls = 0
         self.pantheon_reads: list[str] = []
         self.pantheon_writes: list[str] = []
+        self.last_provider_tool_names: list[str] = []
+        self.last_provider_tool_shapes: list[str] = []
 
     def record(self, payload: dict[str, Any]) -> None:
         payload = {"recorded_at": time.time(), **payload}
-        line = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         with self.lock:
             self.journal.parent.mkdir(parents=True, exist_ok=True)
             with self.journal.open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
+                handle.write(rendered + "\n")
+
+    def note_provider_tools(self, metadata: dict[str, Any]) -> None:
+        with self.lock:
+            self.last_provider_tool_names = list(metadata["tool_names"])
+            self.last_provider_tool_shapes = list(metadata["tool_entry_shapes"])
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -52,11 +99,13 @@ class LabState:
                 "provider_calls": self.provider_calls,
                 "pantheon_reads": list(self.pantheon_reads),
                 "pantheon_writes": list(self.pantheon_writes),
+                "last_provider_tool_names": list(self.last_provider_tool_names),
+                "last_provider_tool_shapes": list(self.last_provider_tool_shapes),
             }
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PantheonHermesLab/1"
+    server_version = "PantheonHermesLab/2"
 
     @property
     def state(self) -> LabState:
@@ -82,6 +131,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def _journal(self, *, body: dict[str, Any] | None = None) -> None:
+        metadata = _tool_metadata(body)
+        if urlsplit(self.path).path == "/v1/chat/completions":
+            self.state.note_provider_tools(metadata)
         self.state.record(
             {
                 "method": self.command,
@@ -92,6 +144,7 @@ class Handler(BaseHTTPRequestHandler):
                 ),
                 "pantheon_actor": self.headers.get("X-Pantheon-Hermes-Actor"),
                 "body_keys": sorted(body) if isinstance(body, dict) else [],
+                **metadata,
             }
         )
 
@@ -185,7 +238,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_chat(body)
             return
 
-        if path.startswith(f"/hermes/execution-admissions/{ADMISSION_ID}/"):
+        admission_prefix = f"/hermes/execution-admissions/{ADMISSION_ID}/"
+        if path.startswith(admission_prefix):
             if not self._pantheon_auth_ok():
                 self._send(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
                 return
@@ -202,7 +256,10 @@ class Handler(BaseHTTPRequestHandler):
                         "replayed": False,
                         "snapshot": {
                             "kind": "hermes_launch_context_snapshot",
-                            "question": "Read the admitted manifest and project, then verify that an outside project is refused.",
+                            "question": (
+                                "Read the admitted manifest and project, then verify "
+                                "that an outside project is refused."
+                            ),
                             "field_projection_version": "hermes-020-lab",
                             "entities": [
                                 {
@@ -245,22 +302,31 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(messages, list):
             self._send(HTTPStatus.BAD_REQUEST, {"error": "messages required"})
             return
-        tools = body.get("tools") or []
+
+        tools = body.get("tools")
         available = {
-            str(item.get("function", {}).get("name") or "")
-            for item in tools
-            if isinstance(item, dict)
+            name
+            for name in (
+                _tool_name(item) for item in tools if isinstance(tools, list)
+            )
+            if name
         }
-        required = {"pantheon_context_manifest", "pantheon_context_entity"}
-        if not required.issubset(available):
+        if not REQUIRED_TOOLS.issubset(available):
             self._send(
                 HTTPStatus.BAD_REQUEST,
-                {"error": "expected Pantheon context tools are not available"},
+                {
+                    "error": "expected Pantheon context tools are not available",
+                    "available_tool_names": sorted(available),
+                    "required_tool_names": sorted(REQUIRED_TOOLS),
+                    "tool_entry_shapes": _tool_metadata(body)["tool_entry_shapes"],
+                },
             )
             return
 
         tool_messages = [
-            item for item in messages if isinstance(item, dict) and item.get("role") == "tool"
+            item
+            for item in messages
+            if isinstance(item, dict) and item.get("role") == "tool"
         ]
         step = len(tool_messages)
         with self.state.lock:
@@ -283,10 +349,16 @@ class Handler(BaseHTTPRequestHandler):
             admitted = tool_messages[1].get("content", "") if len(tool_messages) > 1 else ""
             refused = tool_messages[2].get("content", "") if len(tool_messages) > 2 else ""
             if PROFILE_ENTITY_ID not in str(admitted):
-                self._send(HTTPStatus.BAD_REQUEST, {"error": "admitted entity was not returned"})
+                self._send(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "admitted entity was not returned"},
+                )
                 return
             if "HTTP 404" not in str(refused) and "outside" not in str(refused):
-                self._send(HTTPStatus.BAD_REQUEST, {"error": "outside entity was not refused"})
+                self._send(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "outside entity was not refused"},
+                )
                 return
             self._send(
                 HTTPStatus.OK,
@@ -300,7 +372,10 @@ class Handler(BaseHTTPRequestHandler):
                             "index": 0,
                             "message": {
                                 "role": "assistant",
-                                "content": "LAB_ACCEPTANCE_COMPLETED: manifest read, admitted entity read, outside entity refused.",
+                                "content": (
+                                    "LAB_ACCEPTANCE_COMPLETED: manifest read, admitted "
+                                    "entity read, outside entity refused."
+                                ),
                             },
                             "finish_reason": "stop",
                         }
@@ -360,7 +435,10 @@ def main() -> int:
     state = LabState(args.journal)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.lab_state = state  # type: ignore[attr-defined]
-    print(f"Hermes 0.20 lab fixture listening on http://{args.host}:{args.port}", flush=True)
+    print(
+        f"Hermes 0.20 lab fixture listening on http://{args.host}:{args.port}",
+        flush=True,
+    )
     try:
         server.serve_forever(poll_interval=0.2)
     except KeyboardInterrupt:
