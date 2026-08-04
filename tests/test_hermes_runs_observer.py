@@ -5,8 +5,11 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from mvp_vertical.hermes_memory_observation import parse_memory_status
-from mvp_vertical.hermes_runs_observer import HermesRunsApiObserver, HermesRunsObservationError
+from mvp_vertical.hermes_runs_observer import (
+    HermesRunsApiObserver,
+    HermesRunsObservationError,
+    parse_memory_status,
+)
 
 PROFILE = "pantheon-governed"
 BASE = f"http://hermes:8642/p/{PROFILE}"
