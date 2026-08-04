@@ -11,7 +11,6 @@
   // `state.cards` (Map<entity_id, cardModel>) and `state.children`
   // (Map<parentId, entity_id[]>) produced by cockpit_projection.js.
 
-  // Factual source of a card (where it was read from), never an authority level.
   const ORIGIN_BY_TYPE = Object.freeze({
     project: "agency",
     information: "agency",
@@ -29,12 +28,13 @@
     return tags.length ? String(tags[0]) : null;
   }
 
-  function nodeFrom(card) {
+  function nodeFrom(id, card) {
+    const entityId = card.entity_id || id;
     return {
-      id: card.entity_id,
+      id: entityId,
       entity_type: card.entity_type || null,
       family: card.presentation_family || card.family || "information",
-      title: card.title || card.entity_id,
+      title: card.title || entityId,
       status: card.status || null,
       date: card.date || null,
       subject: primarySubject(card),
@@ -44,7 +44,6 @@
       series_id: card.series_id || null,
       base_acted_id: card.base_acted_id || null,
       source_run_id: card.source_run_id || null,
-      // Optional magnitude hint (pages/chunks) for node sizing; null when absent.
       magnitude: card.magnitude != null ? card.magnitude
         : card.page_count != null ? card.page_count
         : card.chunk_count != null ? card.chunk_count : null,
@@ -66,34 +65,40 @@
     const present = new Set();
     for (const [id, card] of cardEntries) {
       if (!card) continue;
-      nodes.push(nodeFrom(card));
-      present.add(id);
+      const node = nodeFrom(id, card);
+      if (present.has(node.id)) continue;
+      nodes.push(node);
+      present.add(node.id);
     }
 
     const links = [];
+    const linkKeys = new Set();
+    const addLink = (source, target, kind) => {
+      if (!present.has(source) || !present.has(target) || source === target) return;
+      const key = `${kind}\u0000${source}\u0000${target}`;
+      if (linkKeys.has(key)) return;
+      linkKeys.add(key);
+      links.push({ source, target, kind });
+    };
 
     // Containment (parent -> child), only between present nodes.
     for (const [parent, kids] of childEntries) {
       if (!present.has(parent) || !Array.isArray(kids)) continue;
-      for (const child of kids) {
-        if (present.has(child)) links.push({ source: parent, target: child, kind: "containment" });
-      }
+      for (const child of kids) addLink(parent, child, "containment");
     }
 
-    // Version lineage: chain items sharing a series_id (best-effort insertion order).
+    // Version lineage: chain items sharing a series_id (stable insertion order).
     const bySeries = new Map();
     for (const n of nodes) if (n.series_id) groupInto(bySeries, n.series_id, n);
     for (const arr of bySeries.values()) {
       for (let i = 1; i < arr.length; i += 1) {
-        links.push({ source: arr[i - 1].id, target: arr[i].id, kind: "lineage" });
+        addLink(arr[i - 1].id, arr[i].id, "lineage");
       }
     }
 
     // Explicit acted-base lineage when the referenced base is present.
     for (const n of nodes) {
-      if (n.base_acted_id && present.has(n.base_acted_id)) {
-        links.push({ source: n.base_acted_id, target: n.id, kind: "lineage" });
-      }
+      if (n.base_acted_id) addLink(n.base_acted_id, n.id, "lineage");
     }
 
     return { nodes, links };
