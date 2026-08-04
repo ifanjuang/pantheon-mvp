@@ -57,6 +57,7 @@ The parser retains only:
 profile
 command
 exit code
+capture time
 output digest
 external-provider state
 built-in memory-injection state
@@ -67,6 +68,8 @@ qualification status
 
 Raw command output is not retained.
 
+The receipt must have the exact CLI observation source, a timezone-aware capture time and a maximum age of five minutes. Stale, future-dated, manually re-attributed or otherwise malformed receipts fail closed.
+
 ### Observer qualification
 
 The observer now combines three independent surfaces:
@@ -74,10 +77,12 @@ The observer now combines three independent surfaces:
 ```text
 profile route
 reviewed tool surface
-sanitized profile-memory receipt
+fresh sanitized profile-memory receipt
 ```
 
 A profile is qualified only when all three are qualified. Missing or active memory axes fail closed.
+
+The capture and qualification remain inside the existing digest-bound `runtime-observer` component. No fourth distribution component was introduced.
 
 The observer and Runs client send only the bearer authorization header. They do not send `X-Hermes-Session-Key`.
 
@@ -92,6 +97,18 @@ The observer and Runs client send only the bearer authorization header. They do 
 ```
 
 Reconciliation remains a one-shot observation of an already launched run.
+
+## Integrity posture
+
+The distribution remains composed of exactly:
+
+```text
+run-binding
+context-bridge
+runtime-observer
+```
+
+The lock digests the modified run-binding and consolidated observer files. Component composition, activation state, task authorization state and authority flags remain unchanged.
 
 ## Non-effects
 
@@ -114,7 +131,7 @@ no task authorization
 ```text
 exact Hermes 0.20 artifact digest
 real named profile route
-real memory status capture
+real fresh memory status capture
 real OpenWebUI enrichment posture
 one admitted synthetic launch
 one one-shot reconciliation
