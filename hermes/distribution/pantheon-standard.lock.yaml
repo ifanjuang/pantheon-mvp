@@ -46,7 +46,7 @@ components:
     source_repository: pantheon-mvp
     path: mvp_vertical/hermes_runs_observer.py
     digest_mode: file
-    content_digest: sha256:64ec9184ff34fd2347627c21277257493563021c9446e0b161f81e26b70da365
+    content_digest: sha256:09ee4aa8742bb1ed4d9db96af442f7b4f987a1a234379b96531680fe192caeaf
     required: true
     enabled_by_default: false
     capabilities:
@@ -55,7 +55,7 @@ components:
       - qualify-tool-surface
       - capture-memory-posture
       - qualify-memory-posture
-    notes: One-shot observation only; route, tool and memory qualification do not activate the binding or authorize a task.
+    notes: One-shot observation only; route, tool and fresh memory qualification do not activate the binding or authorize a task.
 required_checks:
   - check_id: distribution-schema-and-paths
     kind: static_structure
