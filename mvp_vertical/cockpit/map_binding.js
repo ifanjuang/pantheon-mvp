@@ -45,16 +45,33 @@
       else mount.rebuild();
     }
 
+    function closePanel({ restoreFocus = true } = {}) {
+      open = false;
+      panel.hidden = true;
+      toggle.setAttribute("aria-expanded", "false");
+      if (mount) {
+        mount.destroy();
+        mount = null;
+      }
+      if (restoreFocus) toggle.focus();
+    }
+
     toggle.addEventListener("click", () => {
-      open = !open;
-      panel.hidden = !open;
-      toggle.setAttribute("aria-expanded", String(open));
-      if (open) ensure();
+      if (open) {
+        closePanel({ restoreFocus: false });
+        return;
+      }
+      open = true;
+      panel.hidden = false;
+      toggle.setAttribute("aria-expanded", "true");
+      ensure();
     });
 
     const close = document.getElementById("v2-map-close");
-    if (close) close.addEventListener("click", () => {
-      open = false; panel.hidden = true; toggle.setAttribute("aria-expanded", "false");
+    if (close) close.addEventListener("click", () => closePanel());
+
+    document.addEventListener("keydown", event => {
+      if (open && event.key === "Escape") closePanel();
     });
 
     panel.querySelectorAll("[data-map-layout]").forEach(button => {
