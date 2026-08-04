@@ -16,15 +16,16 @@ def test_revision_review_adapter_is_loaded_after_candidate_decisions() -> None:
     decision = bootstrap.index('"actions/change_candidate_actions.js"')
     review = bootstrap.index('"actions/change_candidate_review.js"')
     assert review > decision
-    assert 'styles/change_candidate_review.css' in (COCKPIT / "index.html").read_text(encoding="utf-8")
+    editors = (COCKPIT / "styles" / "editors.css").read_text(encoding="utf-8")
+    assert 'change_candidate_review.css' in editors
 
 
 def test_loader_and_assembler_keep_review_history_without_creating_new_authority() -> None:
     loader = (COCKPIT / "data" / "cockpit_data_loader.js").read_text(encoding="utf-8")
     assembler = (COCKPIT / "projection" / "child_collection_assembler.js").read_text(encoding="utf-8")
 
-    assert '/change-candidates?limit=100' in loader
-    assert 'status=pending_review' not in loader
+    assert '/change-candidates?status=pending_review&limit=100' in loader
+    assert '/change-candidates?status=revision_requested&limit=100' in loader
     assert '["pending_review", "revision_requested"]' in assembler
     assert "new_candidate" not in assembler
     assert "runs/start" not in assembler
@@ -55,7 +56,7 @@ def test_revision_review_dialog_has_mobile_and_accessibility_guards() -> None:
     review = (COCKPIT / "actions" / "change_candidate_review.js").read_text(encoding="utf-8")
     css = (COCKPIT / "styles" / "change_candidate_review.css").read_text(encoding="utf-8")
 
-    assert 'aria-labelledby="change-candidate-review-title"' in review
+    assert 'setAttribute("aria-labelledby", "change-candidate-review-title")' in review
     assert 'aria-live="polite"' in review
     assert 'returnFocus?.focus?.()' in review
     assert 'dialog.showModal()' in review
