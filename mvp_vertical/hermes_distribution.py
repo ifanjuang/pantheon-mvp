@@ -20,6 +20,9 @@ REQUIRED_CHECK_KINDS = {
     "end_to_end",
     "no_authority",
 }
+IGNORED_TREE_DIRECTORIES = {".git", "__pycache__"}
+IGNORED_TREE_FILENAMES = {".DS_Store"}
+IGNORED_TREE_SUFFIXES = {".pyc", ".pyo"}
 
 
 class DistributionLockError(ValueError):
@@ -55,6 +58,14 @@ def file_content_digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _ignored_tree_path(relative: Path) -> bool:
+    return (
+        any(part in IGNORED_TREE_DIRECTORIES for part in relative.parts)
+        or relative.name in IGNORED_TREE_FILENAMES
+        or relative.suffix in IGNORED_TREE_SUFFIXES
+    )
+
+
 def tree_content_digest(path: Path) -> str:
     if path.is_symlink():
         raise DistributionLockError(f"symbolic links are forbidden in component digests: {path}")
@@ -67,6 +78,9 @@ def tree_content_digest(path: Path) -> str:
             raise DistributionLockError(
                 f"symbolic links are forbidden in component digests: {candidate}"
             )
+        relative = candidate.relative_to(path)
+        if _ignored_tree_path(relative):
+            continue
         if candidate.is_file():
             files.append(candidate)
 
