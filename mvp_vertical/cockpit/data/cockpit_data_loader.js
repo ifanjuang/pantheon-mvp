@@ -58,7 +58,7 @@
         authorizedJson(`../projects/${encoded}/documents`, token),
         authorizedJson(`../projects/${encoded}/knowledge`, token),
         authorizedJson(`../work/issues?case_ref=${encoded}`, token),
-        authorizedJson(`../agency/projects/${encoded}/change-candidates?status=pending_review&limit=100`, token),
+        authorizedJson(`../agency/projects/${encoded}/change-candidates?limit=100`, token),
       ]);
       return {
         information: Array.isArray(information.information) ? information.information : [],
