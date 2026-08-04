@@ -28,42 +28,42 @@ jobs:
           set -euo pipefail
 
           branches=(
-            "agent/cockpit-five-spaces"
-            "agent/cockpit-five-spaces-main-base"
+            "agent/cockpit-five-spaces-card-contract"
+            "agent/cockpit-five-spaces-rebase-base"
+            "agent/cockpit-five-spaces-rebase-base-2"
             "agent/cockpit-five-spaces-reconciled"
-            "agent/cockpit-home-design"
-            "agent/cockpit-integration-final"
-            "agent/cockpit-merge-reconciled"
-            "agent/cockpit-rebase-current-main"
-            "agent/cockpit-rebase-current-main-fresh"
-            "agent/cockpit-rebase-proof-final"
-            "agent/cockpit-reconcile-current"
-            "agent/cockpit-reconcile-current-fixed"
+            "agent/cockpit-integration-main63"
+            "agent/cockpit-merge-base"
+            "agent/cockpit-merge-base-final"
+            "agent/cockpit-rebase-main63"
+            "agent/cockpit-rebase-target"
+            "agent/cockpit-rebase-target-final"
+            "agent/cockpit-reconcile-main63"
             "agent/cockpit-static-demo"
             "agent/hermes-run-launch-junction"
             "agent/hermes-v019-runs-observer"
             "agent/native-radix-cockpit-renderer"
-            "agent/native-radix-cockpit-renderer-v2"
+            "agent/native-radix-cockpit-renderer-review"
             "agent/optional-paperless-capability"
             "agent/runtime-profile-observations"
             "agent/schema-driven-child-collections"
             "agent/schema-driven-child-collections-final"
             "agent/schema-driven-child-collections-final2"
-            "agent/schema-driven-child-collections-final3"
+            "agent/schema-driven-child-collections-impl"
+            "agent/schema-driven-child-collections-v2"
+            "agent/schema-driven-child-collections-work"
             "agent/spatial-new-information"
             "agent/vendor-radix-icons-trigger"
             "claude/analyze-dependent-repos-optimization-x1udnu"
-            "claude/d3js-maps-planning-9mc5bb"
             "claude/pantheon-repos-audit-s46afb"
             "feat/document-inbox-slice"
             "feature/cockpit-v3-real-collections"
             "feature/demo-ifja-universe"
-            "fix/document-chunk-inspection-followup"
             "fix/document-chunk-inspector-guards"
-            "refactor/cockpit-data-loader"
             "refactor/cockpit-neutral-entrypoints"
             "refactor/cross-repo-architecture-audit"
-            "refactor/python-architecture-inventory"
+            "refactor/remove-root-card-literals"
+            "refactor/stable-agency-routes"
             "tool-card-cockpit"
             "chore/repository-branch-cleanup-mvp"
           )
@@ -73,6 +73,12 @@ jobs:
               echo "Refusing protected branch: $branch" >&2
               exit 1
             fi
-            echo "Deleting $branch"
-            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+
+            encoded_branch="${branch//\//%2F}"
+            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${encoded_branch}" >/dev/null 2>&1; then
+              echo "Deleting $branch"
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded_branch}"
+            else
+              echo "Already absent: $branch"
+            fi
           done
