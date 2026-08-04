@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "hermes-020-lab-acceptance.yml"
 HARNESS = ROOT / "tools" / "run_hermes_020_lab_acceptance.py"
 FIXTURE = ROOT / "tools" / "hermes_020_lab_fixture.py"
+DISTRIBUTION = ROOT / "mvp_vertical" / "hermes_distribution.py"
 
 
 def test_lab_acceptance_is_explicit_pinned_and_ephemeral() -> None:
@@ -34,6 +35,19 @@ def test_lab_acceptance_is_explicit_pinned_and_ephemeral() -> None:
     assert "status: qualified" not in raw
 
 
+def test_lab_uses_supported_exact_source_artifact_not_a_forbidden_wheel() -> None:
+    raw = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "git archive --format=tar.gz" in raw
+    assert "hermes-source-artifact.sha256" in raw
+    assert 'grep -F \'version = "0.20.0"\'' in raw
+    assert 'uv pip install --python "$HERMES_VENV/bin/python"' in raw
+    assert '-e "$HERMES_SOURCE_DIR"' in raw
+    assert "python -m build" not in raw
+    assert "bdist_wheel" not in raw
+    assert "hermes-wheel" not in raw
+
+
 def test_lab_acceptance_keeps_install_activation_run_and_rollback_separate() -> None:
     raw = WORKFLOW.read_text(encoding="utf-8")
 
@@ -55,6 +69,18 @@ def test_lab_acceptance_keeps_install_activation_run_and_rollback_separate() -> 
     assert "profile route remained reachable after gateway rollback" in raw
 
 
+def test_distribution_receipt_exposes_only_verified_composition_fields() -> None:
+    raw = DISTRIBUTION.read_text(encoding="utf-8")
+    ast.parse(raw)
+
+    assert "def _verified_component_receipt" in raw
+    assert '"components": [' in raw
+    assert '"component_id": component["component_id"]' in raw
+    assert '"content_digest": component["content_digest"]' in raw
+    assert '"enabled_by_default": component["enabled_by_default"]' in raw
+    assert '"capabilities"' not in raw.split("def _verified_component_receipt", 1)[1].split("def validate", 1)[0]
+
+
 def test_harness_fails_closed_and_does_not_claim_target_acceptance() -> None:
     raw = HARNESS.read_text(encoding="utf-8")
     ast.parse(raw)
@@ -65,9 +91,13 @@ def test_harness_fails_closed_and_does_not_claim_target_acceptance() -> None:
     assert '"future_tasks_authorized": False' in raw
     assert '"result_accepted": False' in raw
     assert '"evidence_admitted": False' in raw
+    assert '"source_artifact_digest": source_artifact_digest' in raw
+    assert "hermes-wheel" not in raw
     assert "set(tool_surface.get(\"active_tools\") or []) == EXPECTED_TOOLS" in raw
+    assert "EXPECTED_COMPONENTS" in raw
     assert "session_memory_header_present" in raw
     assert "X-Hermes-Session-Key was observed" in raw
+    assert 'rollback.get("plugin_disabled") is True' in raw
     assert "This qualifies an ephemeral GitHub-hosted laboratory installation only." in raw
 
 
