@@ -8,7 +8,7 @@ source_pins:
     ref: "e32062328d5bbc6c48c164ee53f317e06b1ada32"
   pantheon_mvp:
     repository: ifanjuang/pantheon-mvp
-    ref: "d28d20dc3468efb60ded1e4de60b388d54288ff1"
+    ref: "b049eba630e617b1c88544c52554bc25375556a6"
   hermes_runtime:
     runtime_id: nousresearch-hermes-agent
     version: "0.19.0"
