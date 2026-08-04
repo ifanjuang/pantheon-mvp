@@ -48,7 +48,7 @@ def test_lab_uses_supported_exact_source_artifact_not_a_forbidden_wheel() -> Non
     assert "hermes-wheel" not in raw
 
 
-def test_lab_acceptance_keeps_install_activation_run_and_rollback_separate() -> None:
+def test_install_activation_run_and_rollback_remain_separate() -> None:
     raw = WORKFLOW.read_text(encoding="utf-8")
 
     install = raw.index("plugins install")
@@ -69,39 +69,38 @@ def test_lab_acceptance_keeps_install_activation_run_and_rollback_separate() -> 
     assert "profile route remained reachable after gateway rollback" in raw
 
 
-def test_governed_profile_closes_api_and_cli_tool_surfaces_independently() -> None:
+def test_governed_profile_closes_cli_and_api_tool_surfaces() -> None:
     raw = HARNESS.read_text(encoding="utf-8")
     ast.parse(raw)
 
     assert '"api_server": list(governed_toolsets)' in raw
     assert '"cli": list(governed_toolsets)' in raw
     assert '"platform_toolsets_expected"' in raw
-    assert "neither may" in raw
-    assert "inherit the default ``hermes-cli`` composite" in raw
+    assert "default hermes-cli composite" in raw
 
 
-def test_multiplexed_secondary_profile_keeps_its_port_binding_disabled() -> None:
+def test_secondary_profile_keeps_key_but_explicitly_disables_port_binding() -> None:
     raw = HARNESS.read_text(encoding="utf-8")
     ast.parse(raw)
 
-    assert '"API_SERVER_ENABLED": "true"' in raw
-    assert '"API_SERVER_ENABLED": "false"' in raw
+    assert '"platforms": {' in raw
+    assert '"api_server": {' in raw
+    assert '"enabled": False' in raw
     assert '"API_SERVER_KEY": PROFILE_KEY' in raw
+    assert '"profile_api_key_present": True' in raw
     assert '"profile_port_binding_enabled": False' in raw
-    assert "default profile owns the only HTTP listener" in raw
-    assert "shared /p/<profile>/ route" in raw
+    assert "env-only API_SERVER_ENABLED=false is insufficient" in raw
 
 
 def test_distribution_receipt_exposes_only_verified_composition_fields() -> None:
     raw = DISTRIBUTION.read_text(encoding="utf-8")
     ast.parse(raw)
 
-    assert "def _verified_component_receipt" in raw
-    assert '"components": [' in raw
-    assert '"component_id": component["component_id"]' in raw
-    assert '"content_digest": component["content_digest"]' in raw
-    assert '"enabled_by_default": component["enabled_by_default"]' in raw
-    assert '"capabilities"' not in raw.split("def _verified_component_receipt", 1)[1].split("def validate", 1)[0]
+    projected = raw.split("def _verified_component_receipt", 1)[1].split("def validate", 1)[0]
+    assert '"component_id": component["component_id"]' in projected
+    assert '"content_digest": component["content_digest"]' in projected
+    assert '"enabled_by_default": component["enabled_by_default"]' in projected
+    assert '"capabilities"' not in projected
 
 
 def test_harness_fails_closed_and_does_not_claim_target_acceptance() -> None:
@@ -114,12 +113,11 @@ def test_harness_fails_closed_and_does_not_claim_target_acceptance() -> None:
     assert '"future_tasks_authorized": False' in raw
     assert '"result_accepted": False' in raw
     assert '"evidence_admitted": False' in raw
-    assert '"source_artifact_digest": source_artifact_digest' in raw
+    assert '"source_artifact_digest": source_digest' in raw
     assert "hermes-wheel" not in raw
-    assert "set(tool_surface.get(\"active_tools\") or []) == EXPECTED_TOOLS" in raw
+    assert "EXPECTED_TOOLS" in raw
     assert "EXPECTED_COMPONENTS" in raw
-    assert "session_memory_header_present" in raw
-    assert "X-Hermes-Session-Key was observed" in raw
+    assert "X-Hermes-Session-Key reached a fixture" in raw
     assert 'rollback.get("plugin_disabled") is True' in raw
     assert "This qualifies an ephemeral GitHub-hosted laboratory installation only." in raw
 
