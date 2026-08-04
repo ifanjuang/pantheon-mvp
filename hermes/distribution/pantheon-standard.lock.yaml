@@ -23,7 +23,11 @@ components:
     content_digest: sha256:7190e658f3a71e5475dfc5ba6c438210f5bba31719db1c6e285e7ed3f3f00904
     required: true
     enabled_by_default: false
-    capabilities: [reserve-admitted-launch, submit-one-external-run, record-runtime-start, record-runtime-return]
+    capabilities:
+      - reserve-admitted-launch
+      - submit-one-external-run
+      - record-runtime-start
+      - record-runtime-return
     notes: Stateless one-shot external binding; no queue, scheduler, retry worker or provider router.
   - component_id: context-bridge
     kind: context_bridge
@@ -33,7 +37,9 @@ components:
     content_digest: sha256:ebca63061f1d64cd2a62953c93b656e4370f69a336a17c581fb591b0ff568681
     required: true
     enabled_by_default: false
-    capabilities: [read-admitted-context, read-admitted-entity]
+    capabilities:
+      - read-admitted-context
+      - read-admitted-entity
     notes: Reads only the exact active Context Pack identified by the Hermes host session.
   - component_id: runtime-observer
     kind: runtime_observer
@@ -43,15 +49,38 @@ components:
     content_digest: sha256:9af906cb560264ed019c964147627fdd9051efc65807a8f05df9b91b9c056867
     required: true
     enabled_by_default: false
-    capabilities: [observe-runs-api, qualify-tool-surface]
+    capabilities:
+      - observe-runs-api
+      - qualify-tool-surface
     notes: Observation only; compatibility and tool qualification do not activate the binding.
 required_checks:
-  - {check_id: distribution-schema-and-paths, kind: static_structure, required: true, command: pantheon-hermes verify-distribution, expected: The lock validates and every component resolves inside its declared repository.}
-  - {check_id: component-content-digests, kind: artifact_integrity, required: true, command: pantheon-hermes verify-distribution, expected: Every required file and tree digest matches the deterministic distribution contract.}
-  - {check_id: bounded-route-contract, kind: route_contract, required: true, expected: Internal Pantheon routes are stable and the external Hermes Runs API keeps its upstream versioned protocol.}
-  - {check_id: context-plugin-contract, kind: plugin_contract, required: true, expected: The context bridge derives the admission identity from host context and exposes only bounded reads.}
-  - {check_id: composed-read-only-run, kind: end_to_end, required: true, command: pytest -q tests/test_hermes_distribution_acceptance.py, expected: One admitted read-only run launches, reads exact context and returns a candidate without automatic mutation or Evidence admission.}
-  - {check_id: no-authority-collapse, kind: no_authority, required: true, expected: Composition installation observation and acceptance cannot activate a binding or authorize a task.}
+  - check_id: distribution-schema-and-paths
+    kind: static_structure
+    required: true
+    command: pantheon-hermes verify-distribution
+    expected: The lock validates and every component resolves inside its declared repository.
+  - check_id: component-content-digests
+    kind: artifact_integrity
+    required: true
+    command: pantheon-hermes verify-distribution
+    expected: Every required file and tree digest matches the deterministic distribution contract.
+  - check_id: bounded-route-contract
+    kind: route_contract
+    required: true
+    expected: Internal Pantheon routes are stable and the external Hermes Runs API keeps its upstream versioned protocol.
+  - check_id: context-plugin-contract
+    kind: plugin_contract
+    required: true
+    expected: The context bridge derives the admission identity from host context and exposes only bounded reads.
+  - check_id: composed-read-only-run
+    kind: end_to_end
+    required: true
+    command: pytest -q tests/test_hermes_distribution_acceptance.py
+    expected: One admitted read-only run can launch, read exact context and return a candidate without automatic mutation or Evidence admission.
+  - check_id: no-authority-collapse
+    kind: no_authority
+    required: true
+    expected: Composition, installation observation and acceptance cannot activate a binding or authorize a task.
 state:
   installation_state: not_observed
   activation_state: not_activated
