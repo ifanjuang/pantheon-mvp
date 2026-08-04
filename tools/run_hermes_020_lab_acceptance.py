@@ -67,7 +67,7 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
         {
             "gateway": {"multiplex_profiles": True},
             "memory": dict(memory_off),
-            "platform_toolsets": {"api_server": []},
+            "platform_toolsets": {"api_server": [], "cli": []},
             "plugins": {"enabled": [], "disabled": []},
         },
     )
@@ -79,6 +79,12 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
         },
     )
 
+    # Hermes 0.20 evaluates the built-in memory tool independently for each
+    # platform. ``hermes memory status`` resolves the ``cli`` surface, while
+    # the governed Runs API resolves ``api_server``. Both are therefore
+    # explicit and limited to the same reviewed plugin toolset; neither may
+    # inherit the default ``hermes-cli`` composite that contains ``memory``.
+    governed_toolsets = ["pantheon_context"]
     _write_yaml(
         profile_home / "config.yaml",
         {
@@ -89,7 +95,10 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
                 "api_mode": "chat_completions",
             },
             "memory": dict(memory_off),
-            "platform_toolsets": {"api_server": ["pantheon_context"]},
+            "platform_toolsets": {
+                "api_server": list(governed_toolsets),
+                "cli": list(governed_toolsets),
+            },
             "plugins": {
                 "enabled": ["pantheon-context-bridge"],
                 "disabled": [],
@@ -112,6 +121,10 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
         "profile": PROFILE,
         "multiplex_profiles": True,
         "profile_api_prefix": f"/p/{PROFILE}",
+        "platform_toolsets_expected": {
+            "api_server": list(governed_toolsets),
+            "cli": list(governed_toolsets),
+        },
         "memory_axes_expected": {
             "external_provider": "off",
             "built_in_memory_injection": "off",
