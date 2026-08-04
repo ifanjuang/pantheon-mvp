@@ -17,7 +17,7 @@ class VariantEditRequestBody(BaseModel):
     base_version: int = Field(ge=1)
     selection_start: int = Field(ge=0)
     selection_end: int = Field(ge=0)
-    selected_text: str
+    selected_text: str = Field(min_length=1, max_length=500_000)
     requested_by: str = Field(min_length=1, max_length=500)
     requested_variant_count: Literal[1, 2] = 1
     idempotency_key: str = Field(min_length=8, max_length=200)
