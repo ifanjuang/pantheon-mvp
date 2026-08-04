@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   ephemeral-lab:
-    name: build, install, execute and rollback
+    name: install, execute and rollback
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -66,42 +66,50 @@ jobs:
         run: |
           set -euo pipefail
           LAB_ROOT="$RUNNER_TEMP/hermes-020-lab"
-          mkdir -p "$LAB_ROOT/artifacts" "$LAB_ROOT/dist"
+          mkdir -p "$LAB_ROOT/artifacts" "$LAB_ROOT/dist" "$LAB_ROOT/source"
           {
             echo "LAB_ROOT=$LAB_ROOT"
             echo "LAB_ARTIFACTS=$LAB_ROOT/artifacts"
             echo "HERMES_HOME=$LAB_ROOT/hermes-home"
             echo "HERMES_VENV=$LAB_ROOT/venv"
+            echo "HERMES_SOURCE_DIR=$LAB_ROOT/source/hermes-agent-0.20.0"
           } >> "$GITHUB_ENV"
 
-      - name: Build immutable Hermes wheel from signed release commit
+      - name: Create immutable Hermes source artifact from signed release commit
         working-directory: hermes-upstream
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HERMES_RELEASE_COMMIT"
-          python -m pip install --disable-pip-version-check --upgrade build
-          python -m build --wheel --outdir "$LAB_ROOT/dist"
-          WHEEL="$(find "$LAB_ROOT/dist" -maxdepth 1 -name 'hermes_agent-0.20.0-*.whl' -print -quit)"
-          test -n "$WHEEL"
-          DIGEST="$(sha256sum "$WHEEL" | awk '{print $1}')"
-          printf 'sha256:%s\n' "$DIGEST" > "$LAB_ARTIFACTS/hermes-wheel.sha256"
-          printf '%s\n' "$WHEEL" > "$LAB_ARTIFACTS/hermes-wheel-path.txt"
+          SOURCE_ARCHIVE="$LAB_ROOT/dist/hermes-agent-0.20.0-source.tar.gz"
+          git archive --format=tar.gz --prefix=hermes-agent-0.20.0/ \
+            --output "$SOURCE_ARCHIVE" HEAD
+          DIGEST="$(sha256sum "$SOURCE_ARCHIVE" | awk '{print $1}')"
+          printf 'sha256:%s\n' "$DIGEST" > "$LAB_ARTIFACTS/hermes-source-artifact.sha256"
+          printf '%s\n' "$SOURCE_ARCHIVE" > "$LAB_ARTIFACTS/hermes-source-artifact-path.txt"
           git show -s --format='%H%n%G?%n%GS%n%s' HEAD > "$LAB_ARTIFACTS/hermes-source-commit.txt"
+          tar -xzf "$SOURCE_ARCHIVE" -C "$LAB_ROOT/source"
+          test -f "$HERMES_SOURCE_DIR/pyproject.toml"
+          grep -F 'version = "0.20.0"' "$HERMES_SOURCE_DIR/pyproject.toml"
 
-      - name: Install the built Hermes artifact and Pantheon bridge CLI
+      - name: Install the supported exact-source artifact and Pantheon bridge CLI
         working-directory: pantheon-mvp
         shell: bash
         run: |
           set -euo pipefail
+          python -m pip install --disable-pip-version-check --upgrade uv
           python -m venv "$HERMES_VENV"
-          "$HERMES_VENV/bin/python" -m pip install --disable-pip-version-check --upgrade pip
-          WHEEL="$(cat "$LAB_ARTIFACTS/hermes-wheel-path.txt")"
-          "$HERMES_VENV/bin/python" -m pip install "$WHEEL" "aiohttp==3.14.1"
-          "$HERMES_VENV/bin/python" -m pip install -e .
+          uv pip install --python "$HERMES_VENV/bin/python" \
+            -e "$HERMES_SOURCE_DIR" \
+            "aiohttp==3.14.1"
+          uv pip install --python "$HERMES_VENV/bin/python" -e .
           echo "$HERMES_VENV/bin" >> "$GITHUB_PATH"
           "$HERMES_VENV/bin/hermes" --version | tee "$LAB_ARTIFACTS/hermes-version.txt"
           grep -F "$HERMES_VERSION" "$LAB_ARTIFACTS/hermes-version.txt"
+          "$HERMES_VENV/bin/python" - <<'PY'
+          import importlib.metadata
+          assert importlib.metadata.version("hermes-agent") == "0.20.0"
+          PY
 
       - name: Verify the three-component Pantheon distribution lock
         working-directory: pantheon-mvp
