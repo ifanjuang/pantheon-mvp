@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -104,18 +105,76 @@ def test_failed_capture_and_bad_profile_fail_closed() -> None:
 
 
 def test_qualification_requires_matching_profile_and_all_axes_off() -> None:
-    receipt = parse_memory_status(QUALIFIED_OUTPUT, profile="pantheon-governed")
-    qualified = qualify_memory_observation(receipt, expected_profile="pantheon-governed")
+    now = datetime(2026, 8, 4, 18, 0, tzinfo=timezone.utc)
+    receipt = parse_memory_status(
+        QUALIFIED_OUTPUT,
+        profile="pantheon-governed",
+        captured_at=(now - timedelta(seconds=15)).isoformat(),
+    )
+    qualified = qualify_memory_observation(
+        receipt,
+        expected_profile="pantheon-governed",
+        observed_at=now,
+    )
     assert qualified["status"] == "qualified"
     assert qualified["session_memory_key"] == "absent"
+    assert qualified["age_seconds"] == 15.0
 
-    mismatch = qualify_memory_observation(receipt, expected_profile="assistant-personal")
+    mismatch = qualify_memory_observation(
+        receipt,
+        expected_profile="assistant-personal",
+        observed_at=now,
+    )
     assert mismatch["status"] == "not_qualified"
     assert "differs from expected profile" in mismatch["reason"]
 
-    missing = qualify_memory_observation(None, expected_profile="pantheon-governed")
+    missing = qualify_memory_observation(
+        None,
+        expected_profile="pantheon-governed",
+        observed_at=now,
+    )
     assert missing["status"] == "not_evaluated"
     assert missing["session_memory_key"] == "absent"
+
+
+def test_qualification_rejects_stale_future_or_misattributed_receipts() -> None:
+    now = datetime(2026, 8, 4, 18, 0, tzinfo=timezone.utc)
+    cases = (
+        (
+            parse_memory_status(
+                QUALIFIED_OUTPUT,
+                profile="pantheon-governed",
+                captured_at=(now - timedelta(minutes=6)).isoformat(),
+            ),
+            "is stale",
+        ),
+        (
+            parse_memory_status(
+                QUALIFIED_OUTPUT,
+                profile="pantheon-governed",
+                captured_at=(now + timedelta(minutes=1)).isoformat(),
+            ),
+            "in the future",
+        ),
+        (
+            parse_memory_status(
+                QUALIFIED_OUTPUT,
+                profile="pantheon-governed",
+                captured_at=now.isoformat(),
+            ),
+            "unexpected source",
+        ),
+    )
+    cases[2][0]["observation_source"] = "manual_edit"
+
+    for receipt, expected_reason in cases:
+        observed = qualify_memory_observation(
+            receipt,
+            expected_profile="pantheon-governed",
+            observed_at=now,
+        )
+        assert observed["status"] == "not_qualified"
+        assert expected_reason in observed["reason"]
 
 
 def test_qualification_rejects_tampered_or_unsanitized_receipts() -> None:
@@ -127,6 +186,7 @@ def test_qualification_rejects_tampered_or_unsanitized_receipts() -> None:
         ("write_effect", True),
         ("authority_effect", "memory"),
         ("technical_receipt_is_evidence", True),
+        ("captured_at", "not-a-date"),
     )
 
     for field, value in mutations:
