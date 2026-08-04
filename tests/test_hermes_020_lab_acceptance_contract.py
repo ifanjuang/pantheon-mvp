@@ -118,6 +118,33 @@ def test_harness_fails_closed_and_does_not_claim_target_acceptance() -> None:
     assert "This qualifies an ephemeral GitHub-hosted laboratory installation only." in raw
 
 
+def test_fixture_uses_native_progressive_tool_disclosure() -> None:
+    raw = FIXTURE.read_text(encoding="utf-8")
+    ast.parse(raw)
+
+    assert 'BRIDGE_TOOLS = {"tool_search", "tool_describe", "tool_call"}' in raw
+    assert '"name": "pantheon_context_manifest"' in raw
+    assert '"name": "pantheon_context_entity"' in raw
+    assert raw.count('"tool_call"') >= 4
+    assert "progressive tool checks failed" in raw
+    assert "LAB_ACCEPTANCE_COMPLETED: progressive discovery" in raw
+
+
+def test_fixture_honors_the_streaming_provider_contract() -> None:
+    raw = FIXTURE.read_text(encoding="utf-8")
+    ast.parse(raw)
+
+    assert 'request_body.get("stream") is not True' in raw
+    assert 'self.send_header("Content-Type", "text/event-stream")' in raw
+    assert '"object": "chat.completion.chunk"' in raw
+    assert '"finish_reason": finish_reason' in raw
+    assert 'b"data: [DONE]\\n\\n"' in raw
+    assert 'stream_options.get("include_usage") is True' in raw
+    assert "_send_completion(body, response)" in raw
+    assert "_disable_streaming" not in raw
+    assert '"stream": False' not in raw
+
+
 def test_fixture_is_local_bounded_and_exercises_context_refusal() -> None:
     raw = FIXTURE.read_text(encoding="utf-8")
     ast.parse(raw)
@@ -128,7 +155,6 @@ def test_fixture_is_local_bounded_and_exercises_context_refusal() -> None:
     assert "pantheon_context_entity" in raw
     assert "project-outside" in raw
     assert "entity is outside the admitted Context Pack" in raw
-    assert "LAB_ACCEPTANCE_COMPLETED" in raw
     assert '"evidence_admitted": False' in raw
     assert '"result_accepted": False' in raw
     assert '"project_mutated": False' in raw
