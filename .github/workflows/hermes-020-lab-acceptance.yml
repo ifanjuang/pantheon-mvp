@@ -292,14 +292,19 @@ jobs:
         working-directory: pantheon-mvp
         shell: bash
         run: |
-          set +e
-          if [ -x "$HERMES_VENV/bin/hermes" ]; then
-            "$HERMES_VENV/bin/hermes" -p "$PROFILE" plugins disable pantheon-context-bridge \
-              > "$LAB_ARTIFACTS/plugin-disable.txt" 2>&1
+          set -euo pipefail
+          PLUGIN_DIR="$HERMES_HOME/profiles/$PROFILE/plugins/pantheon-context-bridge"
+          PLUGIN_DISABLED=false
+          if [ ! -d "$PLUGIN_DIR" ]; then
+            PLUGIN_DISABLED=true
+          elif "$HERMES_VENV/bin/hermes" -p "$PROFILE" plugins disable pantheon-context-bridge \
+              > "$LAB_ARTIFACTS/plugin-disable.txt" 2>&1; then
+            PLUGIN_DISABLED=true
           fi
+          test "$PLUGIN_DISABLED" = true
+
           if [ -f "$LAB_ROOT/gateway.pid" ]; then
-            kill "$(cat "$LAB_ROOT/gateway.pid")" 2>/dev/null
-            wait "$(cat "$LAB_ROOT/gateway.pid")" 2>/dev/null
+            kill "$(cat "$LAB_ROOT/gateway.pid")" 2>/dev/null || true
           fi
           sleep 1
           if curl --silent --fail --max-time 2 "$HERMES_API_BASE/v1/capabilities" \
@@ -325,9 +330,9 @@ jobs:
         run: |
           set +e
           if [ -f "$LAB_ROOT/fixture.pid" ]; then
-            kill "$(cat "$LAB_ROOT/fixture.pid")" 2>/dev/null
-            wait "$(cat "$LAB_ROOT/fixture.pid")" 2>/dev/null
+            kill "$(cat "$LAB_ROOT/fixture.pid")" 2>/dev/null || true
           fi
+          true
 
       - name: Upload laboratory observations
         if: always()
