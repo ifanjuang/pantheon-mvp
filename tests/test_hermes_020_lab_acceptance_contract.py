@@ -8,6 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "hermes-020-lab-acceptance.yml"
+SEQUENCE = ROOT / "tools" / "run_hermes_020_lab_acceptance.sh"
 HARNESS = ROOT / "tools" / "run_hermes_020_lab_acceptance.py"
 FIXTURE = ROOT / "tools" / "hermes_020_lab_fixture.py"
 DISTRIBUTION = ROOT / "mvp_vertical" / "hermes_distribution.py"
@@ -28,6 +29,8 @@ def test_lab_acceptance_is_explicit_pinned_and_ephemeral() -> None:
     assert env["HERMES_VERSION"] == "0.20.0"
     assert env["PANTHEON_NEXT_REF"] == "db5506668f06bab05b0cad1b244ff19ab17b5f52"
     assert env["HERMES_API_BASE"].endswith("/p/pantheon-governed")
+    assert "bash tools/run_hermes_020_lab_acceptance.sh" in raw
+    assert "tools/run_hermes_020_lab_acceptance.sh" in workflow[True]["pull_request"]["paths"]
     assert "secrets." not in raw
     assert "self-hosted" not in raw
     assert "artifact_digest:" not in raw
@@ -35,9 +38,10 @@ def test_lab_acceptance_is_explicit_pinned_and_ephemeral() -> None:
     assert "status: qualified" not in raw
 
 
-def test_lab_uses_supported_exact_source_artifact_not_a_forbidden_wheel() -> None:
-    raw = WORKFLOW.read_text(encoding="utf-8")
+def test_sequence_uses_supported_exact_source_artifact() -> None:
+    raw = SEQUENCE.read_text(encoding="utf-8")
 
+    assert raw.startswith("#!/usr/bin/env bash\nset -euo pipefail")
     assert "git archive --format=tar.gz" in raw
     assert "hermes-source-artifact.sha256" in raw
     assert 'grep -F \'version = "0.20.0"\'' in raw
@@ -48,48 +52,41 @@ def test_lab_uses_supported_exact_source_artifact_not_a_forbidden_wheel() -> Non
     assert "hermes-wheel" not in raw
 
 
-def test_install_activation_run_and_rollback_remain_separate() -> None:
-    raw = WORKFLOW.read_text(encoding="utf-8")
+def test_install_activation_run_and_rollback_remain_ordered() -> None:
+    raw = SEQUENCE.read_text(encoding="utf-8")
 
-    install = raw.index("plugins install")
-    inspect = raw.index("plugins list")
-    enable = raw.index("plugins enable")
-    observe = raw.index("pantheon-hermes\" observe")
-    launch = raw.index("pantheon-hermes\" launch")
-    reconcile = raw.index("pantheon-hermes\" reconcile")
-    disable = raw.index("plugins disable")
+    install = raw.index('hermes plugins install "$PLUGIN_SOURCE" --no-enable')
+    inspect = raw.index("plugin-files.sha256")
+    enable = raw.index("hermes plugins enable pantheon-context-bridge")
+    observe = raw.index("pantheon-hermes observe")
+    launch = raw.index("pantheon-hermes launch")
+    reconcile = raw.index("pantheon-hermes reconcile")
+    disable = raw.index("hermes plugins disable pantheon-context-bridge", enable)
 
     assert install < inspect < enable < observe < launch < reconcile < disable
-    assert "--no-enable" in raw
     assert raw.count("capture-memory-status") == 3
-    assert "--expected-profile \"$PROFILE\"" in raw
-    assert "--memory-status-receipt" in raw
     assert raw.count("--allowed-tool pantheon_context_manifest") == 2
     assert raw.count("--allowed-tool pantheon_context_entity") == 2
+    assert "default API key unexpectedly authenticated the named profile route" in raw
     assert "profile route remained reachable after gateway rollback" in raw
+    assert "trap cleanup EXIT" in raw
 
 
-def test_governed_profile_closes_cli_and_api_tool_surfaces() -> None:
+def test_gateway_plugin_scope_and_profile_tool_policy_are_distinct() -> None:
     raw = HARNESS.read_text(encoding="utf-8")
+    sequence = SEQUENCE.read_text(encoding="utf-8")
     ast.parse(raw)
 
-    assert '"api_server": list(governed_toolsets)' in raw
-    assert '"cli": list(governed_toolsets)' in raw
-    assert '"platform_toolsets_expected"' in raw
-    assert "default hermes-cli composite" in raw
-
-
-def test_secondary_profile_keeps_key_but_explicitly_disables_port_binding() -> None:
-    raw = HARNESS.read_text(encoding="utf-8")
-    ast.parse(raw)
-
+    assert '"api_server": ["pantheon_context"]' in raw
+    assert '"cli": []' in raw
     assert '"platforms": {' in raw
-    assert '"api_server": {' in raw
     assert '"enabled": False' in raw
     assert '"API_SERVER_KEY": PROFILE_KEY' in raw
-    assert '"profile_api_key_present": True' in raw
-    assert '"profile_port_binding_enabled": False' in raw
-    assert "env-only API_SERVER_ENABLED=false is insufficient" in raw
+    assert '"gateway_plugin_scope": "default_process"' in raw
+    assert '"profile_plugin_copy": False' in raw
+    assert 'PLUGIN_DIR="$HERMES_HOME/plugins/pantheon-context-bridge"' in sequence
+    assert 'hermes plugins install "$PLUGIN_SOURCE" --no-enable' in sequence
+    assert 'hermes -p "$PROFILE" plugins install' not in sequence
 
 
 def test_distribution_receipt_exposes_only_verified_composition_fields() -> None:
@@ -114,7 +111,6 @@ def test_harness_fails_closed_and_does_not_claim_target_acceptance() -> None:
     assert '"result_accepted": False' in raw
     assert '"evidence_admitted": False' in raw
     assert '"source_artifact_digest": source_digest' in raw
-    assert "hermes-wheel" not in raw
     assert "EXPECTED_TOOLS" in raw
     assert "EXPECTED_COMPONENTS" in raw
     assert "X-Hermes-Session-Key reached a fixture" in raw
