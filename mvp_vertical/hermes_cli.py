@@ -10,17 +10,18 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .hermes_distribution import DistributionLockError, validate
-from .hermes_memory_observation import (
-    HermesMemoryObservationError,
-    capture_memory_status,
-)
 from .hermes_run_binding import (
     ExternalHermesRunBinding,
     HermesRunBindingError,
     HermesRunsHttpClient,
     PantheonRunBridgeClient,
 )
-from .hermes_runs_observer import HermesRunsApiObserver, HermesRunsObservationError
+from .hermes_runs_observer import (
+    HermesMemoryObservationError,
+    HermesRunsApiObserver,
+    HermesRunsObservationError,
+    capture_memory_status,
+)
 
 
 class HermesCliError(ValueError):
