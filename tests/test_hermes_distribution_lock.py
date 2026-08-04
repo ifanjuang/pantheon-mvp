@@ -1,15 +1,29 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import importlib.util
 from pathlib import Path
+import sys
 
 import yaml
-
-from tools.check_hermes_distribution_lock import _route_contract, evaluate
 
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "hermes" / "distribution" / "pantheon-standard.lock.yaml"
+TOOL = ROOT / "tools" / "check_hermes_distribution_lock.py"
+
+
+def _load_tool():
+    name = "pantheon_hermes_distribution_lock_checker"
+    spec = importlib.util.spec_from_file_location(name, TOOL)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+CHECKER = _load_tool()
 
 
 def _manifest() -> dict:
@@ -36,7 +50,7 @@ def test_distribution_lock_keeps_required_components_separate_and_default_off(tm
     manifest = _manifest()
     next_root = _fake_next_root(tmp_path, manifest)
 
-    assert evaluate(
+    assert CHECKER.evaluate(
         manifest,
         repository_roots={"pantheon-mvp": ROOT, "Pantheon-Next": next_root},
     ) == []
@@ -55,7 +69,7 @@ def test_distribution_route_contract_matches_current_adapter_sources(tmp_path) -
     manifest = _manifest()
     next_root = _fake_next_root(tmp_path, manifest)
 
-    assert _route_contract(
+    assert CHECKER._route_contract(
         manifest,
         {"pantheon-mvp": ROOT, "Pantheon-Next": next_root},
     ) == []
@@ -69,7 +83,7 @@ def test_distribution_validator_rejects_authority_and_default_enablement(tmp_pat
     invalid["state"]["activation_state"] = "activated"
     invalid["authority"]["dispatches_runs"] = True
 
-    errors = evaluate(
+    errors = CHECKER.evaluate(
         invalid,
         repository_roots={"pantheon-mvp": ROOT, "Pantheon-Next": next_root},
     )
