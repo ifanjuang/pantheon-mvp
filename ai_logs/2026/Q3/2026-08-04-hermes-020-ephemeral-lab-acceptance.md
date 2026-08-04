@@ -13,13 +13,30 @@ Hermes upstream commit
 3c27eb6234bf91b8ceee9e9071591b31e9b148cb
 
 Pantheon-Next authority
- db5506668f06bab05b0cad1b244ff19ab17b5f52
+db5506668f06bab05b0cad1b244ff19ab17b5f52
 
 pantheon-mvp implementation baseline
 898eb21a4cb48f8302cb32f02c3240a9867df43e
 ```
 
-The upstream source declares package version `0.20.0`. The acceptance builds a wheel from the exact commit, records its SHA-256 digest, installs that wheel in a fresh Python 3.12 virtual environment and executes the installed `hermes` command.
+The upstream source declares package version `0.20.0`.
+
+## Packaging fact observed on the first live run
+
+Hermes `0.20.0` deliberately refuses wheel and sdist builds:
+
+```text
+Building wheels or sdists for hermes-agent is not supported.
+Hermes is distributed via the shell installer, Docker image, or Nix.
+For development, use an editable source installation.
+```
+
+The laboratory therefore does not invent an unsupported wheel. It creates a deterministic `git archive` from the exact release commit, records the archive SHA-256 digest, extracts it into the ephemeral runner and installs that exact source with the upstream-supported editable `uv pip install -e` path.
+
+```text
+source archive digest != production installation digest
+editable source installed in lab != production installed
+```
 
 ## Scope
 
@@ -28,6 +45,7 @@ The workflow creates only an ephemeral GitHub-hosted laboratory environment:
 ```text
 fresh HERMES_HOME
 fresh Python virtual environment
+exact digest-bound source archive
 one default multiplexing gateway
 one pantheon-governed profile
 one locally installed Pantheon context plugin
@@ -41,9 +59,10 @@ No repository secret, cloud model key, production endpoint or self-hosted runner
 ## Acceptance path
 
 ```text
-build exact 0.20.0 wheel
-→ record wheel digest
-→ install wheel
+archive exact 0.20.0 release source
+→ record source archive digest
+→ install exact source through supported editable path
+→ execute the installed Hermes 0.20.0 CLI
 → verify three-component Pantheon lock
 → create isolated profile
 → configure all memory axes off
@@ -64,10 +83,27 @@ build exact 0.20.0 wheel
 → verify profile route is unreachable
 ```
 
+## Verified-distribution receipt
+
+The distribution validator now returns a bounded projection of the components whose paths and digests were actually checked:
+
+```text
+component_id
+kind
+source_repository
+path
+digest_mode
+content_digest
+required
+enabled_by_default
+```
+
+This technical projection does not alter the lock, install a component, activate a binding or authorize a task.
+
 ## Boundaries
 
 ```text
-wheel installed != production installed
+source installed in laboratory != production installed
 lab route qualified != agency route qualified
 synthetic run completed != result accepted
 runtime return recorded != Evidence admitted
@@ -90,7 +126,7 @@ evidence_admitted = false
 The workflow fails closed when any of these is observed:
 
 - Hermes version differs from `0.20.0`;
-- wheel digest is absent;
+- exact source archive digest is absent;
 - distribution composition differs from the three reviewed components;
 - profile route differs from `/p/pantheon-governed`;
 - any memory axis is active or unknown;
@@ -99,6 +135,7 @@ The workflow fails closed when any of these is observed:
 - the outside entity is not refused;
 - the binding retries or selects a model/provider;
 - the result is accepted, Evidence is admitted or a Project is mutated;
+- the plugin is not disabled during rollback;
 - the gateway route remains reachable after rollback.
 
 ## Remaining production proof
