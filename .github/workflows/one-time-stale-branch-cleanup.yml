@@ -1,0 +1,78 @@
+name: One-time reviewed stale branch cleanup
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-stale-branch-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.head_ref == 'chore/repository-branch-cleanup-mvp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete reviewed stale branches and cleanup branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          branches=(
+            "agent/cockpit-five-spaces"
+            "agent/cockpit-five-spaces-main-base"
+            "agent/cockpit-five-spaces-reconciled"
+            "agent/cockpit-home-design"
+            "agent/cockpit-integration-final"
+            "agent/cockpit-merge-reconciled"
+            "agent/cockpit-rebase-current-main"
+            "agent/cockpit-rebase-current-main-fresh"
+            "agent/cockpit-rebase-proof-final"
+            "agent/cockpit-reconcile-current"
+            "agent/cockpit-reconcile-current-fixed"
+            "agent/cockpit-static-demo"
+            "agent/hermes-run-launch-junction"
+            "agent/hermes-v019-runs-observer"
+            "agent/native-radix-cockpit-renderer"
+            "agent/native-radix-cockpit-renderer-v2"
+            "agent/optional-paperless-capability"
+            "agent/runtime-profile-observations"
+            "agent/schema-driven-child-collections"
+            "agent/schema-driven-child-collections-final"
+            "agent/schema-driven-child-collections-final2"
+            "agent/schema-driven-child-collections-final3"
+            "agent/spatial-new-information"
+            "agent/vendor-radix-icons-trigger"
+            "claude/analyze-dependent-repos-optimization-x1udnu"
+            "claude/d3js-maps-planning-9mc5bb"
+            "claude/pantheon-repos-audit-s46afb"
+            "feat/document-inbox-slice"
+            "feature/cockpit-v3-real-collections"
+            "feature/demo-ifja-universe"
+            "fix/document-chunk-inspection-followup"
+            "fix/document-chunk-inspector-guards"
+            "refactor/cockpit-data-loader"
+            "refactor/cockpit-neutral-entrypoints"
+            "refactor/cross-repo-architecture-audit"
+            "refactor/python-architecture-inventory"
+            "tool-card-cockpit"
+            "chore/repository-branch-cleanup-mvp"
+          )
+
+          for branch in "${branches[@]}"; do
+            if [[ "$branch" == "main" ]]; then
+              echo "Refusing protected branch: $branch" >&2
+              exit 1
+            fi
+            echo "Deleting $branch"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+          done
