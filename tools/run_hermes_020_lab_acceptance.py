@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Operator-facing harness for an ephemeral Hermes Agent 0.20.0 lab acceptance.
+"""Bounded operator harness for an ephemeral Hermes Agent 0.20.0 acceptance.
 
-The harness configures only an isolated HERMES_HOME supplied by the caller,
-waits for bounded local HTTP surfaces, and validates the technical receipts
-created by the real Hermes and Pantheon bridge CLIs. It does not install a
-production service, retain secrets, activate future tasks, or update the
-candidate distribution lock.
+The harness writes only an isolated HERMES_HOME, waits for local HTTP surfaces,
+and validates technical receipts. It never configures a production host,
+activates future tasks, admits Evidence, or updates the distribution state.
 """
 
 from __future__ import annotations
@@ -42,19 +40,21 @@ def _write_yaml(path: Path, value: dict[str, Any]) -> None:
 
 def _write_env(path: Path, values: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    rendered = "".join(f"{key}={value}\n" for key, value in values.items())
-    path.write_text(rendered, encoding="utf-8")
+    path.write_text(
+        "".join(f"{key}={value}\n" for key, value in values.items()),
+        encoding="utf-8",
+    )
     path.chmod(0o600)
 
 
 def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
-    """Write an isolated multiplexed default/profile configuration."""
+    """Create a default listener and one non-port-binding governed profile."""
 
     hermes_home = hermes_home.resolve()
     profile_home = hermes_home / "profiles" / PROFILE
     if not profile_home.is_dir():
         raise LabAcceptanceError(
-            f"profile directory does not exist; run Hermes profile create first: {profile_home}"
+            f"profile directory does not exist; create it first: {profile_home}"
         )
 
     memory_off = {
@@ -74,16 +74,10 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
     _write_env(
         hermes_home / ".env",
         {
-            "API_SERVER_ENABLED": "true",
             "API_SERVER_KEY": DEFAULT_KEY,
         },
     )
 
-    # Hermes 0.20 evaluates the built-in memory tool independently for each
-    # platform. ``hermes memory status`` resolves the ``cli`` surface, while
-    # the governed Runs API resolves ``api_server``. Both are therefore
-    # explicit and limited to the same reviewed plugin toolset; neither may
-    # inherit the default ``hermes-cli`` composite that contains ``memory``.
     governed_toolsets = ["pantheon_context"]
     _write_yaml(
         profile_home / "config.yaml",
@@ -95,9 +89,21 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
                 "api_mode": "chat_completions",
             },
             "memory": dict(memory_off),
+            # Hermes 0.20 evaluates the CLI and API tool surfaces separately.
+            # Both must be explicit so the default hermes-cli composite cannot
+            # silently re-enable the built-in memory tool.
             "platform_toolsets": {
                 "api_server": list(governed_toolsets),
                 "cli": list(governed_toolsets),
+            },
+            # The named profile needs its own API key for /p/<profile>/ auth,
+            # but the default profile owns the only listener in multiplex mode.
+            # Hermes 0.20 preserves the key while respecting this explicit
+            # false marker; an env-only API_SERVER_ENABLED=false is insufficient.
+            "platforms": {
+                "api_server": {
+                    "enabled": False,
+                },
             },
             "plugins": {
                 "enabled": ["pantheon-context-bridge"],
@@ -108,11 +114,6 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
     _write_env(
         profile_home / ".env",
         {
-            # The default profile owns the only HTTP listener in multiplex
-            # mode. The named profile remains explicitly disabled as a
-            # port-binding platform while retaining its own authentication
-            # key for the shared /p/<profile>/ route.
-            "API_SERVER_ENABLED": "false",
             "API_SERVER_KEY": PROFILE_KEY,
             "PANTHEON_HERMES_API_BASE": fixture_url.rstrip("/"),
             "PANTHEON_HERMES_API_KEY": PANTHEON_KEY,
@@ -126,6 +127,7 @@ def configure(hermes_home: Path, fixture_url: str) -> dict[str, Any]:
         "profile": PROFILE,
         "multiplex_profiles": True,
         "profile_api_prefix": f"/p/{PROFILE}",
+        "profile_api_key_present": True,
         "profile_port_binding_enabled": False,
         "platform_toolsets_expected": {
             "api_server": list(governed_toolsets),
@@ -149,7 +151,7 @@ def _request_json(url: str, *, bearer: str | None = None) -> dict[str, Any]:
     if bearer:
         headers["Authorization"] = f"Bearer {bearer}"
     request = Request(url, headers=headers)
-    with urlopen(request, timeout=5) as response:  # nosec B310: lab loopback URLs only
+    with urlopen(request, timeout=5) as response:  # nosec B310: loopback lab only
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict):
         raise LabAcceptanceError(f"{url} did not return an object")
@@ -176,7 +178,11 @@ def wait_run(base_url: str, api_key: str, run_id: str, timeout: float) -> dict[s
             base_url.rstrip("/") + f"/v1/runs/{run_id}",
             bearer=api_key,
         )
-        if str(last.get("status") or "").lower() in {"completed", "failed", "cancelled"}:
+        if str(last.get("status") or "").lower() in {
+            "completed",
+            "failed",
+            "cancelled",
+        }:
             return last
         time.sleep(0.5)
     raise LabAcceptanceError(f"Hermes run did not reach a terminal state: {last}")
@@ -197,10 +203,14 @@ def _require(condition: bool, message: str) -> None:
         raise LabAcceptanceError(message)
 
 
+def _require_false(value: dict[str, Any], key: str, message: str) -> None:
+    _require(value.get(key) is False, message)
+
+
 def validate(artifacts: Path) -> dict[str, Any]:
     artifacts = artifacts.resolve()
     version = (artifacts / "hermes-version.txt").read_text(encoding="utf-8").strip()
-    source_artifact_digest = (
+    source_digest = (
         artifacts / "hermes-source-artifact.sha256"
     ).read_text(encoding="utf-8").strip()
     distribution = _load_json(artifacts / "distribution-verification.json")
@@ -213,118 +223,118 @@ def validate(artifacts: Path) -> dict[str, Any]:
     rollback = _load_json(artifacts / "rollback.json")
 
     _require("0.20.0" in version, f"unexpected Hermes version: {version}")
-    _require(
-        SHA256_RE.fullmatch(source_artifact_digest) is not None,
-        "source artifact digest is invalid",
-    )
-    _require(
-        distribution.get("status") == "candidate",
-        "distribution lock was not verified as candidate",
-    )
+    _require(SHA256_RE.fullmatch(source_digest) is not None, "invalid source digest")
+
     components = distribution.get("components") or []
-    _require(
-        {str(item.get("component_id")) for item in components if isinstance(item, dict)}
-        == EXPECTED_COMPONENTS,
-        "verified distribution component identities differ from the standard composition",
-    )
+    component_ids = {
+        str(item.get("component_id"))
+        for item in components
+        if isinstance(item, dict)
+    }
+    _require(distribution.get("status") == "candidate", "lock is not candidate")
+    _require(component_ids == EXPECTED_COMPONENTS, "distribution components differ")
     _require(
         distribution.get("verified_component_digest_count") == 3,
-        "not all standard component digests were verified",
+        "component digests were not all verified",
     )
-    _require(
-        distribution.get("authority_effect") == "none",
-        "distribution verification reported an authority effect",
-    )
+    _require(distribution.get("authority_effect") == "none", "lock claims authority")
 
-    _require(memory.get("status") == "qualified", "fresh launch memory receipt is not qualified")
-    for key in (
+    _require(memory.get("status") == "qualified", "launch memory is not qualified")
+    for axis in (
         "external_provider",
         "built_in_memory_injection",
         "built_in_user_profile_injection",
         "memory_tool",
     ):
-        _require(memory.get(key) == "off", f"memory axis is active or unknown: {key}")
-    _require(memory.get("raw_output_retained") is False, "raw memory output was retained")
+        _require(memory.get(axis) == "off", f"memory axis active or unknown: {axis}")
+    _require_false(memory, "raw_output_retained", "raw memory output was retained")
 
-    _require(observation.get("runs_api_status") == "compatible", "Runs API is not compatible")
-    _require(observation.get("safety_status") == "qualified", "runtime posture is not qualified")
+    _require(observation.get("runs_api_status") == "compatible", "Runs API incompatible")
+    _require(observation.get("safety_status") == "qualified", "runtime not qualified")
     _require(
         observation.get("profile_surface", {}).get("observed_profile") == PROFILE,
-        "wrong profile route observed",
+        "wrong profile route",
     )
     _require(
-        observation.get("memory_posture", {}).get("status") == "qualified",
-        "memory posture is not qualified",
+        observation.get("toolsets_contract", {}).get("object") == "list",
+        "official toolset envelope was not observed",
+    )
+    _require(
+        observation.get("toolsets_contract", {}).get("platform") == "api_server",
+        "wrong toolset platform",
     )
     tool_surface = observation.get("tool_surface") or {}
+    _require(set(tool_surface.get("active_tools") or []) == EXPECTED_TOOLS, "wrong tools")
     _require(
-        set(tool_surface.get("active_tools") or []) == EXPECTED_TOOLS,
-        "unexpected active Hermes tools",
+        observation.get("memory_posture", {}).get("status") == "qualified",
+        "memory posture not qualified",
     )
-    _require(observation.get("session_memory_header_sent") is False, "observer sent a memory header")
+    _require_false(observation, "session_memory_header_sent", "observer sent memory header")
 
-    _require(launch.get("runtime_submission_performed") is True, "Hermes run was not submitted")
-    _require(launch.get("runtime_start_recorded") is True, "Pantheon start was not recorded")
-    _require(launch.get("session_id") == ADMISSION_ID, "launch session/admission correlation failed")
-    _require(launch.get("session_memory_header_sent") is False, "launch sent a memory header")
-    _require(launch.get("automatic_retry_performed") is False, "launch retried automatically")
-    _require(launch.get("provider_routing_performed") is False, "binding routed a provider")
-    _require(launch.get("model_override_performed") is False, "binding overrode the model")
+    _require(launch.get("runtime_submission_performed") is True, "run not submitted")
+    _require(launch.get("runtime_start_recorded") is True, "start not recorded")
+    _require(launch.get("session_id") == ADMISSION_ID, "session/admission mismatch")
+    _require_false(launch, "session_memory_header_sent", "launch sent memory header")
+    _require_false(launch, "automatic_retry_performed", "launch retried")
+    _require_false(launch, "provider_routing_performed", "binding routed provider")
+    _require_false(launch, "model_override_performed", "binding overrode model")
 
-    _require(terminal.get("status") == "completed", f"Hermes run did not complete: {terminal}")
+    _require(terminal.get("status") == "completed", f"run not completed: {terminal}")
     _require(
         "LAB_ACCEPTANCE_COMPLETED" in str(terminal.get("output") or ""),
-        "synthetic run did not complete the context checks",
+        "context checks did not complete",
     )
 
-    _require(reconciliation.get("pantheon_return_recorded") is True, "Pantheon return was not recorded")
     _require(
-        reconciliation.get("technical_receipt_is_evidence") is False,
-        "technical receipt was misclassified as Evidence",
+        reconciliation.get("pantheon_return_recorded") is True,
+        "return not recorded",
     )
-    _require(reconciliation.get("scheduler_effect") is False, "reconciliation introduced scheduler effect")
-    _require(reconciliation.get("retry_effect") is False, "reconciliation introduced retry effect")
+    _require_false(
+        reconciliation,
+        "technical_receipt_is_evidence",
+        "technical receipt classified as Evidence",
+    )
+    _require_false(reconciliation, "scheduler_effect", "scheduler effect detected")
+    _require_false(reconciliation, "retry_effect", "retry effect detected")
     recorded = reconciliation.get("recorded") or {}
-    _require(recorded.get("result_accepted") is False, "fixture accepted the runtime result")
-    _require(recorded.get("evidence_admitted") is False, "fixture admitted Evidence")
-    _require(recorded.get("project_mutated") is False, "fixture mutated a Project")
+    _require_false(recorded, "result_accepted", "result was accepted")
+    _require_false(recorded, "evidence_admitted", "Evidence was admitted")
+    _require_false(recorded, "project_mutated", "Project was mutated")
 
     reads = fixture_state.get("pantheon_reads") or []
-    _require(any(path.endswith("/active-context") for path in reads), "manifest was not read")
-    _require(any(path.endswith("/project/project-lab") for path in reads), "admitted entity was not read")
+    _require(any(path.endswith("/active-context") for path in reads), "manifest not read")
+    _require(any(path.endswith("/project/project-lab") for path in reads), "entity not read")
     _require(
         any(path.endswith("/project/project-outside") for path in reads),
-        "outside entity refusal was not exercised",
+        "outside entity refusal not exercised",
     )
-    _require(
-        int(fixture_state.get("provider_calls") or 0) >= 4,
-        "model loop did not exercise all tool steps",
-    )
+    _require(int(fixture_state.get("provider_calls") or 0) >= 4, "tool loop incomplete")
 
-    journal_path = artifacts / "fixture-journal.jsonl"
     journal = [
         json.loads(line)
-        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        for line in (artifacts / "fixture-journal.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     ]
     _require(journal, "fixture journal is empty")
     _require(
         not any(item.get("session_memory_header_present") for item in journal),
-        "X-Hermes-Session-Key was observed by a lab service",
+        "X-Hermes-Session-Key reached a fixture",
     )
 
-    _require(rollback.get("plugin_disabled") is True, "plugin rollback was not verified")
-    _require(rollback.get("gateway_stopped") is True, "gateway rollback was not verified")
+    _require(rollback.get("plugin_disabled") is True, "plugin rollback failed")
+    _require(rollback.get("gateway_stopped") is True, "gateway rollback failed")
     _require(
         rollback.get("profile_route_unreachable") is True,
-        "profile route remained reachable after rollback",
+        "profile route remained reachable",
     )
 
     summary = {
         "kind": "hermes_020_ephemeral_lab_acceptance",
         "status": "passed",
         "hermes_version": "0.20.0",
-        "source_artifact_digest": source_artifact_digest,
+        "source_artifact_digest": source_digest,
         "profile": PROFILE,
         "profile_route": f"/p/{PROFILE}",
         "distribution_components": sorted(EXPECTED_COMPONENTS),
@@ -342,7 +352,7 @@ def validate(artifacts: Path) -> dict[str, Any]:
         "evidence_admitted": False,
         "limits": [
             "This qualifies an ephemeral GitHub-hosted laboratory installation only.",
-            "The agency/NAS installation, OpenWebUI configuration and production rollback remain unobserved.",
+            "The agency/NAS installation, OpenWebUI path and production rollback remain unobserved.",
             "The inference provider and Pantheon API were deterministic local fixtures.",
         ],
     }
@@ -357,27 +367,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
 
-    cfg = sub.add_parser("configure")
-    cfg.add_argument("--hermes-home", type=Path, required=True)
-    cfg.add_argument("--fixture-url", required=True)
-    cfg.add_argument("--output", type=Path)
+    configure_parser = sub.add_parser("configure")
+    configure_parser.add_argument("--hermes-home", type=Path, required=True)
+    configure_parser.add_argument("--fixture-url", required=True)
+    configure_parser.add_argument("--output", type=Path)
 
-    wait = sub.add_parser("wait-http")
-    wait.add_argument("--url", required=True)
-    wait.add_argument("--bearer")
-    wait.add_argument("--timeout", type=float, default=60.0)
-    wait.add_argument("--output", type=Path)
+    wait_parser = sub.add_parser("wait-http")
+    wait_parser.add_argument("--url", required=True)
+    wait_parser.add_argument("--bearer")
+    wait_parser.add_argument("--timeout", type=float, default=60.0)
+    wait_parser.add_argument("--output", type=Path)
 
-    run = sub.add_parser("wait-run")
-    run.add_argument("--base-url", required=True)
-    run.add_argument("--api-key", required=True)
-    run.add_argument("--run-id", required=True)
-    run.add_argument("--timeout", type=float, default=120.0)
-    run.add_argument("--output", type=Path, required=True)
+    run_parser = sub.add_parser("wait-run")
+    run_parser.add_argument("--base-url", required=True)
+    run_parser.add_argument("--api-key", required=True)
+    run_parser.add_argument("--run-id", required=True)
+    run_parser.add_argument("--timeout", type=float, default=120.0)
+    run_parser.add_argument("--output", type=Path, required=True)
 
-    check = sub.add_parser("validate")
-    check.add_argument("--artifacts", type=Path, required=True)
-
+    validate_parser = sub.add_parser("validate")
+    validate_parser.add_argument("--artifacts", type=Path, required=True)
     return parser
 
 
@@ -385,26 +394,24 @@ def _emit(payload: dict[str, Any], output: Path | None) -> None:
     rendered = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
     if output is None:
         print(rendered, end="")
-    else:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(rendered, encoding="utf-8")
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered, encoding="utf-8")
 
 
 def main() -> int:
     args = build_parser().parse_args()
     if args.command == "configure":
         _emit(configure(args.hermes_home, args.fixture_url), args.output)
-        return 0
-    if args.command == "wait-http":
+    elif args.command == "wait-http":
         _emit(wait_http(args.url, args.bearer, args.timeout), args.output)
-        return 0
-    if args.command == "wait-run":
+    elif args.command == "wait-run":
         _emit(wait_run(args.base_url, args.api_key, args.run_id, args.timeout), args.output)
-        return 0
-    if args.command == "validate":
+    elif args.command == "validate":
         _emit(validate(args.artifacts), None)
-        return 0
-    raise LabAcceptanceError(f"unknown command: {args.command}")
+    else:  # pragma: no cover
+        raise LabAcceptanceError(f"unsupported command: {args.command}")
+    return 0
 
 
 if __name__ == "__main__":
