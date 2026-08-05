@@ -70,3 +70,5 @@ jobs:
           git add mvp_vertical/work_issues.py tests/test_work_issues.py .github/workflows/apply-work-issue-close-reason-fix.yml
           git commit -m "fix(work): validate close reason before PostgreSQL"
           git push origin HEAD:fix/work-issue-close-reason-validation
+          git push origin --delete agent/execution-result-persistence-clean || true
+          git push origin --delete agent/mobile-knowledge-variant-review || true
