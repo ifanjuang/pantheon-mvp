@@ -4,13 +4,16 @@ on:
   push:
     branches:
       - fix/work-issue-close-reason-validation
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply-fix:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'fix/work-issue-close-reason-validation'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,9 +68,10 @@ jobs:
         shell: bash
         run: |
           rm .github/workflows/apply-work-issue-close-reason-fix.yml
+          rm -f .pantheon-work-issue-fix-trigger
           git config user.name "pantheon-maintenance-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add mvp_vertical/work_issues.py tests/test_work_issues.py .github/workflows/apply-work-issue-close-reason-fix.yml
+          git add mvp_vertical/work_issues.py tests/test_work_issues.py .github/workflows/apply-work-issue-close-reason-fix.yml .pantheon-work-issue-fix-trigger
           git commit -m "fix(work): validate close reason before PostgreSQL"
           git push origin HEAD:fix/work-issue-close-reason-validation
           git push origin --delete agent/execution-result-persistence-clean || true
