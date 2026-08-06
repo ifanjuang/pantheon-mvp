@@ -9,14 +9,18 @@ COCKPIT = ROOT / "mvp_vertical" / "cockpit"
 BOOTSTRAP = COCKPIT / "live_bootstrap.js"
 LOADER = COCKPIT / "data" / "cockpit_data_loader.js"
 PROJECTION = COCKPIT / "projection" / "cockpit_projection.js"
+DECISION_PROJECTION = COCKPIT / "projection" / "decision_request_projection.js"
 
 
 def test_data_loader_is_loaded_before_projection() -> None:
     bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
     loader = '"data/cockpit_data_loader.js"'
     projection = '"projection/cockpit_projection.js"'
+    decision_projection = '"projection/decision_request_projection.js"'
 
     assert loader in bootstrap
+    assert decision_projection in bootstrap
+    assert bootstrap.index(decision_projection) < bootstrap.index(loader)
     assert bootstrap.index(loader) < bootstrap.index(projection)
 
 
@@ -35,11 +39,13 @@ def test_data_loader_has_a_bounded_read_only_role() -> None:
 
     for endpoint in (
         "../agency/projects?limit=200",
+        "../decision-requests?status=pending&limit=200",
         "../agency/schema/project",
         "../agency/projects/${encoded}/information",
         "../projects/${encoded}/documents",
         "../projects/${encoded}/knowledge",
         "../work/scopes/project/${encoded}/issues",
+        "../agency/projects/${encoded}/decision-requests?status=pending&limit=100",
         "../agency/projects/${encoded}/change-candidates?status=pending_review&limit=100",
     ):
         assert endpoint in source
@@ -63,8 +69,8 @@ def test_data_loader_has_a_bounded_read_only_role() -> None:
         assert forbidden not in source
 
 
-def test_data_loader_and_projection_parse_in_node() -> None:
-    for path in (LOADER, PROJECTION):
+def test_data_loader_and_projections_parse_in_node() -> None:
+    for path in (LOADER, PROJECTION, DECISION_PROJECTION):
         subprocess.run(["node", "--check", str(path)], check=True, capture_output=True, text=True)
 
 

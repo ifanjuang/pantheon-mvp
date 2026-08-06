@@ -1,0 +1,10 @@
+{
+  "source_repository": "ifanjuang/Pantheon-Next",
+  "source_path": "schemas/decision_request.schema.yaml",
+  "source_pull_request": 551,
+  "upstream_commit": "c25d234c56aa314d4d7112c554cb3ede7404d6ef",
+  "upstream_blob_sha": "751a3d4baeb87462d00e0d4eb94e6f9932f43ad0",
+  "sha256": "e39108588a47c831795d5337bf4fda9c738894095db2d22545bdb143309488e2",
+  "posture": "vendored-reference",
+  "authority_transfer": false
+}
