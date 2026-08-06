@@ -25,12 +25,27 @@ chunking, and to bind every chunk to a fragment.
 ## Why it cannot be adopted now
 
 `knowledge.validate_document_knowledge_slice` runs on **every publish and every
-revise** (`knowledge.py:325` and `knowledge.py:385`). This repository produces no
-`document_structure` and no `fragment_ref`. Re-vendoring the new schema would
-therefore refuse every Knowledge publication.
+revise** (`knowledge.py:325` and `knowledge.py:385`), and
+`build_document_knowledge_slice` emits neither `document_structure` nor a
+`fragment_ref` on its chunks. Re-vendoring the new schema would therefore refuse
+every Knowledge publication.
 
-This is tranche H (Anatomie) arriving upstream ahead of the consumer. The decision
-is to defer, and it is not a close call.
+**Correction, same date.** This entry first recorded the blocker as "tranche H
+(Anatomie)" and stated that the repository "produces no `document_structure` and no
+`fragment_ref`". Both were wrong, and the second materially so:
+
+- tranche H is *Project* Anatomy — sites, parcels, buildings, levels, zones,
+  spaces, elements (plan §14). It has nothing to do with structuring a document
+  before chunking;
+- `document_structure.project_document_structure()` already emits exactly the
+  required shape — `structure_id`, `document_ref`, `extraction_ref`, `status`,
+  `native_units`, `fragments`, `created_at` — and `primary_fragment_ref()` already
+  resolves the chunk binding. Both have existed since `8e5ba8f` (#229). They are
+  reachable from the read API and from their own tests, and from nothing else.
+
+So the deferral holds — the slice really would fail validation today — but the
+remaining work is **wiring an existing projection into the slice builder**, not
+building a capability, and it is not waiting on any tranche.
 
 ## Why the deferral needed a mechanism
 
