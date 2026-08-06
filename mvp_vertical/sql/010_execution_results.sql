@@ -92,6 +92,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
          WHERE conrelid = 'execution_result_items'::regclass
+           AND conname = 'execution_result_items_result_kind_check'
            AND pg_get_constraintdef(oid) LIKE '%project_claim_candidate%'
     ) THEN
         ALTER TABLE execution_result_items
@@ -108,6 +109,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
          WHERE conrelid = 'execution_result_review_dispositions'::regclass
+           AND conname = 'execution_result_review_dispositions_disposition_check'
            AND pg_get_constraintdef(oid) LIKE '%accepted_for_claim%'
     ) THEN
         ALTER TABLE execution_result_review_dispositions
@@ -121,6 +123,11 @@ BEGIN
     END IF;
 END;
 $$;
+
+ALTER TABLE execution_result_items
+    VALIDATE CONSTRAINT execution_result_items_result_kind_check;
+ALTER TABLE execution_result_review_dispositions
+    VALIDATE CONSTRAINT execution_result_review_dispositions_disposition_check;
 
 -- CURRENT_TIMESTAMP is the transaction start time, so events written in one
 -- transaction share an occurred_at and cannot be ordered by it. clock_timestamp()
