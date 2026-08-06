@@ -17,6 +17,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from . import vendor_contracts
+
 MIGRATION = Path(__file__).resolve().parent / "sql" / "012_information_card_projection.sql"
 MEDIA_TYPES = {"email", "pdf", "text", "table", "image", "photo", "audio", "video", "docx", "xlsx", "ifc", "link", "other"}
 LINK_ROLES = {"primary", "supporting", "attachment"}
@@ -277,3 +279,62 @@ def remove_document_link(conn: psycopg.Connection, *, information_id: str, docum
         snapshot = get_projection(conn, information_id)
         _record_event(conn, information_id=information_id, event_type="document_link_removed", actor=actor, actor_kind=actor_kind, expected_revision=expected_revision, resulting_revision=resulting_revision, idempotency_key=idempotency_key, payload_digest=digest, payload=payload, snapshot=snapshot)
         return snapshot
+
+
+def contract_projection(conn: psycopg.Connection, information_id: str) -> dict[str, Any]:
+    """Project one Information onto the vendored Information Card Projection contract.
+
+    `get_projection` returns this repository's working shape: the Information row,
+    a nested `projection` block and derived fields. The contract is flat and names
+    some fields differently. Mapping here keeps the two free to move independently
+    and makes conformance checkable rather than asserted by a matching filename.
+
+    Read-only. Projecting transfers no Document authority and infers no
+    authorization; both are reported as false by `get_projection` and neither is
+    part of the contract payload.
+    """
+    projected = get_projection(conn, information_id)
+    information = projected["information"]
+    block = projected["projection"]
+
+    document_refs = [
+        {
+            key: link[key]
+            for key in ("document_id", "role", "observed_version", "observed_digest")
+            if link.get(key) is not None or key == "document_id"
+        }
+        for link in block.get("document_refs") or []
+    ]
+
+    # The contract's `revision` starts at 1 and is optional. This repository uses
+    # 0 to mean "no projection metadata row yet", which is an absence, not a
+    # revision — so it is omitted rather than emitted as a non-conforming 0.
+    revision = block.get("revision", 0)
+    optional_revision = {"revision": revision} if revision >= 1 else {}
+
+    return vendor_contracts.validate(
+        "information_card_projection",
+        {
+            **optional_revision,
+            "information_id": information["information_id"],
+            "project_id": information["project_id"],
+            "series_id": information.get("series_id"),
+            "title": information["title"],
+            "business_kind": projected["business_kind"],
+            "summary": information.get("summary") or "",
+            "details": information.get("details") or "",
+            "author_or_origin": information.get("source_note"),
+            "lifecycle_status": projected["lifecycle_status"],
+            "professional_index": projected["professional_index"],
+            "business_date": projected["business_date"],
+            "dates": {
+                "source_date": block.get("source_date"),
+                "received_at": block.get("received_at"),
+                "issued_at": block.get("issued_at"),
+            },
+            "backing_mode": block["backing_mode"],
+            "document_refs": document_refs,
+            "media_types": block.get("media_types") or ["text"],
+            "contact_refs": block.get("contact_refs") or [],
+        },
+    )

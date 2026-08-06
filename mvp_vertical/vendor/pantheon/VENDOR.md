@@ -6,22 +6,32 @@ an external executable candidate; it consumes governance shapes, it never edits
 this copy and pushes nothing back. The dependency is one-way — MVP depends on
 Next, never the reverse.
 
-The established governed-loop/document/work slice remains pinned in
-[`UPSTREAM_COMMIT`](./UPSTREAM_COMMIT). ProjectClaim was introduced/reconciled
-later and is pinned independently in
-[`PROJECT_CLAIM_UPSTREAM_COMMIT`](./PROJECT_CLAIM_UPSTREAM_COMMIT). A dedicated
-pin avoids pretending that unrelated vendored schemas were re-reviewed when only
-ProjectClaim changed.
+Every vendored file carries its own provenance sidecar, `<name>.source.json`,
+recording the upstream commit, the upstream blob sha and the sha256 of the bytes
+on disk. That per-file record is the authority: it is verified by
+`tests/test_vendored_contract_conformance.py`, and a schema without one has no
+recorded origin at all.
+
+The two older pin files, `UPSTREAM_COMMIT` and `PROJECT_CLAIM_UPSTREAM_COMMIT`,
+predate the sidecars. They are retained because `tools/revendor*.sh` still writes
+them, but they carry no digest and one of them was measurably wrong: it named a
+commit whose bytes differ from the vendored copy. Where the two disagree, the
+sidecar wins, because only the sidecar can be checked.
 
 ## What is vendored, and from where
 
-| Vendored file | Upstream source | Pin | Kind |
-|---|---|---|---|
-| `mvp_governed_loop_objects.schema.yaml` | `schemas/mvp_governed_loop_objects.schema.yaml` | `UPSTREAM_COMMIT` | verbatim copy |
-| `document_knowledge_slice.schema.yaml` | `schemas/document_knowledge_slice.schema.yaml` | `UPSTREAM_COMMIT` | verbatim copy |
-| `work_issue_slice.schema.yaml` | `schemas/work_issue_slice.schema.yaml` | `UPSTREAM_COMMIT` | verbatim copy |
-| `project_claim.schema.yaml` | `schemas/project_claim.schema.yaml` | `PROJECT_CLAIM_UPSTREAM_COMMIT` | verbatim copy |
-| `decision_vocabulary.stand_in.yaml` | **derived**, not copied — mirrors `$defs.decision_value.enum` of `mvp_governed_loop_objects.schema.yaml` | `UPSTREAM_COMMIT` | derived |
+| Vendored file | Upstream source | Kind |
+|---|---|---|
+| `mvp_governed_loop_objects.schema.yaml` | `schemas/mvp_governed_loop_objects.schema.yaml` | verbatim copy |
+| `document_knowledge_slice.schema.yaml` | `schemas/document_knowledge_slice.schema.yaml` | verbatim copy |
+| `work_issue_slice.schema.yaml` | `schemas/work_issue_slice.schema.yaml` | verbatim copy |
+| `project_claim.schema.yaml` | `schemas/project_claim.schema.yaml` | verbatim copy |
+| `navigation_registry.schema.yaml` | `schemas/navigation_registry.schema.yaml` | verbatim copy |
+| `tag_registry.schema.yaml` | `schemas/tag_registry.schema.yaml` | verbatim copy |
+| `source_intake_admission.schema.yaml` | `schemas/source_intake_admission.schema.yaml` | verbatim copy |
+| `information_card_projection.schema.yaml` | `schemas/information_card_projection.schema.yaml` | verbatim copy |
+| `knowledge_edit_variant_candidate.schema.yaml` | `schemas/knowledge_edit_variant_candidate.schema.yaml` | verbatim copy |
+| `decision_vocabulary.stand_in.yaml` | **derived**, not copied — mirrors `$defs.decision_value.enum` of `mvp_governed_loop_objects.schema.yaml` | derived |
 
 Every vendored `*.schema.yaml` maps to `schemas/<name>` upstream. This is the
 convention `tools/check_schema_drift.py` relies on. `decision_vocabulary.stand_in.yaml`
@@ -30,9 +40,10 @@ read so decision semantics cannot be driven by the candidate stream) and must
 equal the schema's `$defs.decision_value` enum. If the two ever diverge the
 schema is authoritative and the vocabulary must be re-synced.
 
-Nothing else from upstream is vendored. Notably, no upstream `*.py` is carried
-here: MVP validates against the vendored **schemas**, not against upstream
-scripts.
+No upstream `*.py` is carried here: MVP validates against the vendored
+**schemas**, not against upstream scripts. `mvp_vertical/vendor_contracts.py`
+loads them and refuses a non-conforming payload; conformance is not adoption,
+approval or authority transfer.
 
 ## How drift is watched
 
