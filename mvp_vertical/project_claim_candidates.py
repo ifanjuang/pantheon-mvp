@@ -212,31 +212,37 @@ def create_claim_from_candidate(
         raise ProjectClaimCandidateError("execution_id, result_id and actor are required")
 
     with conn.transaction():
-        # Serialize Claim creation for one immutable candidate before checking for
-        # a replay. The row lock also orders a concurrent review insertion: either
-        # that review commits first and is evaluated below, or the Claim commits
-        # first and the later review remains a later historical event.
+        # Serialize Claim creation for one immutable candidate. The replay lookup
+        # is a second statement after the lock, so READ COMMITTED takes a fresh
+        # snapshot and sees a Claim committed while this transaction was waiting.
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT c.claim_id
-                  FROM execution_result_items i
-                  LEFT JOIN agency_project_claims c
-                    ON c.candidate_execution_id = i.execution_result_id
-                   AND c.candidate_result_id = i.result_id
-                 WHERE i.execution_result_id = %s
-                   AND i.result_id = %s
-                 FOR UPDATE OF i
+                SELECT result_id
+                  FROM execution_result_items
+                 WHERE execution_result_id = %s
+                   AND result_id = %s
+                 FOR UPDATE
                 """,
                 (execution_id, result_id),
             )
             locked = cur.fetchone()
-        if locked is None:
-            raise ProjectClaimCandidateNotFound(
-                "unknown ProjectClaim candidate for this execution result"
+            if locked is None:
+                raise ProjectClaimCandidateNotFound(
+                    "unknown ProjectClaim candidate for this execution result"
+                )
+            cur.execute(
+                """
+                SELECT claim_id
+                  FROM agency_project_claims
+                 WHERE candidate_execution_id = %s
+                   AND candidate_result_id = %s
+                """,
+                (execution_id, result_id),
             )
-        if locked["claim_id"] is not None:
-            return agency_claims.get_claim(conn, locked["claim_id"])
+            existing = cur.fetchone()
+        if existing is not None:
+            return agency_claims.get_claim(conn, existing["claim_id"])
 
         item, disposition = _load_candidate(
             conn,
