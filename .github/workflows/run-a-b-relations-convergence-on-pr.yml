@@ -26,24 +26,14 @@ jobs:
       - name: Execute reviewed bounded patch
         shell: bash
         run: |
-          python -m pip install --quiet pyyaml
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          workflow = yaml.safe_load(
-              Path('.github/workflows/apply-a-b-relations-convergence.yml')
-              .read_text(encoding='utf-8')
-          )
-          steps = workflow['jobs']['patch']['steps']
-          apply_step = next(
-              step for step in steps
-              if step.get('name') == 'Apply bounded convergence patch'
-          )
-          Path('/tmp/apply-convergence.sh').write_text(
-              apply_step['run'], encoding='utf-8'
-          )
-          PY
+          awk '
+            /^      - name: Apply bounded convergence patch$/ { found=1; next }
+            found && /^        run: \|$/ { capture=1; next }
+            capture && /^      - name: Compile patched Python$/ { exit }
+            capture { sub(/^          /, ""); print }
+          ' .github/workflows/apply-a-b-relations-convergence.yml \
+            > /tmp/apply-convergence.sh
+          test -s /tmp/apply-convergence.sh
           bash /tmp/apply-convergence.sh
           rm -f .github/workflows/run-a-b-relations-convergence-on-pr.yml
           rm -f .github/a-b-relations-patch.trigger
