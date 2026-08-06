@@ -17,7 +17,7 @@ def _id(prefix: str) -> str:
     return f"{prefix}.{uuid.uuid4().hex}"
 
 
-def _prepare_candidate(conn) -> tuple[str, str, str]:
+def _prepare_candidate(conn) -> tuple[str, str, str, str]:
     project = agency_data.create_project(
         conn,
         project_id=_id("project"),
@@ -107,19 +107,25 @@ def _prepare_candidate(conn) -> tuple[str, str, str]:
         note="Accepted for a separate Claim.",
         idempotency_key=_id("claim-review"),
     )
-    return project["project_id"], execution_id, result_id
+    return project["project_id"], execution_id, result_id, information_id
 
 
 def test_concurrent_creation_returns_one_append_only_claim(monkeypatch) -> None:
+    connections = []
     try:
         setup = agency_data.connect()
+        connections.append(setup)
         first_conn = agency_data.connect()
+        connections.append(first_conn)
         second_conn = agency_data.connect()
+        connections.append(second_conn)
     except Exception as exc:  # pragma: no cover - unit-only environment
+        for conn in connections:
+            conn.close()
         pytest.skip(f"PostgreSQL unreachable: {exc}")
 
     try:
-        for conn in (setup, first_conn, second_conn):
+        for conn in connections:
             execution_results.ensure_schema(conn)
             conn.execute(agency_claims.MIGRATION.read_text(encoding="utf-8"))
             conn.commit()
@@ -132,7 +138,7 @@ def test_concurrent_creation_returns_one_append_only_claim(monkeypatch) -> None:
             "RESTART IDENTITY CASCADE"
         )
         setup.commit()
-        project_id, execution_id, result_id = _prepare_candidate(setup)
+        project_id, execution_id, result_id, information_id = _prepare_candidate(setup)
 
         original_load = project_claim_candidates._load_candidate
         first_has_lock = threading.Event()
@@ -165,11 +171,7 @@ def test_concurrent_creation_returns_one_append_only_claim(monkeypatch) -> None:
                         status="source_backed",
                         backing_ref={
                             "entity_type": "information",
-                            "entity_id": setup.execute(
-                                "SELECT information_id FROM agency_information_cards "
-                                "WHERE project_id = %s",
-                                (project_id,),
-                            ).fetchone()[0],
+                            "entity_id": information_id,
                         },
                     )
                 )
@@ -205,5 +207,5 @@ def test_concurrent_creation_returns_one_append_only_claim(monkeypatch) -> None:
         assert claims[0]["claim_id"] == claims[1]["claim_id"]
         assert len(agency_claims.list_project_claims(setup, project_id)) == 1
     finally:
-        for conn in (setup, first_conn, second_conn):
+        for conn in connections:
             conn.close()
