@@ -235,7 +235,8 @@ def store_execution_result(
                     _non_empty(clarification.get("rationale"), "clarification.rationale"),
                 ),
             )
-    return _load_execution(conn, execution_result_id)
+        stored = _load_execution(conn, execution_result_id)
+    return stored
 
 
 def get_execution_result(conn: psycopg.Connection, execution_result_id: str) -> dict[str, Any]:
@@ -337,4 +338,5 @@ def append_review_disposition(
                 payload_digest,
             ),
         )
-    return _load_execution(conn, execution_id)
+        reviewed = _load_execution(conn, execution_id)
+    return reviewed
