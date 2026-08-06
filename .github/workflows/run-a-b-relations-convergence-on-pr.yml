@@ -24,19 +24,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Execute reviewed bounded patch
-        shell: bash
-        run: |
-          awk '
-            /^      - name: Apply bounded convergence patch$/ { found=1; next }
-            found && /^        run: \|$/ { capture=1; next }
-            capture && /^      - name: Compile patched Python$/ { exit }
-            capture { sub(/^          /, ""); print }
-          ' .github/workflows/apply-a-b-relations-convergence.yml \
-            > /tmp/apply-convergence.sh
-          test -s /tmp/apply-convergence.sh
-          bash /tmp/apply-convergence.sh
-          rm -f .github/workflows/run-a-b-relations-convergence-on-pr.yml
-          rm -f .github/a-b-relations-patch.trigger
+        run: python .github/scripts/apply_a_b_relations_convergence.py
 
       - name: Validate and publish patch result
         shell: bash
