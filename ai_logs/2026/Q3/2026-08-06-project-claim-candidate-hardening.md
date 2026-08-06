@@ -1,7 +1,7 @@
 # ProjectClaim candidate transition hardening
 
 Date: 2026-08-06
-Status: implementation candidate under review; automated validation pending
+Status: implementation candidate validated on its final reviewed head
 Scope: pantheon-mvp tranche F only
 
 ## Objective
@@ -18,9 +18,21 @@ The Execution Result remains immutable and non-authoritative. The Claim remains 
 separate Agency Data record. No Evidence, Decision, WorkIssue, Project mutation,
 memory promotion or external effect is inferred.
 
+## Upstream authority
+
+The canonical contract was merged in Pantheon-Next through PR #565 at merge
+commit:
+
+```text
+869afb153963d209d91f6c51d6e12b041ee633be
+```
+
+PR #559 was closed without fusion. The two vendored sidecars and their exact schema
+blobs are pinned to the #565 merge commit.
+
 ## Observed defects
 
-Review found six concrete gaps in the first implementation candidate:
+Review found concrete gaps in the first implementation candidate:
 
 1. the disposition route used the read key although recording a review is a
    consequential write;
@@ -34,15 +46,19 @@ Review found six concrete gaps in the first implementation candidate:
    `NOT VALID`, and one migration guard identified a constraint by broad text
    rather than by its owner name;
 6. a direct SQL insert could cite the accepted candidate while changing the
-   Project, claim type, value, unit, dates or supporting basis.
+   Project, claim type, value, unit, dates or supporting basis;
+7. normal Execution Result storage and review paths reloaded their response after
+   their owned transaction ended, opening a new implicit transaction and allowing
+   a following review to remain nested, uncommitted and row-locking;
+8. legacy contract tests did not yet include `project_claim_candidate`,
+   `accepted_for_claim` or the required Claim certainty.
 
 These were implementation defects, not reasons to introduce a Derivation,
 Consequence or parallel Claim model.
 
 ## Corrections
 
-- review disposition writes now require the editor key and an explicit human
-  actor;
+- review disposition writes require the editor key and an explicit human actor;
 - the Execution Result owner admits `accepted_for_claim` only for a
   `project_claim_candidate` reviewed by a human;
 - Python and SQL share the immutable result-row lock, establishing one order
@@ -54,21 +70,31 @@ Consequence or parallel Claim model.
   Project scope, candidate kind, claim type, value, unit, observation/effective
   dates and selected basis reference;
 - the first implementation remains bounded to Project and Information backing
-  resolution while the upstream semantic schema stays open.
+  resolution while the upstream semantic schema stays open;
+- response reloads now occur inside the transaction owned by storage and review,
+  so the connection returns without an unintended implicit transaction snapshot;
+- contract expectations include the new result kind, disposition and `E0`
+  certainty for pre-existing asserted Claim fixtures.
+
+The transaction correction changes no business authority and adds no commit beyond
+the operation's existing transaction boundary.
 
 ## Validation added
 
-The branch now covers:
+The branch covers:
 
 - read key refusal on the review route;
 - system and wrong-kind `accepted_for_claim` refusal;
 - absence of Claim creation without the latest human acceptance;
 - deterministic replay under concurrent Claim creation;
 - serialization of a later review against in-flight Claim creation;
+- the inverse order where a rejection takes the lock first and the later Claim
+  creation waits, observes the rejection and refuses;
 - exact migration constraint presence, validation and replay;
 - direct SQL refusal for false acceptance, changed candidate value and backing
   outside the candidate basis;
-- acceptance of one exact, fully matching reviewed candidate identity.
+- acceptance of one exact, fully matching reviewed candidate identity;
+- byte-for-byte vendored schemas and sidecars pinned to the #565 merge commit.
 
 ## Boundaries retained
 
@@ -88,7 +114,20 @@ memory path is added.
 
 ## Verification status
 
-Static repository review is complete for this hardening pass. The pull request
-workflows have not run on the current head because GitHub requires manual
-approval for the automation-created workflow runs. No passing CI claim is made
-until those required jobs execute successfully.
+The implementation and test corrections were validated on head:
+
+```text
+8ca0a399d5cd28e69ff0c6fd28a5a708cd6d1393
+```
+
+Results:
+
+```text
+Pantheon Architecture Audit -> success
+Pantheon MVP CI / contract-tests -> success
+Pantheon MVP CI / tests -> success
+```
+
+The journal amendment creates a later documentation-only head, which must receive
+its own required checks before merge. No protection is bypassed and no earlier
+check result is reused for a changed SHA.
