@@ -39,7 +39,7 @@ def test_data_loader_has_a_bounded_read_only_role() -> None:
 
     for endpoint in (
         "../agency/projects?limit=200",
-        "../decision-requests?status=pending&limit=200",
+        "../decision-inbox?status=pending&limit=200",
         "../agency/schema/project",
         "../agency/projects/${encoded}/information",
         "../projects/${encoded}/documents",
@@ -50,6 +50,7 @@ def test_data_loader_has_a_bounded_read_only_role() -> None:
     ):
         assert endpoint in source
 
+    assert "../decision-requests?status=pending&limit=200" not in source
     assert "../work/issues?case_ref=${encoded}" not in source
     assert "../v1/agency/" not in source
     assert "../v1/projects/" not in source
