@@ -286,25 +286,9 @@ def append_review_disposition(
     payload_digest = _digest(payload)
     with conn.transaction():
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                "SELECT * FROM execution_result_review_dispositions WHERE idempotency_key = %s",
-                (key,),
-            )
-            replay = cur.fetchone()
-            if replay is not None:
-                if replay["payload_digest"] != payload_digest:
-                    raise ExecutionResultConflict(
-                        "review-disposition idempotency key belongs to different content"
-                    )
-                execution_id = cur.execute(
-                    "SELECT execution_result_id FROM execution_result_items WHERE result_id = %s",
-                    (replay["result_ref"],),
-                ).fetchone()[0]
-                return _load_execution(conn, execution_id)
-
-            # Reviews and candidate adoption share this immutable result-row lock.
-            # This gives one total order between a disposition and a Claim created
-            # from the same candidate, without turning either event into the other.
+            # Reviews, idempotent replays and candidate adoption share this
+            # immutable result-row lock. A replay therefore cannot bypass the
+            # current semantic checks for its disposition family.
             cur.execute(
                 "SELECT execution_result_id, result_kind "
                 "FROM execution_result_items WHERE result_id = %s FOR UPDATE",
@@ -325,6 +309,18 @@ def append_review_disposition(
                     raise ExecutionResultError(
                         "accepted_for_claim requires a human reviewer"
                     )
+
+            cur.execute(
+                "SELECT * FROM execution_result_review_dispositions WHERE idempotency_key = %s",
+                (key,),
+            )
+            replay = cur.fetchone()
+            if replay is not None:
+                if replay["payload_digest"] != payload_digest:
+                    raise ExecutionResultConflict(
+                        "review-disposition idempotency key belongs to different content"
+                    )
+                return _load_execution(conn, execution_id)
 
         conn.execute(
             "INSERT INTO execution_result_review_dispositions "
