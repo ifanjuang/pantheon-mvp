@@ -226,10 +226,15 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     actual_execution_id TEXT;
+    candidate_kind TEXT;
+    candidate_payload JSONB;
+    execution_project_ref TEXT;
     review_result_ref TEXT;
     review_disposition TEXT;
     review_kind TEXT;
     latest_disposition_id TEXT;
+    matching_basis JSONB;
+    backing_project_id TEXT;
 BEGIN
     IF NEW.source_kind <> 'execution_result' THEN
         RETURN NEW;
@@ -240,13 +245,38 @@ BEGIN
         RAISE EXCEPTION 'execution result authorities are unavailable for ProjectClaim creation';
     END IF;
 
-    SELECT execution_result_id
-      INTO actual_execution_id
-      FROM execution_result_items
-     WHERE result_id = NEW.candidate_result_id;
+    SELECT i.execution_result_id, i.result_kind, i.payload, e.project_ref
+      INTO actual_execution_id, candidate_kind, candidate_payload, execution_project_ref
+      FROM execution_result_items i
+      JOIN execution_results e
+        ON e.execution_result_id = i.execution_result_id
+     WHERE i.result_id = NEW.candidate_result_id
+     FOR UPDATE OF i;
 
     IF actual_execution_id IS NULL OR actual_execution_id <> NEW.candidate_execution_id THEN
         RAISE EXCEPTION 'ProjectClaim candidate result does not belong to the declared execution';
+    END IF;
+    IF candidate_kind <> 'project_claim_candidate' THEN
+        RAISE EXCEPTION 'ProjectClaim creation requires a project_claim_candidate result';
+    END IF;
+    IF execution_project_ref IS DISTINCT FROM NEW.project_id
+       OR candidate_payload->>'project_ref' IS DISTINCT FROM NEW.project_id THEN
+        RAISE EXCEPTION 'ProjectClaim candidate and execution must belong to the Claim Project';
+    END IF;
+    IF candidate_payload->>'claim_type' IS DISTINCT FROM NEW.claim_type THEN
+        RAISE EXCEPTION 'ProjectClaim claim_type must match the reviewed candidate';
+    END IF;
+    IF candidate_payload->'proposed_value' IS DISTINCT FROM NEW.value THEN
+        RAISE EXCEPTION 'ProjectClaim value must match the reviewed candidate';
+    END IF;
+    IF candidate_payload->>'unit' IS DISTINCT FROM NEW.unit THEN
+        RAISE EXCEPTION 'ProjectClaim unit must match the reviewed candidate';
+    END IF;
+    IF (candidate_payload->>'observed_at')::timestamptz IS DISTINCT FROM NEW.observed_at THEN
+        RAISE EXCEPTION 'ProjectClaim observed_at must match the reviewed candidate';
+    END IF;
+    IF (candidate_payload->>'effective_at')::timestamptz IS DISTINCT FROM NEW.effective_at THEN
+        RAISE EXCEPTION 'ProjectClaim effective_at must match the reviewed candidate';
     END IF;
 
     SELECT result_ref, disposition, reviewer_kind
@@ -270,6 +300,40 @@ BEGIN
 
     IF latest_disposition_id <> NEW.candidate_review_disposition_id THEN
         RAISE EXCEPTION 'ProjectClaim creation requires the latest candidate disposition';
+    END IF;
+
+    IF NEW.backing_entity_type IS NOT NULL THEN
+        IF NEW.backing_entity_type NOT IN ('project', 'information') THEN
+            RAISE EXCEPTION 'candidate-backed Claim currently admits only project or information backing';
+        END IF;
+
+        SELECT basis
+          INTO matching_basis
+          FROM jsonb_array_elements(COALESCE(candidate_payload->'basis_refs', '[]'::jsonb)) basis
+         WHERE basis->>'entity_type' = NEW.backing_entity_type
+           AND basis->>'entity_id' = NEW.backing_entity_id
+         LIMIT 1;
+
+        IF matching_basis IS NULL THEN
+            RAISE EXCEPTION 'ProjectClaim backing_ref must be one of the candidate basis_refs';
+        END IF;
+        IF matching_basis->>'observed_status' IS DISTINCT FROM NEW.backing_observed_status THEN
+            RAISE EXCEPTION 'ProjectClaim backing observed_status must match the candidate basis_ref';
+        END IF;
+
+        IF NEW.backing_entity_type = 'project' THEN
+            IF NEW.backing_entity_id <> NEW.project_id THEN
+                RAISE EXCEPTION 'ProjectClaim project backing must identify the Claim Project';
+            END IF;
+        ELSE
+            SELECT project_id
+              INTO backing_project_id
+              FROM agency_information_cards
+             WHERE information_id = NEW.backing_entity_id;
+            IF backing_project_id IS NULL OR backing_project_id <> NEW.project_id THEN
+                RAISE EXCEPTION 'ProjectClaim information backing must belong to the Claim Project';
+            END IF;
+        END IF;
     END IF;
 
     RETURN NEW;
