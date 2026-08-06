@@ -5,5 +5,12 @@
   "source_blob_sha": "ffb7bf48e9c5ec7ef6d6f5c1e6b3fd3009da40e2",
   "sha256": "8cbdbff1c8bd18b9005163dbd1dd43188ae64233e7e0d599fa88d0693fcf436b",
   "posture": "vendored-reference",
-  "authority_transfer": false
+  "authority_transfer": false,
+  "deferred_adoption": {
+    "upstream_commit": "45a68aeeeb12d7063221fb2fcbca27134dc15bcd",
+    "upstream_blob_sha": "44116682339ba9f9b1442ce1d6200e624c903d70",
+    "reviewed_on": "2026-08-06",
+    "blocked_by": "tranche H (Anatomie)",
+    "reason": "upstream makes document_structure required and adds a required fragment_ref to every chunk; this repo produces neither, and validate_document_knowledge_slice runs on every publish and revise, so adopting would refuse every Knowledge publication"
+  }
 }
