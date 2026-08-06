@@ -1,4 +1,4 @@
-"""Narrow one temporary convergence-script replacement, then self-delete."""
+"""Narrow temporary convergence-script replacements, then self-delete."""
 
 from pathlib import Path
 
@@ -37,6 +37,14 @@ new = '''    response_boundary = "        )\\n        return {\\n"
     )
 '''
 if text.count(old) != 1:
-    raise SystemExit(f"temporary patch target count: {text.count(old)}")
-target.write_text(text.replace(old, new, 1), encoding="utf-8")
+    raise SystemExit(f"temporary route patch target count: {text.count(old)}")
+text = text.replace(old, new, 1)
+
+old_escape = r'        markdown=markdown + "\n\nMise à jour concurrente.",' + "\n"
+new_escape = r'        markdown=markdown + "\\n\\nMise à jour concurrente.",' + "\n"
+if text.count(old_escape) != 1:
+    raise SystemExit(f"temporary newline patch target count: {text.count(old_escape)}")
+text = text.replace(old_escape, new_escape, 1)
+
+target.write_text(text, encoding="utf-8")
 Path(__file__).unlink()
