@@ -190,14 +190,58 @@ def test_candidate_requires_latest_human_acceptance(conn) -> None:
             backing_ref={"entity_type": "information", "entity_id": information_id},
         )
 
-    _accept(conn, result_id, reviewer_kind="system")
-    with pytest.raises(project_claim_candidates.ProjectClaimCandidateError, match="must be human"):
+    with pytest.raises(execution_results.ExecutionResultError, match="human reviewer"):
+        _accept(conn, result_id, reviewer_kind="system")
+
+    with pytest.raises(project_claim_candidates.ProjectClaimCandidateError, match="not been reviewed"):
         project_claim_candidates.create_claim_from_candidate(
             conn,
             execution_id=execution_id,
             result_id=result_id,
             actor="human:ifan",
             status="asserted",
+        )
+
+
+def test_claim_acceptance_requires_project_claim_candidate_kind(conn) -> None:
+    project = _project(conn)
+    execution_id = _id("execution")
+    result_id = _id("result")
+    execution_results.store_execution_result(
+        conn,
+        execution_result={
+            "execution_result_id": execution_id,
+            "task_contract_ref": "task-contract.work-issue",
+            "project_ref": project["project_id"],
+            "producer": {
+                "capability": "detect_work_issue",
+                "implementation": "hermes.skill.work-issue",
+                "version": "1.0.0",
+            },
+            "produced_at": "2026-08-06T16:00:00+00:00",
+            "authority": dict(execution_results.AUTHORITY),
+            "results": [
+                {
+                    "result_id": result_id,
+                    "result_kind": "work_issue_candidate",
+                    "schema_ref": "schemas/work_issue_candidate.schema.yaml",
+                    "payload": {"project_ref": project["project_id"]},
+                }
+            ],
+            "clarification_requests": [],
+        },
+        idempotency_key=_id("execution-store"),
+    )
+
+    with pytest.raises(execution_results.ExecutionResultError, match="project_claim_candidate"):
+        execution_results.append_review_disposition(
+            conn,
+            result_ref=result_id,
+            disposition="accepted_for_claim",
+            reviewer="human:reviewer",
+            reviewer_kind="human",
+            note="Wrong candidate family.",
+            idempotency_key=_id("claim-review"),
         )
 
 
