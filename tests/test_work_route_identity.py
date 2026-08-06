@@ -37,7 +37,7 @@ def test_mounted_work_routes_use_review_responsibility_paths() -> None:
     assert not [path for path in mounted if path.startswith("/v1/work-issues")]
 
 
-def test_active_cockpit_consumers_use_scoped_work_and_decision_request_routes() -> None:
+def test_active_cockpit_consumers_use_scoped_work_and_classified_decision_routes() -> None:
     consumers = (
         COCKPIT / "data" / "cockpit_data_loader.js",
         COCKPIT / "demo_bootstrap.js",
@@ -53,7 +53,9 @@ def test_active_cockpit_consumers_use_scoped_work_and_decision_request_routes() 
     decision_actions = consumers[2].read_text(encoding="utf-8")
     assert "../work/scopes/project/${encoded}/issues" in loader
     assert "../work/issues?case_ref=${encoded}" not in loader
-    assert "../decision-requests?status=pending&limit=200" in loader
+    assert "../decision-inbox?status=pending&limit=200" in loader
+    assert "../decision-requests?status=pending&limit=200" not in loader
+    assert "../agency/projects/${encoded}/decision-requests?status=pending&limit=100" in loader
     assert 'url.pathname.endsWith("/work/issues")' in demo
     assert "../decision-requests/${encodeURIComponent(requestId)}" in decision_actions
     assert "decision-requests/${encodeURIComponent(requestId)}/resolve" in decision_actions
