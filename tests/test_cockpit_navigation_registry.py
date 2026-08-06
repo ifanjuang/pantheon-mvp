@@ -26,7 +26,6 @@ def test_navigation_registry_declares_stable_roots_and_abstract_sources() -> Non
     ]
     assert root["items"][0]["sources"] == [
         "pending_change_candidates",
-        "decision_requests",
         "current_runs",
     ]
     assert root["items"][1]["sources"] == ["projects"]
