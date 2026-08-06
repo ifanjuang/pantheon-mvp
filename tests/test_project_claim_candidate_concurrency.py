@@ -110,34 +110,38 @@ def _prepare_candidate(conn) -> tuple[str, str, str, str]:
     return project["project_id"], execution_id, result_id, information_id
 
 
-def test_concurrent_creation_returns_one_append_only_claim(monkeypatch) -> None:
+def _open_connections(count: int):
     connections = []
     try:
-        setup = agency_data.connect()
-        connections.append(setup)
-        first_conn = agency_data.connect()
-        connections.append(first_conn)
-        second_conn = agency_data.connect()
-        connections.append(second_conn)
+        for _ in range(count):
+            connections.append(agency_data.connect())
     except Exception as exc:  # pragma: no cover - unit-only environment
         for conn in connections:
             conn.close()
         pytest.skip(f"PostgreSQL unreachable: {exc}")
+    for conn in connections:
+        execution_results.ensure_schema(conn)
+        conn.execute(agency_claims.MIGRATION.read_text(encoding="utf-8"))
+        conn.commit()
+    return connections
 
+
+def _truncate(setup) -> None:
+    setup.execute(
+        "TRUNCATE agency_project_claims, execution_result_review_dispositions, "
+        "execution_clarification_requests, execution_result_items, execution_results, "
+        "agency_change_candidate_events, agency_change_candidates, "
+        "agency_project_events, agency_information_cards, agency_projects "
+        "RESTART IDENTITY CASCADE"
+    )
+    setup.commit()
+
+
+def test_concurrent_creation_returns_one_append_only_claim(monkeypatch) -> None:
+    connections = _open_connections(3)
+    setup, first_conn, second_conn = connections
     try:
-        for conn in connections:
-            execution_results.ensure_schema(conn)
-            conn.execute(agency_claims.MIGRATION.read_text(encoding="utf-8"))
-            conn.commit()
-
-        setup.execute(
-            "TRUNCATE agency_project_claims, execution_result_review_dispositions, "
-            "execution_clarification_requests, execution_result_items, execution_results, "
-            "agency_change_candidate_events, agency_change_candidates, "
-            "agency_project_events, agency_information_cards, agency_projects "
-            "RESTART IDENTITY CASCADE"
-        )
-        setup.commit()
+        _truncate(setup)
         project_id, execution_id, result_id, information_id = _prepare_candidate(setup)
 
         original_load = project_claim_candidates._load_candidate
@@ -206,6 +210,101 @@ def test_concurrent_creation_returns_one_append_only_claim(monkeypatch) -> None:
         assert len(claims) == 2
         assert claims[0]["claim_id"] == claims[1]["claim_id"]
         assert len(agency_claims.list_project_claims(setup, project_id)) == 1
+    finally:
+        for conn in connections:
+            conn.close()
+
+
+def test_review_insertion_is_ordered_after_inflight_claim_creation(monkeypatch) -> None:
+    connections = _open_connections(3)
+    setup, claim_conn, review_conn = connections
+    try:
+        _truncate(setup)
+        project_id, execution_id, result_id, information_id = _prepare_candidate(setup)
+
+        original_load = project_claim_candidates._load_candidate
+        claim_has_lock = threading.Event()
+        release_claim = threading.Event()
+        review_started = threading.Event()
+        review_finished = threading.Event()
+        claims: list[dict] = []
+        reviews: list[dict] = []
+        errors: list[BaseException] = []
+
+        def delayed_load(conn, *, execution_id: str, result_id: str):
+            loaded = original_load(conn, execution_id=execution_id, result_id=result_id)
+            if threading.current_thread().name == "claim-create":
+                claim_has_lock.set()
+                if not release_claim.wait(5):
+                    raise AssertionError("review-order test did not release the Claim transaction")
+            return loaded
+
+        monkeypatch.setattr(project_claim_candidates, "_load_candidate", delayed_load)
+
+        def create_claim() -> None:
+            try:
+                claims.append(
+                    project_claim_candidates.create_claim_from_candidate(
+                        claim_conn,
+                        execution_id=execution_id,
+                        result_id=result_id,
+                        actor="human:ifan",
+                        status="source_backed",
+                        backing_ref={
+                            "entity_type": "information",
+                            "entity_id": information_id,
+                        },
+                    )
+                )
+            except BaseException as exc:
+                errors.append(exc)
+
+        def reject_after_claim() -> None:
+            try:
+                review_started.set()
+                reviews.append(
+                    execution_results.append_review_disposition(
+                        review_conn,
+                        result_ref=result_id,
+                        disposition="rejected",
+                        reviewer="human:reviewer",
+                        reviewer_kind="human",
+                        note="Review committed after Claim creation.",
+                        idempotency_key=_id("claim-rejection"),
+                    )
+                )
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                review_finished.set()
+
+        claim_thread = threading.Thread(target=create_claim, name="claim-create")
+        review_thread = threading.Thread(target=reject_after_claim, name="claim-review")
+
+        claim_thread.start()
+        assert claim_has_lock.wait(5), "Claim creation never acquired the candidate row lock"
+        review_thread.start()
+        assert review_started.wait(5)
+        assert not review_finished.wait(0.2), "review bypassed the candidate row lock"
+        release_claim.set()
+
+        claim_thread.join(5)
+        review_thread.join(5)
+        assert not claim_thread.is_alive() and not review_thread.is_alive()
+        assert errors == []
+        assert len(claims) == 1
+        assert len(reviews) == 1
+        assert len(agency_claims.list_project_claims(setup, project_id)) == 1
+
+        history = execution_results.get_execution_result(setup, execution_id)[
+            "review_dispositions"
+        ]
+        assert history[-1]["disposition"] == "rejected"
+        assert claims[0]["provenance"]["candidate_ref"]["review_disposition_id"] == next(
+            item["disposition_id"]
+            for item in history
+            if item["disposition"] == "accepted_for_claim"
+        )
     finally:
         for conn in connections:
             conn.close()
