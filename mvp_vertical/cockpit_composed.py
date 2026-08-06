@@ -54,6 +54,7 @@ def initialize_composed_schema() -> None:
         conn.execute(agency_change_candidate_review.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(contradictory_review_store.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(execution_results.MIGRATION.read_text(encoding="utf-8"))
+        # Claim provenance foreign keys are installed only after execution owners exist.
         conn.execute(agency_claims.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(knowledge_edit_variants.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(apu_mapping_reviews.MIGRATION.read_text(encoding="utf-8"))
