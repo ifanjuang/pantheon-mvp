@@ -3,6 +3,7 @@
 Date: 2026-08-06
 Scope: `mvp_vertical/vendor/pantheon/`, `tools/check_schema_drift.py`
 Axes: E4 certainty, V3 verification, K2 consequence, C1 approval (records a non-adoption decision; adopts nothing)
+Status: superseded on 2026-08-06 — the contract was adopted; see 2026-08-06-document-structure-adopted.md
 
 ## The drift
 
@@ -43,9 +44,15 @@ every Knowledge publication.
   resolves the chunk binding. Both have existed since `8e5ba8f` (#229). They are
   reachable from the read API and from their own tests, and from nothing else.
 
-So the deferral holds — the slice really would fail validation today — but the
-remaining work is **wiring an existing projection into the slice builder**, not
-building a capability, and it is not waiting on any tranche.
+So the deferral held only until the wiring was done — the remaining work was
+connecting an existing projection to the slice builder, not building a capability,
+and it waited on no tranche.
+
+**Superseded, same date.** The contract was adopted a few hours later. See
+`2026-08-06-document-structure-adopted.md`. The `deferred_adoption` record is
+removed and the drift monitor reports `COHERENT`. This entry is kept for the
+mechanism it describes and for the two corrections above; its *decision* no longer
+holds.
 
 ## Why the deferral needed a mechanism
 
