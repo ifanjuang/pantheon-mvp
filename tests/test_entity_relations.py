@@ -21,6 +21,7 @@ def conn():
             entity_relations.ensure_schema(connection)
     except Exception as exc:  # pragma: no cover - local unit-only environment
         pytest.skip(f"PostgreSQL unreachable: {exc}")
+    connection.commit()
     connection.execute("BEGIN")
     try:
         yield connection

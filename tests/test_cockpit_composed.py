@@ -81,7 +81,7 @@ def test_composed_initializer_replays_owner_and_review_migrations_in_dependency_
 def test_composed_migrations_are_packaged_under_sql_directory():
     for migration, expected_name in (
         (source_intake.MIGRATION, "010_source_intake_admission.sql"),
-        (information_projection.MIGRATION, "012_information_card_projection.sql"),
+        (information_projection.MIGRATION, "013_information_card_projection.sql"),
         (agency_change_candidate_review.MIGRATION, "005_change_candidate_review.sql"),
         (contradictory_review_store.MIGRATION, "003_contradictory_review_candidates.sql"),
         (execution_results.MIGRATION, "010_execution_results.sql"),
