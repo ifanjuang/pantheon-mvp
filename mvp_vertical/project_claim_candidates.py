@@ -133,6 +133,31 @@ def _validate_candidate_unit(payload: dict[str, Any]) -> None:
         )
 
 
+def _backing_project(
+    conn: psycopg.Connection,
+    *,
+    entity_type: str,
+    entity_id: str,
+) -> str | None:
+    if entity_type == "project":
+        row = conn.execute(
+            "SELECT project_id FROM agency_projects WHERE project_id = %s",
+            (entity_id,),
+        ).fetchone()
+    elif entity_type == "information":
+        row = conn.execute(
+            "SELECT project_id FROM agency_information_cards WHERE information_id = %s",
+            (entity_id,),
+        ).fetchone()
+    else:  # guarded by ADMITTED_BACKING_TYPES
+        row = None
+    if row is None:
+        raise ProjectClaimCandidateError(
+            f"unknown {entity_type} backing_ref: {entity_id}"
+        )
+    return str(row[0])
+
+
 def _select_backing_ref(
     conn: psycopg.Connection,
     *,
@@ -163,14 +188,7 @@ def _select_backing_ref(
     if selected is None:
         raise ProjectClaimCandidateError("backing_ref must be one of the candidate basis_refs")
 
-    try:
-        resolved = conn.execute(
-            "SELECT resolve_agency_entity_relation_project(%s, %s)",
-            (entity_type, entity_id),
-        ).fetchone()
-    except psycopg.Error as exc:
-        raise ProjectClaimCandidateError(str(exc)) from exc
-    if resolved is None or resolved[0] != project_id:
+    if _backing_project(conn, entity_type=entity_type, entity_id=entity_id) != project_id:
         raise ProjectClaimCandidateError("backing_ref does not belong to the candidate Project")
     return selected
 
