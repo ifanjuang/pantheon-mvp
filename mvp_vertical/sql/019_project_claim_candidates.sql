@@ -54,8 +54,8 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
          WHERE conrelid = 'agency_project_claims'::regclass
+           AND conname = 'agency_project_claims_source_kind_check'
            AND pg_get_constraintdef(oid) LIKE '%execution_result%'
-           AND pg_get_constraintdef(oid) LIKE '%source_kind%'
     ) THEN
         ALTER TABLE agency_project_claims
             DROP CONSTRAINT IF EXISTS agency_project_claims_source_kind_check;
@@ -105,6 +105,15 @@ BEGIN
 END;
 $$;
 
+ALTER TABLE agency_project_claims
+    VALIDATE CONSTRAINT agency_project_claims_certainty_check;
+ALTER TABLE agency_project_claims
+    VALIDATE CONSTRAINT agency_project_claims_source_kind_check;
+ALTER TABLE agency_project_claims
+    VALIDATE CONSTRAINT agency_project_claims_candidate_identity_check;
+ALTER TABLE agency_project_claims
+    VALIDATE CONSTRAINT agency_project_claims_execution_source_check;
+
 CREATE UNIQUE INDEX IF NOT EXISTS agency_project_claims_one_claim_per_candidate
     ON agency_project_claims (candidate_execution_id, candidate_result_id)
     WHERE candidate_execution_id IS NOT NULL AND candidate_result_id IS NOT NULL;
@@ -151,6 +160,35 @@ BEGIN
             FOREIGN KEY (candidate_review_disposition_id)
             REFERENCES execution_result_review_dispositions(disposition_id)
             ON DELETE RESTRICT NOT VALID;
+    END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'agency_project_claims'::regclass
+           AND conname = 'agency_project_claims_candidate_execution_fk'
+    ) THEN
+        ALTER TABLE agency_project_claims
+            VALIDATE CONSTRAINT agency_project_claims_candidate_execution_fk;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'agency_project_claims'::regclass
+           AND conname = 'agency_project_claims_candidate_result_fk'
+    ) THEN
+        ALTER TABLE agency_project_claims
+            VALIDATE CONSTRAINT agency_project_claims_candidate_result_fk;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'agency_project_claims'::regclass
+           AND conname = 'agency_project_claims_candidate_disposition_fk'
+    ) THEN
+        ALTER TABLE agency_project_claims
+            VALIDATE CONSTRAINT agency_project_claims_candidate_disposition_fk;
     END IF;
 END;
 $$;
