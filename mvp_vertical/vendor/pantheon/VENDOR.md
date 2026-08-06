@@ -12,13 +12,14 @@ on disk. That per-file record is the authority: it is verified by
 `tests/test_vendored_contract_conformance.py`, and a schema without one has no
 recorded origin at all.
 
-The three older pin files, `UPSTREAM_COMMIT`, `PROJECT_CLAIM_UPSTREAM_COMMIT` and
-`WORK_ISSUE_SCOPE_UPSTREAM_COMMIT`, predate the sidecars. Their separation still
-records something true — adding the scope contract does not imply the older
-WorkIssue aggregate was re-reviewed — but a pin file states one commit for a whole
-lineage, and the ten schemas here come from **eight different commits**. Seven of
-those the pin files cannot express at all. They also carry no digest, so a pin
-cannot be checked against the bytes it claims to describe.
+The four older pin files, `UPSTREAM_COMMIT`, `PROJECT_CLAIM_UPSTREAM_COMMIT`,
+`WORK_ISSUE_SCOPE_UPSTREAM_COMMIT` and `DECISION_REQUEST_UPSTREAM_COMMIT`, predate
+the sidecars. Their separation still records something true — adding a later
+contract does not imply that an older aggregate was re-reviewed — but a pin file
+states one commit for a whole lineage, and the schemas here come from many
+different commits, most of which the pin files cannot express at all. They also
+carry no digest, so a pin cannot be checked against the bytes it claims to
+describe.
 
 `UPSTREAM_COMMIT` named `f8bc3bd` until 2026-08-06. Its *content* was right — the
 three schemas it covers are byte-identical there — but that commit sits on the
@@ -38,6 +39,7 @@ its digest makes the claim checkable.
 | `document_knowledge_slice.schema.yaml` | `schemas/document_knowledge_slice.schema.yaml` | verbatim copy |
 | `work_issue_slice.schema.yaml` | `schemas/work_issue_slice.schema.yaml` | verbatim copy |
 | `work_issue_scope_link.schema.yaml` | `schemas/work_issue_scope_link.schema.yaml` | verbatim copy |
+| `decision_request.schema.yaml` | `schemas/decision_request.schema.yaml` | verbatim copy |
 | `project_claim.schema.yaml` | `schemas/project_claim.schema.yaml` | verbatim copy |
 | `navigation_registry.schema.yaml` | `schemas/navigation_registry.schema.yaml` | verbatim copy |
 | `tag_registry.schema.yaml` | `schemas/tag_registry.schema.yaml` | verbatim copy |
@@ -73,9 +75,9 @@ approval or authority transfer.
   document and work schemas and rewrites `UPSTREAM_COMMIT`.
 - `tools/revendor_project_claim.sh <commit-sha>` refreshes only
   `project_claim.schema.yaml` and rewrites `PROJECT_CLAIM_UPSTREAM_COMMIT`.
-- WorkIssue scope links are currently reviewed as an explicit one-file copy with
-  their dedicated pin; a helper may be added only if this contract begins to
-  change frequently.
+- WorkIssue scopes and Decision Requests are currently reviewed as explicit
+  one-file copies with dedicated pins; helpers may be added only if these
+  contracts begin to change frequently.
 
 All are reviewed changes, never automatic ones. After any refresh, inspect the
 diff, reconcile emitted shapes and run the tests.

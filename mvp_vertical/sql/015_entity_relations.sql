@@ -136,12 +136,19 @@ BEGIN
             ) INTO owner_exists;
             resolved_project_id := NULL;   -- Contacts are agency-level.
         WHEN 'decision' THEN
-            IF to_regclass('agency_decisions') IS NULL THEN
+            IF to_regclass('agency_decision_records') IS NULL THEN
                 RAISE EXCEPTION 'Entity relation endpoint owner is not implemented: decision';
             END IF;
-            EXECUTE 'SELECT project_id FROM agency_decisions WHERE decision_id = $1'
+            -- A Decision carries its Project through the Request it answers, and a
+            -- global Decision has none. So existence and Project are two separate
+            -- questions here: collapsing them would report every global Decision as
+            -- an unknown endpoint.
+            EXECUTE 'SELECT EXISTS (SELECT 1 FROM agency_decision_records WHERE decision_id = $1)'
+                INTO owner_exists USING target_entity_id;
+            EXECUTE 'SELECT r.project_id FROM agency_decision_records d '
+                    'JOIN agency_decision_requests r ON r.request_id = d.request_id '
+                    'WHERE d.decision_id = $1'
                 INTO resolved_project_id USING target_entity_id;
-            owner_exists := resolved_project_id IS NOT NULL;
         WHEN 'apu_object' THEN
             IF to_regclass('agency_apu_objects') IS NULL THEN
                 RAISE EXCEPTION 'Entity relation endpoint owner is not implemented: apu_object';
