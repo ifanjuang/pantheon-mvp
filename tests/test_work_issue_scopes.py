@@ -251,7 +251,7 @@ def test_primary_scope_is_replaced_atomically(conn) -> None:
     active_primary = [
         link
         for link in replaced["scope_links"]
-        if link["scope_role"] == "primary" and "retired_at" not in link
+        if link["scope_role"] == "primary" and link.get("retired_at") is None
     ]
     assert len(active_primary) == 1
     assert active_primary[0]["scope_ref"]["entity_id"] == second_project
