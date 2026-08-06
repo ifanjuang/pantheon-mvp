@@ -111,7 +111,7 @@ def install_execution_result_routes(
 
     @app.post(
         "/execution-results/{execution_result_id}/results/{result_ref}/dispositions",
-        dependencies=[Depends(require_read_key)],
+        dependencies=[Depends(require_editor_key)],
     )
     def review_result_candidate(
         execution_result_id: str,
