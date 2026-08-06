@@ -146,3 +146,123 @@ BEGIN
     END IF;
 END;
 $$;
+
+-- Refresh the existing Project read cache with the qualified Claim shape. The
+-- cache remains derived and never becomes a second Claim authority.
+CREATE OR REPLACE FUNCTION refresh_agency_project_claim_projection(target_project_id TEXT)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    scalar_values JSONB := '{}'::jsonb;
+    scalar_refs JSONB := '{}'::jsonb;
+    parcel_values JSONB := '[]'::jsonb;
+    parcel_refs JSONB := '[]'::jsonb;
+BEGIN
+    WITH active_scalar AS (
+        SELECT DISTINCT ON (c.claim_type) c.*
+          FROM agency_project_claims c
+         WHERE c.project_id = target_project_id
+           AND c.claim_type <> 'parcelle'
+           AND c.status <> 'retired'
+           AND NOT EXISTS (
+               SELECT 1 FROM agency_project_claims newer
+                WHERE newer.supersedes = c.claim_id
+           )
+         ORDER BY c.claim_type, c.observed_at DESC, c.created_at DESC, c.claim_id DESC
+    ), projected AS (
+        SELECT claim_type,
+               value,
+               jsonb_build_object(
+                   'claim_id', claim_id,
+                   'status', status,
+                   'certainty', certainty,
+                   'unit', unit,
+                   'backing_ref', CASE
+                       WHEN backing_entity_type IS NULL THEN NULL
+                       ELSE jsonb_build_object(
+                           'entity_type', backing_entity_type,
+                           'entity_id', backing_entity_id,
+                           'observed_status', backing_observed_status
+                       )
+                   END,
+                   'provenance', jsonb_build_object(
+                       'source_kind', source_kind,
+                       'source_ref', source_ref,
+                       'candidate_ref', CASE
+                           WHEN candidate_execution_id IS NULL THEN NULL
+                           ELSE jsonb_build_object(
+                               'execution_id', candidate_execution_id,
+                               'result_id', candidate_result_id,
+                               'review_disposition_id', candidate_review_disposition_id
+                           )
+                       END,
+                       'asserted_by', asserted_by,
+                       'derivation_note', derivation_note
+                   ),
+                   'observed_at', observed_at,
+                   'effective_at', effective_at
+               ) AS ref
+          FROM active_scalar
+    )
+    SELECT COALESCE(jsonb_object_agg(claim_type, value), '{}'::jsonb),
+           COALESCE(jsonb_object_agg(claim_type, ref), '{}'::jsonb)
+      INTO scalar_values, scalar_refs
+      FROM projected;
+
+    WITH active_parcels AS (
+        SELECT c.*
+          FROM agency_project_claims c
+         WHERE c.project_id = target_project_id
+           AND c.claim_type = 'parcelle'
+           AND c.status <> 'retired'
+           AND NOT EXISTS (
+               SELECT 1 FROM agency_project_claims newer
+                WHERE newer.supersedes = c.claim_id
+           )
+         ORDER BY c.observed_at DESC, c.created_at DESC, c.claim_id DESC
+    )
+    SELECT COALESCE(jsonb_agg(value), '[]'::jsonb),
+           COALESCE(jsonb_agg(jsonb_build_object(
+               'claim_id', claim_id,
+               'status', status,
+               'certainty', certainty,
+               'backing_ref', CASE
+                   WHEN backing_entity_type IS NULL THEN NULL
+                   ELSE jsonb_build_object(
+                       'entity_type', backing_entity_type,
+                       'entity_id', backing_entity_id,
+                       'observed_status', backing_observed_status
+                   )
+               END,
+               'provenance', jsonb_build_object(
+                   'source_kind', source_kind,
+                   'source_ref', source_ref,
+                   'candidate_ref', CASE
+                       WHEN candidate_execution_id IS NULL THEN NULL
+                       ELSE jsonb_build_object(
+                           'execution_id', candidate_execution_id,
+                           'result_id', candidate_result_id,
+                           'review_disposition_id', candidate_review_disposition_id
+                       )
+                   END,
+                   'asserted_by', asserted_by,
+                   'derivation_note', derivation_note
+               ),
+               'observed_at', observed_at,
+               'effective_at', effective_at
+           )), '[]'::jsonb)
+      INTO parcel_values, parcel_refs
+      FROM active_parcels;
+
+    IF jsonb_array_length(parcel_values) > 0 THEN
+        scalar_values := scalar_values || jsonb_build_object('parcelle', parcel_values);
+        scalar_refs := scalar_refs || jsonb_build_object('parcelle', parcel_refs);
+    END IF;
+
+    UPDATE agency_projects
+       SET claim_values = scalar_values,
+           claim_refs = scalar_refs
+     WHERE project_id = target_project_id;
+END;
+$$;
