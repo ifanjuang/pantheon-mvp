@@ -78,7 +78,8 @@ BEGIN
                 (candidate_execution_id IS NULL AND candidate_result_id IS NULL
                  AND candidate_review_disposition_id IS NULL)
                 OR
-                (candidate_execution_id IS NOT NULL AND candidate_result_id IS NOT NULL)
+                (candidate_execution_id IS NOT NULL AND candidate_result_id IS NOT NULL
+                 AND candidate_review_disposition_id IS NOT NULL)
             ) NOT VALID;
     END IF;
 
@@ -90,8 +91,15 @@ BEGIN
         ALTER TABLE agency_project_claims
             ADD CONSTRAINT agency_project_claims_execution_source_check
             CHECK (
-                source_kind <> 'execution_result'
-                OR (candidate_execution_id IS NOT NULL AND candidate_result_id IS NOT NULL)
+                (source_kind = 'execution_result'
+                 AND candidate_execution_id IS NOT NULL
+                 AND candidate_result_id IS NOT NULL
+                 AND candidate_review_disposition_id IS NOT NULL)
+                OR
+                (source_kind <> 'execution_result'
+                 AND candidate_execution_id IS NULL
+                 AND candidate_result_id IS NULL
+                 AND candidate_review_disposition_id IS NULL)
             ) NOT VALID;
     END IF;
 END;
@@ -146,6 +154,69 @@ BEGIN
     END IF;
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION validate_agency_project_claim_candidate_ref()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    actual_execution_id TEXT;
+    review_result_ref TEXT;
+    review_disposition TEXT;
+    review_kind TEXT;
+    latest_disposition_id TEXT;
+BEGIN
+    IF NEW.source_kind <> 'execution_result' THEN
+        RETURN NEW;
+    END IF;
+
+    IF to_regclass('execution_result_items') IS NULL
+       OR to_regclass('execution_result_review_dispositions') IS NULL THEN
+        RAISE EXCEPTION 'execution result authorities are unavailable for ProjectClaim creation';
+    END IF;
+
+    SELECT execution_result_id
+      INTO actual_execution_id
+      FROM execution_result_items
+     WHERE result_id = NEW.candidate_result_id;
+
+    IF actual_execution_id IS NULL OR actual_execution_id <> NEW.candidate_execution_id THEN
+        RAISE EXCEPTION 'ProjectClaim candidate result does not belong to the declared execution';
+    END IF;
+
+    SELECT result_ref, disposition, reviewer_kind
+      INTO review_result_ref, review_disposition, review_kind
+      FROM execution_result_review_dispositions
+     WHERE disposition_id = NEW.candidate_review_disposition_id;
+
+    IF review_result_ref IS NULL OR review_result_ref <> NEW.candidate_result_id THEN
+        RAISE EXCEPTION 'ProjectClaim review disposition does not belong to the candidate result';
+    END IF;
+    IF review_disposition <> 'accepted_for_claim' OR review_kind <> 'human' THEN
+        RAISE EXCEPTION 'ProjectClaim creation requires a human accepted_for_claim disposition';
+    END IF;
+
+    SELECT disposition_id
+      INTO latest_disposition_id
+      FROM execution_result_review_dispositions
+     WHERE result_ref = NEW.candidate_result_id
+     ORDER BY occurred_at DESC, disposition_id DESC
+     LIMIT 1;
+
+    IF latest_disposition_id <> NEW.candidate_review_disposition_id THEN
+        RAISE EXCEPTION 'ProjectClaim creation requires the latest candidate disposition';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS agency_project_claims_validate_candidate_ref
+    ON agency_project_claims;
+CREATE TRIGGER agency_project_claims_validate_candidate_ref
+BEFORE INSERT ON agency_project_claims
+FOR EACH ROW
+EXECUTE FUNCTION validate_agency_project_claim_candidate_ref();
 
 -- Refresh the existing Project read cache with the qualified Claim shape. The
 -- cache remains derived and never becomes a second Claim authority.
@@ -264,5 +335,32 @@ BEGIN
        SET claim_values = scalar_values,
            claim_refs = scalar_refs
      WHERE project_id = target_project_id;
+END;
+$$;
+
+DO $$
+DECLARE
+    stale_project RECORD;
+BEGIN
+    FOR stale_project IN
+        SELECT p.project_id
+          FROM agency_projects p
+         WHERE EXISTS (
+                   SELECT 1
+                     FROM agency_project_claims c
+                    WHERE c.project_id = p.project_id
+                      AND c.status <> 'retired'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM agency_project_claims newer
+                           WHERE newer.supersedes = c.claim_id
+                      )
+               )
+           AND (
+               p.claim_refs = '{}'::jsonb
+               OR p.claim_refs::text NOT LIKE '%"certainty"%'
+           )
+    LOOP
+        PERFORM refresh_agency_project_claim_projection(stale_project.project_id);
+    END LOOP;
 END;
 $$;
