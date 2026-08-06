@@ -246,7 +246,6 @@ def test_projection_events_are_append_only(conn) -> None:
             )
 
 
-
 def test_document_link_update_has_distinct_operation_and_event(conn) -> None:
     info = _information(conn)
     document_id = _document(conn, info["project_id"])
@@ -281,7 +280,7 @@ def test_document_link_update_has_distinct_operation_and_event(conn) -> None:
         row[0]
         for row in conn.execute(
             "SELECT event_type FROM agency_information_projection_events "
-            "WHERE information_id = %s ORDER BY occurred_at, event_id",
+            "WHERE information_id = %s ORDER BY expected_revision, event_id",
             (info["information_id"],),
         ).fetchall()
     ] == ["document_link_added", "document_link_updated"]
