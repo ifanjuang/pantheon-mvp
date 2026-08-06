@@ -301,14 +301,31 @@ def append_review_disposition(
                     (replay["result_ref"],),
                 ).fetchone()[0]
                 return _load_execution(conn, execution_id)
+
+            # Reviews and candidate adoption share this immutable result-row lock.
+            # This gives one total order between a disposition and a Claim created
+            # from the same candidate, without turning either event into the other.
             cur.execute(
-                "SELECT execution_result_id FROM execution_result_items WHERE result_id = %s",
+                "SELECT execution_result_id, result_kind "
+                "FROM execution_result_items WHERE result_id = %s FOR UPDATE",
                 (result_ref,),
             )
             row = cur.fetchone()
             if row is None:
                 raise ExecutionResultNotFound(f"unknown result candidate: {result_ref}")
             execution_id = row["execution_result_id"]
+            result_kind = row["result_kind"]
+
+            if disposition == "accepted_for_claim":
+                if result_kind != "project_claim_candidate":
+                    raise ExecutionResultError(
+                        "accepted_for_claim requires a project_claim_candidate result"
+                    )
+                if reviewer_kind != "human":
+                    raise ExecutionResultError(
+                        "accepted_for_claim requires a human reviewer"
+                    )
+
         conn.execute(
             "INSERT INTO execution_result_review_dispositions "
             "(disposition_id, result_ref, disposition, reviewer, reviewer_kind, note, idempotency_key, payload_digest) "
