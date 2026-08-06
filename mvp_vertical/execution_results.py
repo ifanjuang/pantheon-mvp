@@ -1,8 +1,8 @@
 """Append-only persistence for typed execution results and review dispositions.
 
 Storing a result records a candidate returned by an execution runtime. Reviewing
-it records a separate disposition. Neither operation writes APU objects, admits
-Evidence, promotes memory or authorizes another task.
+it records a separate disposition. Neither operation writes APU objects, creates
+ProjectClaims, admits Evidence, promotes memory or authorizes another task.
 """
 
 from __future__ import annotations
@@ -28,11 +28,13 @@ RESULT_KINDS = {
     "contradiction_candidate",
     "work_issue_candidate",
     "knowledge_edit_variant",
+    "project_claim_candidate",
 }
 DISPOSITIONS = {
     "pending",
     "needs_clarification",
     "accepted_for_mapping",
+    "accepted_for_claim",
     "rejected",
     "superseded",
 }
