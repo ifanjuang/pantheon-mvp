@@ -17,7 +17,7 @@ import psycopg
 import yaml
 from psycopg.rows import dict_row
 
-from . import agency_claims
+from . import agency_claims, agency_schema
 
 
 SCHEMA = (
@@ -26,6 +26,7 @@ SCHEMA = (
     / "pantheon"
     / "project_claim_candidate.schema.yaml"
 )
+ADMITTED_BACKING_TYPES = {"project", "information"}
 
 
 class ProjectClaimCandidateError(ValueError):
@@ -118,9 +119,26 @@ def _load_candidate(
     return dict(row), dict(disposition)
 
 
+def _validate_candidate_unit(payload: dict[str, Any]) -> None:
+    field = agency_schema.project_claim_fields().get(payload["claim_type"])
+    if field is None:
+        raise ProjectClaimCandidateError(
+            f"undeclared Project claim type: {payload['claim_type']}"
+        )
+    expected_unit = field.get("unit") or None
+    proposed_unit = payload.get("unit") or None
+    if proposed_unit != expected_unit:
+        raise ProjectClaimCandidateError(
+            f"candidate unit {proposed_unit!r} does not match governed unit {expected_unit!r}"
+        )
+
+
 def _select_backing_ref(
+    conn: psycopg.Connection,
+    *,
     payload: dict[str, Any],
     requested: dict[str, Any] | None,
+    project_id: str,
 ) -> dict[str, Any] | None:
     if requested is None:
         return None
@@ -128,14 +146,33 @@ def _select_backing_ref(
     entity_id = str(requested.get("entity_id") or "").strip()
     if not entity_type or not entity_id:
         raise ProjectClaimCandidateError("backing_ref requires entity_type and entity_id")
+    if entity_type not in ADMITTED_BACKING_TYPES:
+        raise ProjectClaimCandidateError(
+            "candidate-backed Claim currently admits only project or information backing"
+        )
+
+    selected: dict[str, Any] | None = None
     for basis in payload["basis_refs"]:
         if basis["entity_type"] == entity_type and basis["entity_id"] == entity_id:
-            return {
+            selected = {
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "observed_status": basis.get("observed_status"),
             }
-    raise ProjectClaimCandidateError("backing_ref must be one of the candidate basis_refs")
+            break
+    if selected is None:
+        raise ProjectClaimCandidateError("backing_ref must be one of the candidate basis_refs")
+
+    try:
+        resolved = conn.execute(
+            "SELECT resolve_agency_entity_relation_project(%s, %s)",
+            (entity_type, entity_id),
+        ).fetchone()
+    except psycopg.Error as exc:
+        raise ProjectClaimCandidateError(str(exc)) from exc
+    if resolved is None or resolved[0] != project_id:
+        raise ProjectClaimCandidateError("backing_ref does not belong to the candidate Project")
+    return selected
 
 
 def create_claim_from_candidate(
@@ -182,8 +219,14 @@ def create_claim_from_candidate(
             raise ProjectClaimCandidateError(
                 "execution project_ref and candidate project_ref must match"
             )
+        _validate_candidate_unit(payload)
 
-        selected_backing = _select_backing_ref(payload, backing_ref)
+        selected_backing = _select_backing_ref(
+            conn,
+            payload=payload,
+            requested=backing_ref,
+            project_id=project_id,
+        )
         if status in {"source_backed", "verified"} and selected_backing is None:
             raise ProjectClaimCandidateError(f"{status} Claim requires a selected basis_ref")
 
