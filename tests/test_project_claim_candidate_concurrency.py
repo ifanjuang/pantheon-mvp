@@ -308,3 +308,104 @@ def test_review_insertion_is_ordered_after_inflight_claim_creation(monkeypatch) 
     finally:
         for conn in connections:
             conn.close()
+
+
+def test_rejection_committed_before_claim_creation_blocks_adoption() -> None:
+    connections = _open_connections(3)
+    setup, review_conn, claim_conn = connections
+    try:
+        _truncate(setup)
+        project_id, execution_id, result_id, information_id = _prepare_candidate(setup)
+
+        review_has_lock = threading.Event()
+        release_review = threading.Event()
+        claim_started = threading.Event()
+        claim_finished = threading.Event()
+        errors: list[BaseException] = []
+
+        disposition_id = _id("disposition")
+        idempotency_key = _id("claim-rejection-before-adoption")
+
+        def hold_rejection() -> None:
+            try:
+                with review_conn.transaction():
+                    with review_conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT execution_result_id FROM execution_result_items "
+                            "WHERE result_id = %s FOR UPDATE",
+                            (result_id,),
+                        )
+                        assert cur.fetchone() is not None
+                        cur.execute(
+                            """
+                            INSERT INTO execution_result_review_dispositions (
+                                disposition_id, result_ref, disposition, reviewer,
+                                reviewer_kind, note, idempotency_key, payload_digest
+                            ) VALUES (%s, %s, 'rejected', 'human:reviewer', 'human', %s, %s, %s)
+                            """,
+                            (
+                                disposition_id,
+                                result_id,
+                                "Rejected before Claim creation.",
+                                idempotency_key,
+                                "0" * 64,
+                            ),
+                        )
+                        review_has_lock.set()
+                        if not release_review.wait(5):
+                            raise AssertionError("claim-order test did not release the review")
+            except BaseException as exc:
+                errors.append(exc)
+
+        def create_after_rejection() -> None:
+            try:
+                claim_started.set()
+                project_claim_candidates.create_claim_from_candidate(
+                    claim_conn,
+                    execution_id=execution_id,
+                    result_id=result_id,
+                    actor="human:ifan",
+                    status="source_backed",
+                    backing_ref={
+                        "entity_type": "information",
+                        "entity_id": information_id,
+                    },
+                )
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                claim_finished.set()
+
+        review_thread = threading.Thread(target=hold_rejection, name="claim-review-first")
+        claim_thread = threading.Thread(target=create_after_rejection, name="claim-create-second")
+
+        review_thread.start()
+        assert review_has_lock.wait(5), "rejection never acquired the candidate row lock"
+        claim_thread.start()
+        assert claim_started.wait(5)
+        assert not claim_finished.wait(0.2), "Claim creation bypassed the review row lock"
+        release_review.set()
+
+        review_thread.join(5)
+        claim_thread.join(5)
+        assert not review_thread.is_alive() and not claim_thread.is_alive()
+
+        claim_errors = [
+            exc for exc in errors if isinstance(exc, project_claim_candidates.ProjectClaimCandidateError)
+        ]
+        unexpected = [exc for exc in errors if exc not in claim_errors]
+        assert unexpected == []
+        assert len(claim_errors) == 1
+        assert "latest ProjectClaim candidate disposition is not accepted_for_claim" in str(
+            claim_errors[0]
+        )
+        assert agency_claims.list_project_claims(setup, project_id) == []
+
+        history = execution_results.get_execution_result(setup, execution_id)[
+            "review_dispositions"
+        ]
+        assert history[-1]["disposition_id"] == disposition_id
+        assert history[-1]["disposition"] == "rejected"
+    finally:
+        for conn in connections:
+            conn.close()
