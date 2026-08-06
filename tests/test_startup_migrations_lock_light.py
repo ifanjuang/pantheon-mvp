@@ -99,3 +99,66 @@ def test_the_guard_recognizes_a_guarded_alter() -> None:
 
     bare = "ALTER TABLE t ADD COLUMN c TEXT;"
     assert "ALTER TABLE" in _strip_guarded_blocks(bare).upper()
+
+
+def test_guarded_migrations_reach_their_target_schema_on_a_fresh_database() -> None:
+    """A guard that skips is only correct if the schema is already correct.
+
+    Guarding schema evolution on the catalog introduces a failure mode the
+    unguarded form did not have: a marker that also matches the *old* definition
+    makes the guard conclude "already applied" and skip. The suite could not see
+    it, because every local database had already been migrated by the earlier,
+    unguarded statements — only a fresh database exercises the guard's decision.
+
+    This applies the startup set to a throwaway database and asserts the
+    constraints reached their target vocabulary.
+    """
+    import uuid
+
+    import psycopg
+    import pytest as _pytest
+
+    from mvp_vertical import store
+
+    try:
+        admin = psycopg.connect(store.dsn_from_env(), autocommit=True)
+    except Exception as exc:  # pragma: no cover - unit-only environment
+        _pytest.skip(f"PostgreSQL unreachable: {exc}")
+
+    scratch = f"mvp_migrationprobe_{uuid.uuid4().hex[:12]}"
+    with admin:
+        admin.execute(f'CREATE DATABASE "{scratch}"')
+    try:
+        dsn = store.dsn_from_env()
+        probe_dsn = dsn.rsplit("/", 1)[0] + "/" + scratch
+        conn = psycopg.connect(probe_dsn)
+        try:
+            # store.DDL creates the base tables the startup migrations evolve.
+            conn.execute(store.DDL)
+            conn.commit()
+            for module_name in _startup_migration_modules():
+                conn.execute(_migration_path(module_name).read_text(encoding="utf-8"))
+            conn.commit()
+
+            expected = {
+                "agency_change_candidates_status_check": "revision_requested",
+                "agency_change_candidate_events_event_type_check": "revision_requested",
+                "execution_result_items_result_kind_check": "knowledge_edit_variant",
+            }
+            for name, value in expected.items():
+                row = conn.execute(
+                    "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = %s",
+                    (name,),
+                ).fetchone()
+                assert row is not None, f"{name} was never created"
+                assert value in row[0], (
+                    f"{name} does not accept {value!r} on a fresh database: {row[0]}. "
+                    "A catalog guard whose marker also matches the previous "
+                    "definition skips the evolution it was meant to perform."
+                )
+        finally:
+            conn.close()
+    finally:
+        admin = psycopg.connect(store.dsn_from_env(), autocommit=True)
+        with admin:
+            admin.execute(f'DROP DATABASE IF EXISTS "{scratch}" WITH (FORCE)')

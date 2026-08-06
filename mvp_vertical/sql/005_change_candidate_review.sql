@@ -20,7 +20,7 @@ BEGIN
         SELECT 1 FROM pg_constraint
          WHERE conname = 'agency_change_candidates_status_check'
            AND conrelid = 'agency_change_candidates'::regclass
-           AND pg_get_constraintdef(oid) LIKE $marker$%'stale'%$marker$
+           AND pg_get_constraintdef(oid) LIKE $marker$%'revision_requested'%$marker$
     ) THEN
         ALTER TABLE agency_change_candidates DROP CONSTRAINT IF EXISTS agency_change_candidates_status_check;
         ALTER TABLE agency_change_candidates
@@ -35,7 +35,7 @@ BEGIN
         SELECT 1 FROM pg_constraint
          WHERE conname = 'agency_change_candidate_events_event_type_check'
            AND conrelid = 'agency_change_candidate_events'::regclass
-           AND pg_get_constraintdef(oid) LIKE $marker$%'stale'%$marker$
+           AND pg_get_constraintdef(oid) LIKE $marker$%'revision_requested'%$marker$
     ) THEN
         ALTER TABLE agency_change_candidate_events DROP CONSTRAINT IF EXISTS agency_change_candidate_events_event_type_check;
         ALTER TABLE agency_change_candidate_events
