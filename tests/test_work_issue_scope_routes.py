@@ -104,11 +104,11 @@ def _create_payload() -> dict:
 
 def test_scope_routes_are_installed_once(monkeypatch) -> None:
     app = _app(monkeypatch)
-    methods_by_path = {
-        route.path: set(route.methods or set())
-        for route in app.routes
-        if getattr(route, "path", "").startswith("/work/")
-    }
+    methods_by_path: dict[str, set[str]] = {}
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if path.startswith("/work/"):
+            methods_by_path.setdefault(path, set()).update(route.methods or set())
     assert methods_by_path["/work/issues"] == {"POST"}
     assert methods_by_path["/work/issues/{issue_id}/scopes"] == {"GET", "POST"}
     assert methods_by_path["/work/scopes/{entity_type}/{entity_id}/issues"] == {"GET"}
