@@ -238,15 +238,21 @@ def add_document_link(conn: psycopg.Connection, *, information_id: str, document
         current = _metadata_row(conn, information_id, lock=True)
         if current["revision"] != expected_revision:
             raise StaleInformationProjectionWrite(f"stale Information projection revision: expected {expected_revision}, current {current['revision']}")
-        conn.execute("""
+        # This is an upsert, so the event type depends on what it did. Reporting
+        # `document_link_added` for a role or observed-version change made the
+        # append-only history describe a link creation that never happened, and
+        # left no trace that a link had been modified at all. `xmax = 0` marks a
+        # row this statement inserted rather than updated.
+        inserted = conn.execute("""
             INSERT INTO agency_information_document_links (information_id, document_id, role, observed_version, observed_digest)
             VALUES (%s,%s,%s,%s,%s)
             ON CONFLICT (information_id, document_id) DO UPDATE SET role = EXCLUDED.role, observed_version = EXCLUDED.observed_version, observed_digest = EXCLUDED.observed_digest
-            """, (information_id, document_id, role, observed_version, observed_digest))
+            RETURNING (xmax = 0)
+            """, (information_id, document_id, role, observed_version, observed_digest)).fetchone()[0]
         resulting_revision = expected_revision + 1
         conn.execute("INSERT INTO agency_information_projection_metadata (information_id, revision) VALUES (%s,%s) ON CONFLICT (information_id) DO UPDATE SET revision = EXCLUDED.revision, updated_at = CURRENT_TIMESTAMP", (information_id, resulting_revision))
         snapshot = get_projection(conn, information_id)
-        _record_event(conn, information_id=information_id, event_type="document_link_added", actor=actor, actor_kind=actor_kind, expected_revision=expected_revision, resulting_revision=resulting_revision, idempotency_key=idempotency_key, payload_digest=digest, payload=payload, snapshot=snapshot)
+        _record_event(conn, information_id=information_id, event_type="document_link_added" if inserted else "document_link_updated", actor=actor, actor_kind=actor_kind, expected_revision=expected_revision, resulting_revision=resulting_revision, idempotency_key=idempotency_key, payload_digest=digest, payload=payload, snapshot=snapshot)
         return snapshot
 
 

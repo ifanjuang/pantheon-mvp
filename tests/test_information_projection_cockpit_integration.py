@@ -48,8 +48,9 @@ def test_projection_migration_is_part_of_cockpit_initializer(monkeypatch) -> Non
     assert expected in executed
 
 
-def test_projection_startup_migration_remains_lock_light() -> None:
-    from mvp_vertical import information_projection
-
-    migration = information_projection.MIGRATION.read_text(encoding="utf-8").upper()
-    assert "ALTER TABLE" not in migration
+# The lock-light rule for this migration now lives in
+# tests/test_startup_migrations_lock_light.py, which applies it to every
+# migration the composed initializer replays rather than to this one alone, and
+# which distinguishes an unguarded ALTER TABLE from one inside a DO $$ block that
+# checks the catalog first. The narrow version forbade both, so it would have
+# banned schema evolution outright instead of the per-boot lock it targeted.
