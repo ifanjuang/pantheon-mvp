@@ -24,7 +24,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Execute reviewed bounded patch
-        run: python .github/scripts/apply_a_b_relations_convergence.py
+        shell: bash
+        run: |
+          python .github/scripts/fix_convergence_patch.py
+          python .github/scripts/apply_a_b_relations_convergence.py
 
       - name: Validate and publish patch result
         shell: bash
