@@ -48,20 +48,57 @@ def _project(conn) -> dict:
     )
 
 
-def _candidate_payload(project_id: str) -> dict:
+def _information(conn, project_id: str) -> str:
+    information_id = _id("information")
+    conn.execute(
+        """
+        INSERT INTO agency_information_cards (
+            information_id, series_id, project_id, title, category,
+            source_type, source_note, index_label, summary, details,
+            status, limits, type_tags, subject_tags, author, acted_at
+        ) VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            'acted', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, %s, clock_timestamp()
+        )
+        """,
+        (
+            information_id,
+            _id("series"),
+            project_id,
+            "Synthèse de coût",
+            "cost_synthesis",
+            "native",
+            "Fixture de test",
+            "A01",
+            "Budget de référence",
+            "Synthèse agie utilisée comme base du candidat.",
+            "human:test",
+        ),
+    )
+    conn.commit()
+    return information_id
+
+
+def _candidate_payload(
+    project_id: str,
+    information_id: str,
+    *,
+    unit: str | None = "EUR",
+) -> dict:
     return {
         "project_ref": project_id,
         "claim_type": "budget",
         "proposed_value": 375000,
-        "unit": "EUR",
+        "unit": unit,
         "certainty": "E2",
         "observed_at": "2026-08-06T16:00:00+00:00",
         "effective_at": "2026-08-06T00:00:00+00:00",
         "basis_refs": [
             {
                 "entity_type": "information",
-                "entity_id": "information.budget-a01",
-                "observed_revision": 3,
+                "entity_id": information_id,
+                "observed_revision": 1,
                 "observed_status": "acted",
             }
         ],
@@ -79,7 +116,14 @@ def _candidate_payload(project_id: str) -> dict:
     }
 
 
-def _store_candidate(conn, project_id: str) -> tuple[str, str]:
+def _store_candidate(
+    conn,
+    project_id: str,
+    *,
+    information_id: str | None = None,
+    unit: str | None = "EUR",
+) -> tuple[str, str, str]:
+    basis_information_id = information_id or _information(conn, project_id)
     execution_id = _id("execution")
     result_id = _id("result")
     execution_results.store_execution_result(
@@ -100,14 +144,18 @@ def _store_candidate(conn, project_id: str) -> tuple[str, str]:
                     "result_id": result_id,
                     "result_kind": "project_claim_candidate",
                     "schema_ref": "schemas/project_claim_candidate.schema.yaml",
-                    "payload": _candidate_payload(project_id),
+                    "payload": _candidate_payload(
+                        project_id,
+                        basis_information_id,
+                        unit=unit,
+                    ),
                 }
             ],
             "clarification_requests": [],
         },
         idempotency_key=_id("execution-store"),
     )
-    return execution_id, result_id
+    return execution_id, result_id, basis_information_id
 
 
 def _accept(conn, result_id: str, *, reviewer_kind: str = "human") -> str:
@@ -130,7 +178,7 @@ def _accept(conn, result_id: str, *, reviewer_kind: str = "human") -> str:
 
 def test_candidate_requires_latest_human_acceptance(conn) -> None:
     project = _project(conn)
-    execution_id, result_id = _store_candidate(conn, project["project_id"])
+    execution_id, result_id, information_id = _store_candidate(conn, project["project_id"])
 
     with pytest.raises(project_claim_candidates.ProjectClaimCandidateError, match="not been reviewed"):
         project_claim_candidates.create_claim_from_candidate(
@@ -139,10 +187,7 @@ def test_candidate_requires_latest_human_acceptance(conn) -> None:
             result_id=result_id,
             actor="human:ifan",
             status="source_backed",
-            backing_ref={
-                "entity_type": "information",
-                "entity_id": "information.budget-a01",
-            },
+            backing_ref={"entity_type": "information", "entity_id": information_id},
         )
 
     _accept(conn, result_id, reviewer_kind="system")
@@ -158,7 +203,7 @@ def test_candidate_requires_latest_human_acceptance(conn) -> None:
 
 def test_reviewed_candidate_creates_separate_append_only_claim(conn) -> None:
     project = _project(conn)
-    execution_id, result_id = _store_candidate(conn, project["project_id"])
+    execution_id, result_id, information_id = _store_candidate(conn, project["project_id"])
     disposition_id = _accept(conn, result_id)
 
     claim = project_claim_candidates.create_claim_from_candidate(
@@ -168,10 +213,7 @@ def test_reviewed_candidate_creates_separate_append_only_claim(conn) -> None:
         actor="human:ifan",
         status="source_backed",
         certainty="E3",
-        backing_ref={
-            "entity_type": "information",
-            "entity_id": "information.budget-a01",
-        },
+        backing_ref={"entity_type": "information", "entity_id": information_id},
         note="Retained after professional review.",
     )
 
@@ -198,10 +240,7 @@ def test_reviewed_candidate_creates_separate_append_only_claim(conn) -> None:
         actor="human:ifan",
         status="source_backed",
         certainty="E3",
-        backing_ref={
-            "entity_type": "information",
-            "entity_id": "information.budget-a01",
-        },
+        backing_ref={"entity_type": "information", "entity_id": information_id},
     )
     assert replay["claim_id"] == claim["claim_id"]
     assert len(agency_claims.list_project_claims(conn, project["project_id"])) == 1
@@ -213,7 +252,8 @@ def test_reviewed_candidate_creates_separate_append_only_claim(conn) -> None:
 
 def test_backing_ref_must_be_candidate_basis(conn) -> None:
     project = _project(conn)
-    execution_id, result_id = _store_candidate(conn, project["project_id"])
+    execution_id, result_id, _ = _store_candidate(conn, project["project_id"])
+    other_information_id = _information(conn, project["project_id"])
     _accept(conn, result_id)
 
     with pytest.raises(project_claim_candidates.ProjectClaimCandidateError, match="basis_refs"):
@@ -224,15 +264,60 @@ def test_backing_ref_must_be_candidate_basis(conn) -> None:
             actor="human:ifan",
             status="source_backed",
             backing_ref={
-                "entity_type": "document",
-                "entity_id": "document.not-admitted",
+                "entity_type": "information",
+                "entity_id": other_information_id,
             },
+        )
+
+
+def test_backing_ref_must_belong_to_candidate_project(conn) -> None:
+    project = _project(conn)
+    other_project = _project(conn)
+    foreign_information_id = _information(conn, other_project["project_id"])
+    execution_id, result_id, _ = _store_candidate(
+        conn,
+        project["project_id"],
+        information_id=foreign_information_id,
+    )
+    _accept(conn, result_id)
+
+    with pytest.raises(project_claim_candidates.ProjectClaimCandidateError, match="candidate Project"):
+        project_claim_candidates.create_claim_from_candidate(
+            conn,
+            execution_id=execution_id,
+            result_id=result_id,
+            actor="human:ifan",
+            status="source_backed",
+            backing_ref={
+                "entity_type": "information",
+                "entity_id": foreign_information_id,
+            },
+        )
+
+
+def test_candidate_unit_must_match_governed_claim_field(conn) -> None:
+    project = _project(conn)
+    execution_id, result_id, information_id = _store_candidate(
+        conn,
+        project["project_id"],
+        unit="USD",
+    )
+    _accept(conn, result_id)
+
+    with pytest.raises(project_claim_candidates.ProjectClaimCandidateError, match="governed unit"):
+        project_claim_candidates.create_claim_from_candidate(
+            conn,
+            execution_id=execution_id,
+            result_id=result_id,
+            actor="human:ifan",
+            status="source_backed",
+            backing_ref={"entity_type": "information", "entity_id": information_id},
         )
 
 
 def test_later_rejection_blocks_claim_creation(conn) -> None:
     project = _project(conn)
-    execution_id, result_id = _store_candidate(conn, project["project_id"])
+    execution_id, result_id, _ = _store_candidate(conn, project["project_id"])
     _accept(conn, result_id)
     execution_results.append_review_disposition(
         conn,
