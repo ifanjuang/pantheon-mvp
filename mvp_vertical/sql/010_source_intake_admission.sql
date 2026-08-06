@@ -1,5 +1,7 @@
 CREATE TABLE IF NOT EXISTS agency_sources (
-    source_id TEXT PRIMARY KEY CHECK (source_id ~ '^[a-z0-9._-]+$'),
+    source_id TEXT PRIMARY KEY
+        CONSTRAINT agency_sources_source_id_shape_check
+        CHECK (source_id ~ '^[a-z0-9._-]+$'),
     source_kind TEXT NOT NULL CHECK (source_kind IN (
         'email', 'document', 'image', 'audio', 'video', 'model',
         'url', 'text', 'archive', 'event', 'other'
