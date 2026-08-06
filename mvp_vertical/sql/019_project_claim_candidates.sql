@@ -102,17 +102,45 @@ BEGIN
                  AND candidate_review_disposition_id IS NULL)
             ) NOT VALID;
     END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'agency_project_claims'::regclass
+           AND conname = 'agency_project_claims_certainty_check'
+           AND NOT convalidated
+    ) THEN
+        ALTER TABLE agency_project_claims
+            VALIDATE CONSTRAINT agency_project_claims_certainty_check;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'agency_project_claims'::regclass
+           AND conname = 'agency_project_claims_source_kind_check'
+           AND NOT convalidated
+    ) THEN
+        ALTER TABLE agency_project_claims
+            VALIDATE CONSTRAINT agency_project_claims_source_kind_check;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'agency_project_claims'::regclass
+           AND conname = 'agency_project_claims_candidate_identity_check'
+           AND NOT convalidated
+    ) THEN
+        ALTER TABLE agency_project_claims
+            VALIDATE CONSTRAINT agency_project_claims_candidate_identity_check;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'agency_project_claims'::regclass
+           AND conname = 'agency_project_claims_execution_source_check'
+           AND NOT convalidated
+    ) THEN
+        ALTER TABLE agency_project_claims
+            VALIDATE CONSTRAINT agency_project_claims_execution_source_check;
+    END IF;
 END;
 $$;
-
-ALTER TABLE agency_project_claims
-    VALIDATE CONSTRAINT agency_project_claims_certainty_check;
-ALTER TABLE agency_project_claims
-    VALIDATE CONSTRAINT agency_project_claims_source_kind_check;
-ALTER TABLE agency_project_claims
-    VALIDATE CONSTRAINT agency_project_claims_candidate_identity_check;
-ALTER TABLE agency_project_claims
-    VALIDATE CONSTRAINT agency_project_claims_execution_source_check;
 
 CREATE UNIQUE INDEX IF NOT EXISTS agency_project_claims_one_claim_per_candidate
     ON agency_project_claims (candidate_execution_id, candidate_result_id)
@@ -161,15 +189,12 @@ BEGIN
             REFERENCES execution_result_review_dispositions(disposition_id)
             ON DELETE RESTRICT NOT VALID;
     END IF;
-END;
-$$;
 
-DO $$
-BEGIN
     IF EXISTS (
         SELECT 1 FROM pg_constraint
          WHERE conrelid = 'agency_project_claims'::regclass
            AND conname = 'agency_project_claims_candidate_execution_fk'
+           AND NOT convalidated
     ) THEN
         ALTER TABLE agency_project_claims
             VALIDATE CONSTRAINT agency_project_claims_candidate_execution_fk;
@@ -178,6 +203,7 @@ BEGIN
         SELECT 1 FROM pg_constraint
          WHERE conrelid = 'agency_project_claims'::regclass
            AND conname = 'agency_project_claims_candidate_result_fk'
+           AND NOT convalidated
     ) THEN
         ALTER TABLE agency_project_claims
             VALIDATE CONSTRAINT agency_project_claims_candidate_result_fk;
@@ -186,6 +212,7 @@ BEGIN
         SELECT 1 FROM pg_constraint
          WHERE conrelid = 'agency_project_claims'::regclass
            AND conname = 'agency_project_claims_candidate_disposition_fk'
+           AND NOT convalidated
     ) THEN
         ALTER TABLE agency_project_claims
             VALIDATE CONSTRAINT agency_project_claims_candidate_disposition_fk;
