@@ -40,6 +40,7 @@ def test_reviewable_change_candidates_stay_distinct_from_decision_requests() -> 
     assert 'entity_id: `decision:change:${item.candidate_id}`' in renderer
     assert 'category: "Décision · Modification"' in renderer
     assert 'entity_type: "work_decision"' not in renderer
+    assert "normalizeWorkDecision" not in renderer
     assert "pending_change_candidates(context)" in assembler
     assert '["pending_review", "revision_requested"]' in assembler
     assert "decision_requests(_context)" in assembler
