@@ -12,11 +12,13 @@ on disk. That per-file record is the authority: it is verified by
 `tests/test_vendored_contract_conformance.py`, and a schema without one has no
 recorded origin at all.
 
-The two older pin files, `UPSTREAM_COMMIT` and `PROJECT_CLAIM_UPSTREAM_COMMIT`,
-predate the sidecars. They are retained because `tools/revendor*.sh` still writes
-them, but they carry no digest and one of them was measurably wrong: it named a
-commit whose bytes differ from the vendored copy. Where the two disagree, the
-sidecar wins, because only the sidecar can be checked.
+The three older pin files, `UPSTREAM_COMMIT`, `PROJECT_CLAIM_UPSTREAM_COMMIT` and
+`WORK_ISSUE_SCOPE_UPSTREAM_COMMIT`, predate the sidecars. Their separation still
+records something true — adding the scope contract does not imply the older
+WorkIssue aggregate was re-reviewed — but they carry no digest, and one of them
+was measurably wrong: it named a commit whose bytes differ from the vendored copy.
+Where a pin file and a sidecar disagree, the sidecar wins, because only the
+sidecar can be checked.
 
 ## What is vendored, and from where
 
@@ -25,6 +27,7 @@ sidecar wins, because only the sidecar can be checked.
 | `mvp_governed_loop_objects.schema.yaml` | `schemas/mvp_governed_loop_objects.schema.yaml` | verbatim copy |
 | `document_knowledge_slice.schema.yaml` | `schemas/document_knowledge_slice.schema.yaml` | verbatim copy |
 | `work_issue_slice.schema.yaml` | `schemas/work_issue_slice.schema.yaml` | verbatim copy |
+| `work_issue_scope_link.schema.yaml` | `schemas/work_issue_scope_link.schema.yaml` | verbatim copy |
 | `project_claim.schema.yaml` | `schemas/project_claim.schema.yaml` | verbatim copy |
 | `navigation_registry.schema.yaml` | `schemas/navigation_registry.schema.yaml` | verbatim copy |
 | `tag_registry.schema.yaml` | `schemas/tag_registry.schema.yaml` | verbatim copy |
@@ -60,6 +63,9 @@ approval or authority transfer.
   document and work schemas and rewrites `UPSTREAM_COMMIT`.
 - `tools/revendor_project_claim.sh <commit-sha>` refreshes only
   `project_claim.schema.yaml` and rewrites `PROJECT_CLAIM_UPSTREAM_COMMIT`.
+- WorkIssue scope links are currently reviewed as an explicit one-file copy with
+  their dedicated pin; a helper may be added only if this contract begins to
+  change frequently.
 
-Both are reviewed changes, never automatic ones. After either operation, inspect
-the diff, reconcile emitted shapes and run the tests.
+All are reviewed changes, never automatic ones. After any refresh, inspect the
+diff, reconcile emitted shapes and run the tests.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from mvp_vertical.cockpit_shell import create_cockpit_app
 
 
@@ -48,9 +50,18 @@ def test_projection_migration_is_part_of_cockpit_initializer(monkeypatch) -> Non
     assert expected in executed
 
 
-# The lock-light rule for this migration now lives in
-# tests/test_startup_migrations_lock_light.py, which applies it to every
-# migration the composed initializer replays rather than to this one alone, and
-# which distinguishes an unguarded ALTER TABLE from one inside a DO $$ block that
-# checks the catalog first. The narrow version forbade both, so it would have
-# banned schema evolution outright instead of the per-boot lock it targeted.
+# The general form of this rule lives in tests/test_startup_migrations_lock_light.py,
+# which applies the same guarded-block stripping to every migration the composed
+# initializer replays rather than to this one alone. The narrow check below is kept
+# because it fails against the file a reader of this module is looking at.
+def test_projection_startup_migration_remains_lock_light() -> None:
+    from mvp_vertical import information_projection
+
+    migration = information_projection.MIGRATION.read_text(encoding="utf-8")
+    unguarded = re.sub(
+        r"DO\s*\$\$.*?\$\$\s*;",
+        "",
+        migration,
+        flags=re.DOTALL | re.IGNORECASE,
+    ).upper()
+    assert "ALTER TABLE" not in unguarded

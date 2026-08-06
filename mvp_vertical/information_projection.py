@@ -19,7 +19,7 @@ from psycopg.types.json import Jsonb
 
 from . import vendor_contracts
 
-MIGRATION = Path(__file__).resolve().parent / "sql" / "012_information_card_projection.sql"
+MIGRATION = Path(__file__).resolve().parent / "sql" / "013_information_card_projection.sql"
 MEDIA_TYPES = {"email", "pdf", "text", "table", "image", "photo", "audio", "video", "docx", "xlsx", "ifc", "link", "other"}
 LINK_ROLES = {"primary", "supporting", "attachment"}
 
@@ -244,7 +244,9 @@ def add_document_link(conn: psycopg.Connection, *, information_id: str, document
         # `document_link_added` for a role or observed-version change made the
         # append-only history describe a link creation that never happened, and
         # left no trace that a link had been modified at all. `xmax = 0` marks a
-        # row this statement inserted rather than updated.
+        # row this statement inserted rather than updated, so the statement that
+        # decides is the same one that writes — a preceding SELECT would answer
+        # for a state the upsert is free to leave behind.
         inserted = conn.execute("""
             INSERT INTO agency_information_document_links (information_id, document_id, role, observed_version, observed_digest)
             VALUES (%s,%s,%s,%s,%s)
@@ -254,8 +256,13 @@ def add_document_link(conn: psycopg.Connection, *, information_id: str, document
         resulting_revision = expected_revision + 1
         conn.execute("INSERT INTO agency_information_projection_metadata (information_id, revision) VALUES (%s,%s) ON CONFLICT (information_id) DO UPDATE SET revision = EXCLUDED.revision, updated_at = CURRENT_TIMESTAMP", (information_id, resulting_revision))
         snapshot = get_projection(conn, information_id)
-        _record_event(conn, information_id=information_id, event_type="document_link_added" if inserted else "document_link_updated", actor=actor, actor_kind=actor_kind, expected_revision=expected_revision, resulting_revision=resulting_revision, idempotency_key=idempotency_key, payload_digest=digest, payload=payload, snapshot=snapshot)
-        return snapshot
+        event_type = "document_link_added" if inserted else "document_link_updated"
+        mutation_result = {
+            **snapshot,
+            "document_link_operation": "created" if inserted else "updated",
+        }
+        _record_event(conn, information_id=information_id, event_type=event_type, actor=actor, actor_kind=actor_kind, expected_revision=expected_revision, resulting_revision=resulting_revision, idempotency_key=idempotency_key, payload_digest=digest, payload=payload, snapshot=mutation_result)
+        return mutation_result
 
 
 def remove_document_link(conn: psycopg.Connection, *, information_id: str, document_id: str, expected_revision: int, actor: str, actor_kind: Literal["human", "system"], idempotency_key: str) -> dict:

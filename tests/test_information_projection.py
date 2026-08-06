@@ -249,7 +249,7 @@ def test_projection_events_are_append_only(conn) -> None:
             )
 
 
-def test_link_event_distinguishes_an_addition_from_a_modification(conn) -> None:
+def test_document_link_update_has_distinct_operation_and_event(conn) -> None:
     """add_document_link upserts, so the event must say which one happened.
 
     It always recorded `document_link_added`, so changing a link's role from
@@ -257,47 +257,49 @@ def test_link_event_distinguishes_an_addition_from_a_modification(conn) -> None:
     that never occurred, and the modification left no trace at all.
     """
     info = _information(conn)
-    document = _document(conn, info["project_id"])
+    document_id = _document(conn, info["project_id"])
 
     def events() -> list[str]:
         rows = conn.execute(
             "SELECT event_type FROM agency_information_projection_events "
-            "WHERE information_id = %s ORDER BY resulting_revision",
+            "WHERE information_id = %s ORDER BY expected_revision, event_id",
             (info["information_id"],),
         ).fetchall()
         return [row[0] for row in rows]
 
-    information_projection.add_document_link(
+    created = information_projection.add_document_link(
         conn,
         information_id=info["information_id"],
-        document_id=document,
-        role="primary",
+        document_id=document_id,
+        role="supporting",
         observed_version=1,
         observed_digest=None,
         expected_revision=0,
         actor="reviewer",
         actor_kind="human",
-        idempotency_key=_id("link"),
+        idempotency_key=_id("link-create"),
     )
+    assert created["document_link_operation"] == "created"
     assert events() == ["document_link_added"]
 
     # Same pair, different role: an update, not an addition.
-    changed = information_projection.add_document_link(
+    updated = information_projection.add_document_link(
         conn,
         information_id=info["information_id"],
-        document_id=document,
-        role="supporting",
+        document_id=document_id,
+        role="primary",
         observed_version=2,
-        observed_digest=None,
+        observed_digest="sha256:updated",
         expected_revision=1,
         actor="reviewer",
         actor_kind="human",
-        idempotency_key=_id("link"),
+        idempotency_key=_id("link-update"),
     )
+    assert updated["document_link_operation"] == "updated"
     assert events() == ["document_link_added", "document_link_updated"]
 
     # The upsert still applied, and no second link was created.
-    refs = changed["projection"]["document_refs"]
+    refs = updated["projection"]["document_refs"]
     assert len(refs) == 1
-    assert refs[0]["role"] == "supporting"
+    assert refs[0]["role"] == "primary"
     assert refs[0]["observed_version"] == 2

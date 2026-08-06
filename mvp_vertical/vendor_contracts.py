@@ -6,7 +6,7 @@ implements it. Nothing here transfers authority: a payload that validates is
 conformant, not approved, admitted or canonized.
 
 Without this, conformance was asserted by *name*: a migration called
-``012_information_card_projection.sql`` carried the contract's name and nothing
+``013_information_card_projection.sql`` carried the contract's name and nothing
 checked that what it produced matched. Where a payload was checked at all, it was
 against a hand-copied ``required`` set that drifts silently from the contract it
 mirrors.
@@ -62,6 +62,16 @@ def problems(name: str, payload: Any) -> list[str]:
         f"{'.'.join(str(part) for part in error.absolute_path) or '<root>'}: {error.message}"
         for error in errors
     ]
+
+
+def declared_properties(name: str) -> frozenset[str]:
+    """The top-level field names the contract declares.
+
+    Callers that want to name the offending fields in their own error message can
+    subtract this from a payload instead of restating the field list, which is the
+    hand-copy this module exists to remove.
+    """
+    return frozenset(_validator(name).schema.get("properties", {}))
 
 
 def validate(name: str, payload: Any) -> Any:

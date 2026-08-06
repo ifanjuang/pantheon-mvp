@@ -1,7 +1,7 @@
 """Emitted payloads conform to the vendored Pantheon-Next contracts.
 
 Pantheon-Next defines the shape; this repository implements it. Until now the
-join between the two was a *name*: `sql/012_information_card_projection.sql`
+join between the two was a *name*: `sql/013_information_card_projection.sql`
 carried the contract's filename and nothing checked that what it produced
 matched. Where a payload was checked at all — the Knowledge edit variant — it was
 against a hand-copied `required` set with nothing keeping the two equal.
