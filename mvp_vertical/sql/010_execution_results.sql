@@ -87,6 +87,42 @@ CREATE TRIGGER execution_dispositions_append_only
 BEFORE UPDATE OR DELETE ON execution_result_review_dispositions
 FOR EACH ROW EXECUTE FUNCTION reject_execution_result_mutation();
 
+CREATE OR REPLACE FUNCTION validate_execution_result_review_disposition()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    candidate_kind TEXT;
+BEGIN
+    SELECT result_kind
+      INTO candidate_kind
+      FROM execution_result_items
+     WHERE result_id = NEW.result_ref
+     FOR UPDATE;
+
+    IF candidate_kind IS NULL THEN
+        RAISE EXCEPTION 'unknown result candidate: %', NEW.result_ref;
+    END IF;
+
+    IF NEW.disposition = 'accepted_for_claim' THEN
+        IF candidate_kind <> 'project_claim_candidate' THEN
+            RAISE EXCEPTION 'accepted_for_claim requires a project_claim_candidate result';
+        END IF;
+        IF NEW.reviewer_kind <> 'human' THEN
+            RAISE EXCEPTION 'accepted_for_claim requires a human reviewer';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS execution_dispositions_validate_candidate
+    ON execution_result_review_dispositions;
+CREATE TRIGGER execution_dispositions_validate_candidate
+BEFORE INSERT ON execution_result_review_dispositions
+FOR EACH ROW EXECUTE FUNCTION validate_execution_result_review_disposition();
+
 DO $$
 BEGIN
     IF NOT EXISTS (
