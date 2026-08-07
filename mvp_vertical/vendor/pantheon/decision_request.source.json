@@ -1,10 +1,10 @@
 {
   "source_repository": "ifanjuang/Pantheon-Next",
   "source_path": "schemas/decision_request.schema.yaml",
-  "source_pull_request": 552,
-  "upstream_commit": "5e61b39e4d17ddbc58cafda9c4faebb70ccae1ba",
-  "upstream_blob_sha": "8803011291537b03f55159f0ce500d753708541a",
-  "sha256": "9d1ca7b3b1c4b7f0526ef9389870a89a7ec0def34e52e15bab8bdc9e2f7b0cac",
+  "source_pull_request": 578,
+  "upstream_commit": "a15f5c418560f292df1b915572b21a04fc9fdf23",
+  "upstream_blob_sha": "d92f926cb41494a391dc02ba66b941a0c48f727b",
+  "sha256": "c77fb8678b6a8e2ff726f59f44a5cd6b70a2af2429192fc3a29bfa75315105e4",
   "posture": "vendored-reference",
   "authority_transfer": false
 }
