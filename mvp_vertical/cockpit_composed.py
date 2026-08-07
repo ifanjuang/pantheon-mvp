@@ -183,3 +183,19 @@ def create_composed_cockpit_app(**kwargs):
 
 
 app = create_composed_cockpit_app()
+
+
+def run() -> None:
+    """Run the composed internal Cockpit API with uvicorn."""
+    import uvicorn
+
+    uvicorn.run(
+        "mvp_vertical.cockpit_composed:app",
+        host=os.getenv("MVP_COCKPIT_HOST", "127.0.0.1"),
+        port=int(os.getenv("MVP_COCKPIT_PORT", "8081")),
+        reload=False,
+    )
+
+
+if __name__ == "__main__":
+    run()
