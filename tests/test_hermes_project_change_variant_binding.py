@@ -1,4 +1,4 @@
-"""Unit tests for the structured Project change variant run binding."""
+"""Unit tests for Project change variants on the canonical Hermes run binding."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import json
 
 import pytest
 
-from mvp_vertical.hermes_project_change_variant_binding import (
-    ExternalHermesProjectChangeVariantBinding,
-    HermesProjectChangeVariantBindingError,
+from mvp_vertical.hermes_run_binding import (
+    ExternalHermesRunBinding,
+    HermesRunBindingError,
 )
 
 
@@ -22,7 +22,6 @@ class _Pantheon:
         self.reserve_calls = []
         self.start_calls = []
         self.return_calls = []
-        self.variant_return_calls = []
 
     def reserve_launch(self, **kwargs):
         self.reserve_calls.append(kwargs)
@@ -47,22 +46,12 @@ class _Pantheon:
         self.return_calls.append(kwargs)
         return {
             "runtime_return_recorded": True,
-            "execution_result_stored": False,
+            "execution_result_stored": kwargs.get("execution_result") is not None,
             "variant_selected": False,
             "project_mutated": False,
             "decision_created": False,
             "evidence_admitted": False,
-        }
-
-    def record_variant_return(self, **kwargs):
-        self.variant_return_calls.append(kwargs)
-        return {
-            "runtime_return_recorded": True,
-            "execution_result_stored": True,
-            "variant_selected": False,
-            "project_mutated": False,
-            "decision_created": False,
-            "evidence_admitted": False,
+            "external_effect_authorized": False,
         }
 
 
@@ -158,14 +147,14 @@ def _receipt() -> dict:
 
 
 def _binding(status: dict, *, pantheon=None, hermes=None):
-    return ExternalHermesProjectChangeVariantBinding(
+    return ExternalHermesRunBinding(
         observer=_Observer(),
         pantheon=pantheon or _Pantheon(),
         hermes=hermes or _Hermes(status),
     )
 
 
-def test_launch_delegates_existing_one_shot_binding() -> None:
+def test_launch_remains_the_existing_one_shot_binding() -> None:
     pantheon = _Pantheon()
     hermes = _Hermes({"status": "running"})
     receipt = _binding({}, pantheon=pantheon, hermes=hermes).launch(
@@ -199,9 +188,8 @@ def test_completed_structured_output_records_execution_result_without_selection(
     )
 
     assert hermes.status_calls == ["run-variant-1"]
-    assert pantheon.return_calls == []
-    assert len(pantheon.variant_return_calls) == 1
-    call = pantheon.variant_return_calls[0]
+    assert len(pantheon.return_calls) == 1
+    call = pantheon.return_calls[0]
     assert call["normalized_return"]["result_refs"] == [
         "result.variant.zinc",
         "result.variant.ardoise",
@@ -210,6 +198,7 @@ def test_completed_structured_output_records_execution_result_without_selection(
         "execution-result.project-variants"
     )
     assert call["result_candidate"]["candidate_payload"]["variant_count"] == 2
+    assert result["kind"] == "hermes_run_reconciliation"
     assert result["execution_result_stored"] is True
     assert result["project_change_variant_count"] == 2
     assert result["variant_selected"] is False
@@ -221,8 +210,15 @@ def test_completed_structured_output_records_execution_result_without_selection(
 @pytest.mark.parametrize(
     "output, message",
     [
-        ("not-json", "must be one JSON object"),
-        (json.dumps({"kind": "other", "summary": "x", "execution_result": {}}), "kind must be"),
+        (
+            json.dumps(
+                {
+                    "kind": "pantheon_project_change_variants",
+                    "summary": "Sans résultat.",
+                }
+            ),
+            "requires execution_result",
+        ),
         (
             json.dumps(
                 {
@@ -236,21 +232,46 @@ def test_completed_structured_output_records_execution_result_without_selection(
             ),
             "at least two alternatives",
         ),
+        (
+            json.dumps(
+                {
+                    "kind": "pantheon_project_change_variants",
+                    "summary": "Deux options.",
+                    "execution_result": _execution_result(),
+                    "unexpected": True,
+                }
+            ),
+            "unsupported Project variant envelope field",
+        ),
     ],
 )
-def test_invalid_completed_output_fails_before_pantheon_write(output: str, message: str) -> None:
+def test_malformed_variant_envelope_fails_before_pantheon_write(output: str, message: str) -> None:
     pantheon = _Pantheon()
     binding = _binding(
         {"status": "completed", "output": output},
         pantheon=pantheon,
     )
-    with pytest.raises(HermesProjectChangeVariantBindingError, match=message):
+    with pytest.raises(HermesRunBindingError, match=message):
         binding.reconcile_once(
             launch_receipt=_receipt(),
             idempotency_key="variant-reconcile-key",
         )
     assert pantheon.return_calls == []
-    assert pantheon.variant_return_calls == []
+
+
+def test_non_variant_output_preserves_generic_reconciliation() -> None:
+    pantheon = _Pantheon()
+    result = _binding(
+        {"status": "completed", "output": "ordinary candidate"},
+        pantheon=pantheon,
+    ).reconcile_once(
+        launch_receipt=_receipt(),
+        idempotency_key="variant-reconcile-key",
+    )
+    assert result["kind"] == "hermes_run_reconciliation"
+    assert len(pantheon.return_calls) == 1
+    assert pantheon.return_calls[0].get("execution_result") is None
+    assert pantheon.return_calls[0]["result_candidate"]["result_type"] == "hermes_run_output"
 
 
 def test_running_and_cancelled_are_observations_only() -> None:
@@ -264,9 +285,7 @@ def test_running_and_cancelled_are_observations_only() -> None:
             idempotency_key="variant-reconcile-key",
         )
         assert result["pantheon_return_recorded"] is False
-        assert result["variant_selected"] is False
         assert pantheon.return_calls == []
-        assert pantheon.variant_return_calls == []
 
 
 def test_failed_run_uses_existing_failed_return_without_execution_result() -> None:
@@ -279,7 +298,6 @@ def test_failed_run_uses_existing_failed_return_without_execution_result() -> No
         idempotency_key="variant-reconcile-key",
     )
     assert len(pantheon.return_calls) == 1
-    assert pantheon.variant_return_calls == []
     assert pantheon.return_calls[0]["normalized_return"]["outcome"] == "failed"
-    assert result["execution_result_stored"] is False
-    assert result["variant_selected"] is False
+    assert pantheon.return_calls[0].get("execution_result") is None
+    assert "execution_result_stored" not in result
