@@ -96,10 +96,23 @@ def _validate_candidate_sources(candidate: dict, context_pack: dict) -> None:
 
 
 def _admitted_entities(context_pack: dict[str, Any]) -> set[tuple[str, str]]:
-    return {
-        (ref.entity_type, ref.entity_id)
-        for ref in hermes_scoped_context.admitted_entity_refs(context_pack)
-    }
+    """Return exact admitted identities plus their canonical unprefixed form.
+
+    Context Pack entity refs may carry a transport prefix such as ``project:<id>``.
+    The governed variant contract deliberately uses IDs without ``:``. Treating
+    those two spellings as the same admitted identity does not widen the scope.
+    """
+    admitted: set[tuple[str, str]] = set()
+    for ref in hermes_scoped_context.admitted_entity_refs(context_pack):
+        entity_type = ref.entity_type
+        entity_id = ref.entity_id
+        admitted.add((entity_type, entity_id))
+        prefix = f"{entity_type}:"
+        if entity_id.startswith(prefix):
+            canonical_id = entity_id[len(prefix):]
+            if canonical_id:
+                admitted.add((entity_type, canonical_id))
+    return admitted
 
 
 def _validate_project_variant_execution_result(
