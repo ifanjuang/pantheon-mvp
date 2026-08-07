@@ -31,8 +31,8 @@ def validate(artifacts: Path) -> dict[str, Any]:
     fixture_state = _load(artifacts / "fixture-state.json")
 
     _require(
-        reconciliation.get("kind") == "hermes_project_change_variant_reconciliation",
-        "wrong reconciliation kind",
+        reconciliation.get("kind") == "hermes_run_reconciliation",
+        "variant run did not use the canonical reconciliation path",
     )
     _require(
         reconciliation.get("execution_result_stored") is True,
