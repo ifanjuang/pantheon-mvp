@@ -1,5 +1,5 @@
 schema_id: pantheon.hermes_distribution_lock
-revision: 2
+revision: 3
 distribution_id: pantheon-hermes-standard
 status: candidate
 source_pins:
@@ -8,7 +8,7 @@ source_pins:
     ref: "75f93d17d40b18fb78faa7d40189c1a2264d8ab1"
   pantheon_mvp:
     repository: ifanjuang/pantheon-mvp
-    ref: "57353fbd60fa558aa83f412410457fb18c54a916"
+    ref: "5886f2de78125265dc73011f1d820965a449bd85"
   hermes_runtime:
     runtime_id: nousresearch-hermes-agent
     version: "0.20.0"
