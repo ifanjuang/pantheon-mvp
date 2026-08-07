@@ -1,7 +1,7 @@
 # Hermes Project change variant binding
 
 Date: 2026-08-07
-Status: G2 implementation candidate; checks and real Hermes 0.20.0 laboratory pending.
+Status: G2 implementation and Hermes 0.20.0 laboratory verified on candidate head; final protections must remain green after this journal update.
 
 ## Objective
 
@@ -16,7 +16,7 @@ apply a Project mutation, create a Decision, admit Evidence or authorize a follo
 
 ```text
 ExternalHermesRunBinding
--> one-shot qualification, launch reservation, run submission and start record.
+-> one-shot qualification, launch reservation, run submission, start record and reconciliation.
 
 Hermes runtime return route
 -> admission-bound transactional return normalization.
@@ -28,14 +28,15 @@ project_change_variants
 -> separate human selection into the existing ChangeCandidate owner.
 ```
 
-G2 remains part of the existing `run-binding` distribution component. No fourth
-component, scheduler, queue, polling loop, automatic retry or provider router is
-introduced.
+G2 is implemented inside the existing `run-binding` distribution component. The
+initial parallel reconciliation module was removed before acceptance so the
+standard distribution still has exactly three components: `run-binding`,
+`context-bridge`, `runtime-observer`. There is no second runtime path, scheduler,
+queue, polling loop, automatic retry or provider router.
 
 ## Structured return contract
 
-The specialized reconciliation accepts only one JSON object without prose or code
-fences:
+The canonical `reconcile` path recognizes this optional closed JSON envelope:
 
 ```json
 {
@@ -45,16 +46,19 @@ fences:
 }
 ```
 
-The Execution Result must contain at least two unique `project_change_variant`
-alternatives. Malformed output, another envelope kind, one alternative, duplicate
-labels or another result kind is refused before the Pantheon return write.
+When this exact envelope kind is present, it must contain at least two unique
+`project_change_variant` alternatives. Malformed variant envelopes, one alternative,
+duplicate labels or another result kind are refused before the Pantheon return write.
+Non-variant output continues through the pre-existing generic candidate path.
 
 ## Server-side admission checks
 
 The Pantheon return validates:
 
 - exact Task Contract identity against the consumed admission;
-- exact admitted Project identity;
+- the Project identity inside the immutable Context Pack;
+- canonical equivalence between transport refs such as `project:<id>` and the
+  governed unprefixed ID required by the variant schema, without widening scope;
 - only Project change variant result kinds;
 - unique result identities;
 - payload Project consistency;
@@ -70,36 +74,71 @@ idempotency conflict retains neither record and leaves the run unreturned.
 A separate editor-key route requires `X-Pantheon-Human-Actor` and an idempotency
 key. It calls the G1 transition and returns a pending existing ChangeCandidate.
 The response explicitly keeps Project mutation, Decision, Evidence, memory and
-external-effect posture false.
+external-effect posture false. Selection still does not apply the Project change.
 
-## Hermes 0.20.0 laboratory
+## Distribution convergence
 
-A G2 overlay reuses the already accepted F laboratory installation and rollback:
+`pantheon-standard.lock.yaml` revision 3 keeps the same three components and adds
+`record-typed-project-variant-return` to the existing `run-binding` capability list.
+Its file digest is:
 
-- exact upstream commit `3c27eb6234bf91b8ceee9e9071591b31e9b148cb`;
-- isolated Hermes 0.20.0 installation;
-- existing three-component distribution;
-- progressive discovery of the two admitted context tools;
-- manifest and admitted Project reads;
-- outside Project refusal;
-- final structured production of zinc and slate alternatives;
-- specialized one-shot reconciliation;
-- plugin disable and gateway rollback.
+```text
+sha256:ae07a87ead1e160335e453cfe4c20af8c728ae534f65424ee8642f7c84a40426
+```
 
-The variant laboratory is separate from the already merged F acceptance and does
-not rewrite its evidence.
+The `pantheon_mvp` source pin points to commit
+`5886f2de78125265dc73011f1d820965a449bd85`, which contains those exact binding
+bytes. The distribution remains `candidate`, `not_observed`, `not_activated` and
+`not_authorized` for production.
+
+## Hermes 0.20.0 laboratory result
+
+Real GitHub-hosted ephemeral acceptance:
+
+```text
+workflow run: 31139256797
+artifact:     8979188157
+Hermes:       0.20.0
+source digest sha256:b1fe80817e230da0e0d5d847ef709a7c6570c60b9e7195366bfc58bcc6cdafbe
+provider calls: 7
+```
+
+Observed result:
+
+```text
+context manifest read = true
+admitted Project read = true
+outside Project refused = true
+Execution Result stored = true
+project_change_variant count = 2
+variants = option-zinc, option-ardoise
+review disposition returned by Hermes = false
+variant selected = false
+Project mutated = false
+Decision created = false
+Evidence admitted = false
+external effect authorized = false
+rollback verified = true
+```
+
+The ordinary Hermes 0.20.0 laboratory also remained green on workflow run
+`31139256792`, proving that generic reconciliation was not regressed by the typed
+variant path.
 
 ## Required completion checks
 
+Verified on candidate head `b586bdf19e1187cd8650cd9569839307720c2c1b` before this documentation update:
+
 ```text
-unit binding tests
-PostgreSQL transactional return tests
-human selection API tests
-Pantheon Architecture Audit
-contract-tests
-full PostgreSQL suite
-real Hermes 0.20.0 Project Variant Lab
+Pantheon Architecture Audit                 success
+contract-tests                              success
+Hermes 0.20.0 Project Variant Lab           success
+Hermes 0.20.0 generic Lab Acceptance        success
 ```
+
+The full PostgreSQL suite was still running when this journal was updated. All
+protections and both laboratories must be green again on the final documentation
+head before merge.
 
 ## Non-equivalences
 
