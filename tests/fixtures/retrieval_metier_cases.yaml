@@ -26,7 +26,7 @@
 
 - case_id: quote_vapour_barrier_exact
   category: technical_identifier
-  query: "pare-vapeur"
+  query: "pare vapeur"
   expected_source: dossiers/devis_reprise/sources/quote_Q-2026-041.md
   lexical_max_rank: 1
   hybrid_max_rank: 1
