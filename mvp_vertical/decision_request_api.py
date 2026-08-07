@@ -289,17 +289,17 @@ def install_decision_request_routes(
         principal = values.get("authenticated_principal")
         if principal is not None:
             values["authenticated_principal"] = principal
-        projection = execute(
-            lambda conn: decision_requests.resolve_request(
+
+        def resolve_with_scope(conn):
+            projection = decision_requests.resolve_request(
                 conn,
                 request_id=request_id,
                 decided_by=actor,
                 **values,
             )
-        )
-        projection = execute(
-            lambda conn: apu_cross_family.enrich_request_projection(conn, projection)
-        )
+            return apu_cross_family.enrich_request_projection(conn, projection)
+
+        projection = execute(resolve_with_scope)
         return {
             "effect": "decision_recorded",
             "work_issue_transitioned": False,
@@ -315,17 +315,16 @@ def install_decision_request_routes(
         _authorized: None = Depends(require_editor_key),
         actor: str = Depends(require_human_actor),
     ) -> dict[str, Any]:
-        projection = execute(
-            lambda conn: decision_requests.cancel_request(
+        def cancel_with_scope(conn):
+            projection = decision_requests.cancel_request(
                 conn,
                 request_id=request_id,
                 cancelled_by=actor,
                 **body.model_dump(),
             )
-        )
-        projection = execute(
-            lambda conn: apu_cross_family.enrich_request_projection(conn, projection)
-        )
+            return apu_cross_family.enrich_request_projection(conn, projection)
+
+        projection = execute(cancel_with_scope)
         return {
             "effect": "decision_request_cancelled",
             "decision_recorded": False,
