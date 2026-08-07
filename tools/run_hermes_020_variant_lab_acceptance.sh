@@ -16,7 +16,6 @@ source = Path(sys.argv[1]).read_text(encoding="utf-8")
 replacements = {
     "python tools/hermes_020_lab_fixture.py": "python tools/hermes_020_variant_lab_fixture.py",
     "python tools/run_hermes_020_lab_acceptance.py": "python tools/run_hermes_020_variant_lab_acceptance.py",
-    "pantheon-hermes reconcile \\": "pantheon-hermes reconcile-project-variants \\",
 }
 for old, new in replacements.items():
     if old not in source:
