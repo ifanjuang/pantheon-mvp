@@ -10,10 +10,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .hermes_distribution import DistributionLockError, validate
-from .hermes_project_change_variant_binding import (
-    ExternalHermesProjectChangeVariantBinding,
-    PantheonProjectChangeVariantBridgeClient,
-)
 from .hermes_run_binding import (
     ExternalHermesRunBinding,
     HermesRunBindingError,
@@ -78,14 +74,6 @@ def _observer(args: argparse.Namespace) -> HermesRunsApiObserver:
     )
 
 
-def _hermes_client(args: argparse.Namespace) -> HermesRunsHttpClient:
-    return HermesRunsHttpClient(
-        _required_env("HERMES_API_BASE"),
-        _required_env("HERMES_API_KEY"),
-        timeout=args.timeout,
-    )
-
-
 def _binding(args: argparse.Namespace) -> ExternalHermesRunBinding:
     observer = _observer(args)
     pantheon = PantheonRunBridgeClient(
@@ -94,28 +82,12 @@ def _binding(args: argparse.Namespace) -> ExternalHermesRunBinding:
         _required_env("PANTHEON_HERMES_ACTOR"),
         timeout=args.timeout,
     )
-    return ExternalHermesRunBinding(
-        observer=observer,
-        pantheon=pantheon,
-        hermes=_hermes_client(args),
-    )
-
-
-def _project_variant_binding(
-    args: argparse.Namespace,
-) -> ExternalHermesProjectChangeVariantBinding:
-    observer = _observer(args)
-    pantheon = PantheonProjectChangeVariantBridgeClient(
-        _required_env("PANTHEON_HERMES_API_BASE"),
-        _required_env("PANTHEON_HERMES_API_KEY"),
-        _required_env("PANTHEON_HERMES_ACTOR"),
+    hermes = HermesRunsHttpClient(
+        _required_env("HERMES_API_BASE"),
+        _required_env("HERMES_API_KEY"),
         timeout=args.timeout,
     )
-    return ExternalHermesProjectChangeVariantBinding(
-        observer=observer,
-        pantheon=pantheon,
-        hermes=_hermes_client(args),
-    )
+    return ExternalHermesRunBinding(observer=observer, pantheon=pantheon, hermes=hermes)
 
 
 def _add_runtime_args(
@@ -149,17 +121,6 @@ def _add_runtime_args(
         help="sanitized JSON receipt produced by capture-memory-status",
     )
     parser.add_argument("--timeout", type=float, default=10.0)
-
-
-def _add_reconcile_args(parser: argparse.ArgumentParser) -> None:
-    _add_runtime_args(
-        parser,
-        require_allowlist=False,
-        require_governed_observation=False,
-    )
-    parser.add_argument("--receipt", type=Path, required=True)
-    parser.add_argument("--idempotency-key", required=True)
-    parser.add_argument("--output", type=Path)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -217,18 +178,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     reconcile = sub.add_parser(
         "reconcile",
-        help="observe one existing run once and record a generic terminal candidate",
+        help="observe one existing run once and record a terminal candidate when mappable",
     )
-    _add_reconcile_args(reconcile)
-
-    reconcile_variants = sub.add_parser(
-        "reconcile-project-variants",
-        help=(
-            "observe one existing run once and record only a structured Project "
-            "change variant Execution Result"
-        ),
+    _add_runtime_args(
+        reconcile,
+        require_allowlist=False,
+        require_governed_observation=False,
     )
-    _add_reconcile_args(reconcile_variants)
+    reconcile.add_argument("--receipt", type=Path, required=True)
+    reconcile.add_argument("--idempotency-key", required=True)
+    reconcile.add_argument("--output", type=Path)
 
     return parser
 
@@ -269,12 +228,6 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.command == "reconcile":
         return _binding(args).reconcile_once(
-            launch_receipt=_load_receipt(args.receipt),
-            idempotency_key=args.idempotency_key.strip(),
-        )
-
-    if args.command == "reconcile-project-variants":
-        return _project_variant_binding(args).reconcile_once(
             launch_receipt=_load_receipt(args.receipt),
             idempotency_key=args.idempotency_key.strip(),
         )
