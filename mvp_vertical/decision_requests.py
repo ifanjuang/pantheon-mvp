@@ -2,7 +2,8 @@
 
 A Decision Request is an unresolved Gate. A Decision record is a separate human
 determination. Neither object transitions a WorkIssue, resumes Hermes, admits
-Evidence or proves an external effect.
+Evidence or proves an external effect. H3 lets a project-classified Request retain
+bounded APU object scope references as context only.
 """
 
 from __future__ import annotations
@@ -19,14 +20,30 @@ import psycopg
 import yaml
 from psycopg.rows import dict_row
 
+from .entity_ref import EntityRefError, unique_entity_refs
+
 
 MIGRATION = Path(__file__).resolve().parent / "sql" / "018_decision_requests.sql"
-REQUEST_SCHEMA = Path(__file__).resolve().parent / "vendor" / "pantheon" / "decision_request.schema.yaml"
-DECISION_SCHEMA = Path(__file__).resolve().parent / "vendor" / "pantheon" / "mvp_governed_loop_objects.schema.yaml"
+SCOPE_MIGRATION = (
+    Path(__file__).resolve().parent / "sql" / "023_decision_request_apu_scopes.sql"
+)
+REQUEST_SCHEMA = (
+    Path(__file__).resolve().parent / "vendor" / "pantheon" / "decision_request.schema.yaml"
+)
+DECISION_SCHEMA = (
+    Path(__file__).resolve().parent
+    / "vendor"
+    / "pantheon"
+    / "mvp_governed_loop_objects.schema.yaml"
+)
 
-DECISION_VALUES = frozenset({"approve", "refuse", "request_revision", "request_more_evidence"})
+DECISION_VALUES = frozenset(
+    {"approve", "refuse", "request_revision", "request_more_evidence"}
+)
 DECISION_TYPES = frozenset({"question", "validation", "approval", "arbitration"})
-RESPONSE_MODES = frozenset({"decision_value", "single_option", "multiple_options", "free_text"})
+RESPONSE_MODES = frozenset(
+    {"decision_value", "single_option", "multiple_options", "free_text"}
+)
 PRIORITIES = frozenset({"low", "normal", "high", "urgent"})
 
 
@@ -65,7 +82,9 @@ def _load_schema(path: Path) -> dict[str, Any]:
     try:
         schema = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
-        raise DecisionRequestError(f"unable to load governed schema {path.name}: {exc}") from exc
+        raise DecisionRequestError(
+            f"unable to load governed schema {path.name}: {exc}"
+        ) from exc
     if not isinstance(schema, dict):
         raise DecisionRequestError(f"governed schema {path.name} must be an object")
     jsonschema.Draft202012Validator.check_schema(schema)
@@ -90,12 +109,18 @@ def _decision_validator() -> jsonschema.Draft202012Validator:
 
 def _digest(value: str | dict[str, Any]) -> dict[str, str]:
     if isinstance(value, dict):
-        if value.get("algorithm") != "sha256" or not isinstance(value.get("value"), str):
+        if value.get("algorithm") != "sha256" or not isinstance(
+            value.get("value"), str
+        ):
             raise DecisionRequestError("digest must use sha256 and provide a value")
         value = value["value"]
     normalized = str(value).strip().lower()
-    if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
-        raise DecisionRequestError("digest must be a 64-character lowercase sha256 value")
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        raise DecisionRequestError(
+            "digest must be a 64-character lowercase sha256 value"
+        )
     return {"algorithm": "sha256", "value": normalized}
 
 
@@ -112,6 +137,24 @@ def _string_list(values: Iterable[str] | None, *, field: str) -> list[str]:
     return output
 
 
+def _normalize_scope_refs(
+    values: Iterable[dict[str, Any]] | None,
+) -> list[dict[str, str]]:
+    raw = list(values or [])
+    try:
+        refs = unique_entity_refs(raw, label="scope_refs", limit=50)
+    except EntityRefError as exc:
+        raise DecisionRequestError(str(exc)) from exc
+    output: list[dict[str, str]] = []
+    for ref in refs:
+        if ref.entity_type != "apu_object":
+            raise DecisionRequestError(
+                "Decision Request scope_refs currently admit only apu_object"
+            )
+        output.append(ref.as_dict())
+    return output
+
+
 def _normalize_options(
     options: Iterable[dict[str, Any]] | None,
     *,
@@ -125,7 +168,9 @@ def _normalize_options(
         label = str(raw.get("label") or "").strip()
         consequence = str(raw.get("consequence") or "").strip()
         if not option_id or not label or not consequence:
-            raise DecisionRequestError("each Decision option requires id, label and consequence")
+            raise DecisionRequestError(
+                "each Decision option requires id, label and consequence"
+            )
         if option_id in seen:
             raise DecisionRequestError(f"duplicate Decision option: {option_id}")
         seen.add(option_id)
@@ -134,20 +179,31 @@ def _normalize_options(
                 "option_id": option_id,
                 "label": label,
                 "consequence": consequence,
-                "limitations": _string_list(raw.get("limitations"), field="limitations"),
+                "limitations": _string_list(
+                    raw.get("limitations"), field="limitations"
+                ),
                 "ordinal": ordinal,
             }
         )
     if response_mode in {"single_option", "multiple_options"} and len(normalized) < 2:
         raise DecisionRequestError("option response modes require at least two options")
     if response_mode in {"decision_value", "free_text"} and normalized:
-        raise DecisionRequestError("decision_value and free_text requests cannot carry options")
+        raise DecisionRequestError(
+            "decision_value and free_text requests cannot carry options"
+        )
     if recommendation_candidate is not None and recommendation_candidate not in seen:
-        raise DecisionRequestError("recommendation_candidate must reference one request option")
+        raise DecisionRequestError(
+            "recommendation_candidate must reference one request option"
+        )
     return normalized
 
 
-def _request_row(conn: psycopg.Connection, request_id: str, *, lock: bool = False) -> dict[str, Any]:
+def _request_row(
+    conn: psycopg.Connection,
+    request_id: str,
+    *,
+    lock: bool = False,
+) -> dict[str, Any]:
     suffix = " FOR UPDATE" if lock else ""
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
@@ -162,7 +218,10 @@ def _request_row(conn: psycopg.Connection, request_id: str, *, lock: bool = Fals
 
 def _decision_row(conn: psycopg.Connection, decision_id: str) -> dict[str, Any]:
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute("SELECT * FROM agency_decision_records WHERE decision_id = %s", (decision_id,))
+        cur.execute(
+            "SELECT * FROM agency_decision_records WHERE decision_id = %s",
+            (decision_id,),
+        )
         row = cur.fetchone()
     if row is None:
         raise DecisionRecordNotFound(f"unknown Decision record: {decision_id}")
@@ -183,6 +242,32 @@ def _options(conn: psycopg.Connection, request_id: str) -> list[dict[str, Any]]:
         return [_clean(dict(row)) for row in cur.fetchall()]
 
 
+def _scope_refs(conn: psycopg.Connection, request_id: str) -> list[dict[str, str]]:
+    if not SCOPE_MIGRATION.exists():
+        return []
+    try:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT entity_type, entity_id
+                  FROM agency_decision_request_scope_refs
+                 WHERE request_id = %s
+                 ORDER BY entity_type, entity_id
+                """,
+                (request_id,),
+            )
+            return [
+                {
+                    "entity_type": str(row["entity_type"]),
+                    "entity_id": str(row["entity_id"]),
+                }
+                for row in cur.fetchall()
+            ]
+    except psycopg.errors.UndefinedTable:
+        conn.rollback()
+        return []
+
+
 def _events(conn: psycopg.Connection, request_id: str) -> list[dict[str, Any]]:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
@@ -199,7 +284,11 @@ def _events(conn: psycopg.Connection, request_id: str) -> list[dict[str, Any]]:
         return [_clean(dict(row)) for row in cur.fetchall()]
 
 
-def _request_projection(row: dict[str, Any], options: list[dict[str, Any]]) -> dict[str, Any]:
+def _request_projection(
+    row: dict[str, Any],
+    options: list[dict[str, Any]],
+    scope_refs: list[dict[str, str]],
+) -> dict[str, Any]:
     request = _clean(row)
     projection = {
         "request_id": request["request_id"],
@@ -221,11 +310,16 @@ def _request_projection(row: dict[str, Any], options: list[dict[str, Any]]) -> d
         "blocking": request["blocking"],
         "project_ref": request.get("project_id"),
         "work_issue_ref": request.get("work_issue_id"),
+        "scope_refs": scope_refs,
         "conversation_ref": request.get("conversation_ref"),
         "candidate_ref": request["candidate_ref"],
         "candidate_digest": _digest(request["candidate_digest"]),
         "evidence_pack_ref": request.get("evidence_pack_ref"),
-        "evidence_pack_digest": _digest(request["evidence_pack_digest"]) if request.get("evidence_pack_digest") else None,
+        "evidence_pack_digest": (
+            _digest(request["evidence_pack_digest"])
+            if request.get("evidence_pack_digest")
+            else None
+        ),
         "source_refs": request.get("source_refs") or [],
         "evidence_gaps": request.get("evidence_gaps") or [],
         "blocked_action": request.get("blocked_action"),
@@ -243,7 +337,9 @@ def _request_projection(row: dict[str, Any], options: list[dict[str, Any]]) -> d
     try:
         _request_validator().validate(projection)
     except jsonschema.ValidationError as exc:
-        raise DecisionRequestError(f"stored Decision Request violates its governed contract: {exc}") from exc
+        raise DecisionRequestError(
+            f"stored Decision Request violates its governed contract: {exc}"
+        ) from exc
     return projection
 
 
@@ -263,7 +359,11 @@ def _decision_projection(row: dict[str, Any]) -> dict[str, Any]:
         "recorded_at": decision["recorded_at"],
         "supersedes_decision_id": decision.get("supersedes_decision_id"),
         "candidate_digest": _digest(decision["candidate_digest"]),
-        "evidence_pack_digest": _digest(decision["evidence_pack_digest"]) if decision.get("evidence_pack_digest") else None,
+        "evidence_pack_digest": (
+            _digest(decision["evidence_pack_digest"])
+            if decision.get("evidence_pack_digest")
+            else None
+        ),
         "decision_surface": decision["decision_surface"],
         "rationale": decision.get("rationale"),
         "consequences": decision.get("consequences") or {},
@@ -276,13 +376,16 @@ def _decision_projection(row: dict[str, Any]) -> dict[str, Any]:
     try:
         _decision_validator().validate(projection)
     except jsonschema.ValidationError as exc:
-        raise DecisionRequestError(f"stored Decision record violates its governed contract: {exc}") from exc
+        raise DecisionRequestError(
+            f"stored Decision record violates its governed contract: {exc}"
+        ) from exc
     return projection
 
 
 def get_request(conn: psycopg.Connection, request_id: str) -> dict[str, Any]:
     row = _request_row(conn, request_id)
-    request = _request_projection(row, _options(conn, request_id))
+    scopes = _scope_refs(conn, request_id)
+    request = _request_projection(row, _options(conn, request_id), scopes)
     decision = (
         _decision_projection(_decision_row(conn, row["resolved_decision_id"]))
         if row.get("resolved_decision_id")
@@ -291,18 +394,23 @@ def get_request(conn: psycopg.Connection, request_id: str) -> dict[str, Any]:
     return {
         "decision_request": request,
         "decision_record": decision,
+        "scope_refs": scopes,
         "events": _events(conn, request_id),
         "attention_required": request["status"] == "pending",
         "request_is_not_decision": True,
         "decision_is_not_execution": True,
+        "scope_ref_is_not_authorization": True,
     }
 
 
 def get_decision(conn: psycopg.Connection, decision_id: str) -> dict[str, Any]:
+    row = _decision_row(conn, decision_id)
     return {
-        "decision_record": _decision_projection(_decision_row(conn, decision_id)),
+        "decision_record": _decision_projection(row),
+        "scope_refs": _scope_refs(conn, row["request_id"]),
         "decision_is_not_execution": True,
         "result_validated": False,
+        "scope_ref_is_not_authorization": True,
     }
 
 
@@ -316,14 +424,21 @@ def _event_replayed(
 ) -> bool:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
-            "SELECT request_id, event_type, payload FROM agency_decision_events WHERE idempotency_key = %s",
+            "SELECT request_id, event_type, payload FROM agency_decision_events "
+            "WHERE idempotency_key = %s",
             (idempotency_key,),
         )
         row = cur.fetchone()
     if row is None:
         return False
-    if row["request_id"] != request_id or row["event_type"] != event_type or (row["payload"] or {}) != payload:
-        raise DecisionRequestConflict("idempotency key belongs to another Decision Request effect")
+    if (
+        row["request_id"] != request_id
+        or row["event_type"] != event_type
+        or (row["payload"] or {}) != payload
+    ):
+        raise DecisionRequestConflict(
+            "idempotency key belongs to another Decision Request effect"
+        )
     return True
 
 
@@ -346,8 +461,14 @@ def _insert_event(
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
         """,
         (
-            _event_id(), request_id, decision_id, event_type, actor,
-            expected_revision, expected_revision + 1, idempotency_key,
+            _event_id(),
+            request_id,
+            decision_id,
+            event_type,
+            actor,
+            expected_revision,
+            expected_revision + 1,
+            idempotency_key,
             json.dumps(payload, sort_keys=True, separators=(",", ":")),
         ),
     )
@@ -372,6 +493,7 @@ def create_request(
     recommendation_candidate: str | None = None,
     project_ref: str | None = None,
     work_issue_ref: str | None = None,
+    scope_refs: Iterable[dict[str, Any]] | None = None,
     conversation_ref: str | None = None,
     evidence_pack_ref: str | None = None,
     evidence_pack_digest: str | dict[str, str] | None = None,
@@ -391,10 +513,17 @@ def create_request(
         raise DecisionRequestError("Decision Request question is required")
     if blocking and not work_issue_ref:
         raise DecisionRequestError("blocking Decision Request requires a WorkIssue")
+    normalized_scopes = _normalize_scope_refs(scope_refs)
+    if normalized_scopes and not project_ref:
+        raise DecisionRequestError(
+            "APU-scoped Decision Request requires Project classification"
+        )
     digest = _digest(candidate_digest)
     evidence_digest = _digest(evidence_pack_digest) if evidence_pack_digest else None
     if bool(evidence_pack_ref) != bool(evidence_digest):
-        raise DecisionRequestError("Evidence Pack reference and digest must be supplied together")
+        raise DecisionRequestError(
+            "Evidence Pack reference and digest must be supplied together"
+        )
     normalized_options = _normalize_options(
         options,
         response_mode=response_mode,
@@ -406,11 +535,15 @@ def create_request(
         "question": question,
         "priority": priority,
         "response_mode": response_mode,
-        "options": [{key: value for key, value in option.items() if key != "ordinal"} for option in normalized_options],
+        "options": [
+            {key: value for key, value in option.items() if key != "ordinal"}
+            for option in normalized_options
+        ],
         "recommendation_candidate": recommendation_candidate,
         "blocking": bool(blocking),
         "project_ref": project_ref,
         "work_issue_ref": work_issue_ref,
+        "scope_refs": normalized_scopes,
         "conversation_ref": conversation_ref,
         "candidate_ref": str(candidate_ref).strip(),
         "candidate_digest": digest,
@@ -419,7 +552,9 @@ def create_request(
         "source_refs": _string_list(source_refs, field="source_refs"),
         "evidence_gaps": _string_list(evidence_gaps, field="evidence_gaps"),
         "blocked_action": str(blocked_action).strip() if blocked_action else None,
-        "next_safe_action": str(next_safe_action).strip() if next_safe_action else None,
+        "next_safe_action": (
+            str(next_safe_action).strip() if next_safe_action else None
+        ),
         "decision_surface": str(decision_surface).strip(),
         "decision_owner": str(decision_owner).strip(),
         "created_by": str(created_by).strip(),
@@ -427,7 +562,9 @@ def create_request(
     if not immutable_payload["candidate_ref"]:
         raise DecisionRequestError("candidate_ref is required")
     if not immutable_payload["decision_surface"] or not immutable_payload["decision_owner"]:
-        raise DecisionRequestError("decision_surface and decision_owner are required")
+        raise DecisionRequestError(
+            "decision_surface and decision_owner are required"
+        )
     if not immutable_payload["created_by"]:
         raise DecisionRequestError("created_by is required")
 
@@ -458,14 +595,26 @@ def create_request(
                 )
                 """,
                 (
-                    request_id, decision_type, question, priority, response_mode,
-                    recommendation_candidate, blocking, project_ref, work_issue_ref,
-                    conversation_ref, immutable_payload["candidate_ref"], digest["value"],
-                    evidence_pack_ref, evidence_digest["value"] if evidence_digest else None,
+                    request_id,
+                    decision_type,
+                    question,
+                    priority,
+                    response_mode,
+                    recommendation_candidate,
+                    blocking,
+                    project_ref,
+                    work_issue_ref,
+                    conversation_ref,
+                    immutable_payload["candidate_ref"],
+                    digest["value"],
+                    evidence_pack_ref,
+                    evidence_digest["value"] if evidence_digest else None,
                     json.dumps(immutable_payload["source_refs"]),
                     json.dumps(immutable_payload["evidence_gaps"]),
-                    immutable_payload["blocked_action"], immutable_payload["next_safe_action"],
-                    immutable_payload["decision_surface"], immutable_payload["decision_owner"],
+                    immutable_payload["blocked_action"],
+                    immutable_payload["next_safe_action"],
+                    immutable_payload["decision_surface"],
+                    immutable_payload["decision_owner"],
                     immutable_payload["created_by"],
                 ),
             )
@@ -477,13 +626,35 @@ def create_request(
                     ) VALUES (%s, %s, %s, %s, %s::jsonb, %s)
                     """,
                     (
-                        request_id, option["option_id"], option["label"], option["consequence"],
-                        json.dumps(option["limitations"]), option["ordinal"],
+                        request_id,
+                        option["option_id"],
+                        option["label"],
+                        option["consequence"],
+                        json.dumps(option["limitations"]),
+                        option["ordinal"],
+                    ),
+                )
+            for scope_ref in normalized_scopes:
+                conn.execute(
+                    """
+                    INSERT INTO agency_decision_request_scope_refs (
+                        request_id, entity_type, entity_id
+                    ) VALUES (%s, %s, %s)
+                    """,
+                    (
+                        request_id,
+                        scope_ref["entity_type"],
+                        scope_ref["entity_id"],
                     ),
                 )
         except psycopg.errors.UniqueViolation as exc:
-            raise DecisionRequestConflict("Decision Request identity or pending WorkIssue blocker already exists") from exc
-        except (psycopg.errors.ForeignKeyViolation, psycopg.errors.RaiseException) as exc:
+            raise DecisionRequestConflict(
+                "Decision Request identity, scope or pending WorkIssue blocker already exists"
+            ) from exc
+        except (
+            psycopg.errors.ForeignKeyViolation,
+            psycopg.errors.RaiseException,
+        ) as exc:
             raise DecisionRequestError(str(exc)) from exc
         _insert_event(
             conn,
@@ -511,19 +682,29 @@ def _validate_response(
     option_ids = {option["option_id"] for option in request.get("options") or []}
     unknown = [option_id for option_id in selected if option_id not in option_ids]
     if unknown:
-        raise DecisionRequestError(f"unknown selected Decision option: {unknown[0]}")
+        raise DecisionRequestError(
+            f"unknown selected Decision option: {unknown[0]}"
+        )
     if decision == "approve":
         mode = request["response_mode"]
         if mode == "single_option" and len(selected) != 1:
-            raise DecisionRequestError("single-option approval requires exactly one option")
+            raise DecisionRequestError(
+                "single-option approval requires exactly one option"
+            )
         if mode == "multiple_options" and not selected:
-            raise DecisionRequestError("multiple-option approval requires at least one option")
+            raise DecisionRequestError(
+                "multiple-option approval requires at least one option"
+            )
         if mode == "free_text" and not response:
             raise DecisionRequestError("free-text approval requires a response")
         if mode == "decision_value" and (selected or response):
-            raise DecisionRequestError("decision-value approval cannot carry an option or free-text response")
+            raise DecisionRequestError(
+                "decision-value approval cannot carry an option or free-text response"
+            )
     elif selected or response:
-        raise DecisionRequestError("refusal, revision or more-evidence decisions cannot claim an approved response")
+        raise DecisionRequestError(
+            "refusal, revision or more-evidence decisions cannot claim an approved response"
+        )
     return selected, response
 
 
@@ -543,18 +724,32 @@ def resolve_request(
     rationale: str | None = None,
 ) -> dict[str, Any]:
     if identity_assurance not in {"declared", "authenticated"}:
-        raise DecisionRequestError("identity_assurance must be declared or authenticated")
+        raise DecisionRequestError(
+            "identity_assurance must be declared or authenticated"
+        )
     if identity_assurance == "authenticated":
         if not isinstance(authenticated_principal, dict):
-            raise DecisionRequestError("authenticated identity assurance requires authenticated_principal")
-        if not authenticated_principal.get("user_id") or not authenticated_principal.get("identity_provider"):
-            raise DecisionRequestError("authenticated_principal requires user_id and identity_provider")
+            raise DecisionRequestError(
+                "authenticated identity assurance requires authenticated_principal"
+            )
+        if not authenticated_principal.get("user_id") or not authenticated_principal.get(
+            "identity_provider"
+        ):
+            raise DecisionRequestError(
+                "authenticated_principal requires user_id and identity_provider"
+            )
     elif authenticated_principal is not None:
-        raise DecisionRequestError("declared identity assurance cannot carry authenticated_principal")
+        raise DecisionRequestError(
+            "declared identity assurance cannot carry authenticated_principal"
+        )
 
     with conn.transaction():
         row = _request_row(conn, request_id, lock=True)
-        request = _request_projection(row, _options(conn, request_id))
+        request = _request_projection(
+            row,
+            _options(conn, request_id),
+            _scope_refs(conn, request_id),
+        )
         selected, response = _validate_response(
             request=request,
             decision=decision,
@@ -584,7 +779,8 @@ def resolve_request(
             raise DecisionRequestConflict("Decision Request is no longer pending")
         if row["revision"] != expected_revision:
             raise StaleDecisionRequest(
-                f"stale Decision Request revision: expected {expected_revision}, current {row['revision']}"
+                f"stale Decision Request revision: expected {expected_revision}, "
+                f"current {row['revision']}"
             )
         consequences = {
             "request_id": request_id,
@@ -592,7 +788,9 @@ def resolve_request(
             "response_mode": request["response_mode"],
             "selected_option_ids": selected,
             "response_text": response,
-            "blocking_work_issue_ref": request.get("work_issue_ref") if request["blocking"] else None,
+            "blocking_work_issue_ref": (
+                request.get("work_issue_ref") if request["blocking"] else None
+            ),
             "work_issue_transitioned": False,
             "runtime_continuation_authorized": False,
             "action_executed": False,
@@ -612,13 +810,31 @@ def resolve_request(
                 )
                 """,
                 (
-                    decision_id, request_id, request_id, request.get("evidence_pack_ref"),
-                    decision, decided_by, identity_assurance,
-                    json.dumps(authenticated_principal) if authenticated_principal else None,
+                    decision_id,
+                    request_id,
+                    request_id,
+                    request.get("evidence_pack_ref"),
+                    decision,
+                    decided_by,
+                    identity_assurance,
+                    (
+                        json.dumps(authenticated_principal)
+                        if authenticated_principal
+                        else None
+                    ),
                     request["candidate_digest"]["value"],
-                    request["evidence_pack_digest"]["value"] if request.get("evidence_pack_digest") else None,
-                    request["decision_surface"], payload["rationale"],
-                    json.dumps(consequences, sort_keys=True, separators=(",", ":")),
+                    (
+                        request["evidence_pack_digest"]["value"]
+                        if request.get("evidence_pack_digest")
+                        else None
+                    ),
+                    request["decision_surface"],
+                    payload["rationale"],
+                    json.dumps(
+                        consequences,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
                 ),
             )
             conn.execute(
@@ -632,7 +848,9 @@ def resolve_request(
                 (decision_id, request_id, expected_revision),
             )
         except psycopg.errors.UniqueViolation as exc:
-            raise DecisionRequestConflict("Decision identity exists or request is already resolved") from exc
+            raise DecisionRequestConflict(
+                "Decision identity exists or request is already resolved"
+            ) from exc
         _insert_event(
             conn,
             request_id=request_id,
@@ -657,7 +875,9 @@ def cancel_request(
 ) -> dict[str, Any]:
     rationale = str(rationale).strip()
     if not rationale:
-        raise DecisionRequestError("Decision Request cancellation requires a rationale")
+        raise DecisionRequestError(
+            "Decision Request cancellation requires a rationale"
+        )
     payload = {"cancelled_by": cancelled_by, "rationale": rationale}
     with conn.transaction():
         if _event_replayed(
@@ -673,7 +893,8 @@ def cancel_request(
             raise DecisionRequestConflict("Decision Request is no longer pending")
         if row["revision"] != expected_revision:
             raise StaleDecisionRequest(
-                f"stale Decision Request revision: expected {expected_revision}, current {row['revision']}"
+                f"stale Decision Request revision: expected {expected_revision}, "
+                f"current {row['revision']}"
             )
         conn.execute(
             """
@@ -706,7 +927,9 @@ def list_requests(
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     if status not in {None, "pending", "resolved", "cancelled"}:
-        raise DecisionRequestError(f"unsupported Decision Request status: {status!r}")
+        raise DecisionRequestError(
+            f"unsupported Decision Request status: {status!r}"
+        )
     if limit < 1 or limit > 500:
         raise DecisionRequestError("limit must be between 1 and 500")
     filters: list[str] = []
