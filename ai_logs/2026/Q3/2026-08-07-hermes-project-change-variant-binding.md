@@ -78,7 +78,8 @@ external-effect posture false. Selection still does not apply the Project change
 
 ## Distribution convergence
 
-`pantheon-standard.lock.yaml` revision 3 keeps the same three components and adds
+`pantheon-standard.lock.yaml` remains on schema revision 2, as required by the
+pinned authority schema. It keeps the same three components and adds
 `record-typed-project-variant-return` to the existing `run-binding` capability list.
 Its file digest is:
 
@@ -136,9 +137,11 @@ Hermes 0.20.0 Project Variant Lab           success
 Hermes 0.20.0 generic Lab Acceptance        success
 ```
 
-The full PostgreSQL suite was still running when this journal was updated. All
-protections and both laboratories must be green again on the final documentation
-head before merge.
+A later documentation-only lock edit briefly changed the lock to unsupported
+revision 3; architecture and both laboratories correctly failed closed at schema
+validation before executing G2. Revision 2 was restored without changing the
+binding bytes or runtime behavior. All protections and both laboratories must be
+green again on this final documentation head before merge.
 
 ## Non-equivalences
 
