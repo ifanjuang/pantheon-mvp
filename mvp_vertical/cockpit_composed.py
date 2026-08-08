@@ -133,7 +133,10 @@ def create_composed_cockpit_app(**kwargs):
             raise HTTPException(status_code=401, detail="invalid Hermes API key")
 
     def require_human_actor(
-        x_pantheon_human_actor: str | None = Header(default=None, alias="X-Pantheon-Human-Actor"),
+        x_pantheon_human_actor: str | None = Header(
+            default=None,
+            alias="X-Pantheon-Human-Actor",
+        ),
     ) -> str:
         if not x_pantheon_human_actor or not x_pantheon_human_actor.strip():
             raise HTTPException(
@@ -149,7 +152,11 @@ def create_composed_cockpit_app(**kwargs):
         revision_upload_config=revision_upload_config,
         revision_upload_docling=revision_upload_docling,
     )
-    install_document_structure_routes(app, with_connection=with_connection, require_read_key=require_read_key)
+    install_document_structure_routes(
+        app,
+        with_connection=with_connection,
+        require_read_key=require_read_key,
+    )
     install_contradictory_review_routes(
         app,
         with_connection=with_connection,
@@ -163,8 +170,16 @@ def create_composed_cockpit_app(**kwargs):
         require_editor_key=require_editor_key,
         require_hermes_key=require_hermes_key,
     )
-    install_project_change_variant_routes(app, with_connection=with_connection, require_editor_key=require_editor_key)
-    install_knowledge_edit_variant_routes(app, with_connection=with_connection, require_editor_key=require_editor_key)
+    install_project_change_variant_routes(
+        app,
+        with_connection=with_connection,
+        require_editor_key=require_editor_key,
+    )
+    install_knowledge_edit_variant_routes(
+        app,
+        with_connection=with_connection,
+        require_editor_key=require_editor_key,
+    )
     install_work_issue_scope_routes(
         app,
         with_connection=with_connection,
@@ -179,7 +194,11 @@ def create_composed_cockpit_app(**kwargs):
         require_editor_key=require_editor_key,
         require_human_actor=require_human_actor,
     )
-    install_decision_inbox_routes(app, with_connection=with_connection, require_read_key=require_read_key)
+    install_decision_inbox_routes(
+        app,
+        with_connection=with_connection,
+        require_read_key=require_read_key,
+    )
     install_entity_relation_routes(
         app,
         with_connection=with_connection,
@@ -193,8 +212,16 @@ def create_composed_cockpit_app(**kwargs):
         require_read_key=require_read_key,
         require_editor_key=require_editor_key,
     )
-    install_apu_cross_family_routes(app, with_connection=with_connection, require_read_key=require_read_key)
-    install_project_anatomy_routes(app, with_connection=with_connection, require_read_key=require_read_key)
+    install_apu_cross_family_routes(
+        app,
+        with_connection=with_connection,
+        require_read_key=require_read_key,
+    )
+    install_project_anatomy_routes(
+        app,
+        with_connection=with_connection,
+        require_read_key=require_read_key,
+    )
     return app
 
 
