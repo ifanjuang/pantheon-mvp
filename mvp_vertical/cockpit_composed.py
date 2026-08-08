@@ -45,6 +45,7 @@ from .entity_relation_api import install_entity_relation_routes
 from .execution_result_api import install_execution_result_routes
 from .human_access_api import install_human_access_routes
 from .knowledge_edit_variant_api import install_knowledge_edit_variant_routes
+from .project_anatomy_api import install_project_anatomy_routes
 from .project_change_variant_api import install_project_change_variant_routes
 from .work_issue_scope_api import install_work_issue_scope_routes
 
@@ -57,6 +58,8 @@ def initialize_composed_schema() -> None:
         conn.execute(agency_data.MIGRATION.read_text(encoding="utf-8"))
         # H1 creates the APU endpoint owner before WorkIssue/EntityRef resolvers use it.
         conn.execute(apu_owner.MIGRATION.read_text(encoding="utf-8"))
+        # H4 reads the same owner after its already-adopted V0.2 evolution.
+        conn.execute(apu_owner.V02_MIGRATION.read_text(encoding="utf-8"))
         conn.execute(source_intake.MIGRATION.read_text(encoding="utf-8"))
         # A owns the professional document/revision seam consumed by B.
         conn.execute(project_documents.MIGRATION.read_text(encoding="utf-8"))
@@ -130,10 +133,7 @@ def create_composed_cockpit_app(**kwargs):
             raise HTTPException(status_code=401, detail="invalid Hermes API key")
 
     def require_human_actor(
-        x_pantheon_human_actor: str | None = Header(
-            default=None,
-            alias="X-Pantheon-Human-Actor",
-        ),
+        x_pantheon_human_actor: str | None = Header(default=None, alias="X-Pantheon-Human-Actor"),
     ) -> str:
         if not x_pantheon_human_actor or not x_pantheon_human_actor.strip():
             raise HTTPException(
@@ -149,11 +149,7 @@ def create_composed_cockpit_app(**kwargs):
         revision_upload_config=revision_upload_config,
         revision_upload_docling=revision_upload_docling,
     )
-    install_document_structure_routes(
-        app,
-        with_connection=with_connection,
-        require_read_key=require_read_key,
-    )
+    install_document_structure_routes(app, with_connection=with_connection, require_read_key=require_read_key)
     install_contradictory_review_routes(
         app,
         with_connection=with_connection,
@@ -167,16 +163,8 @@ def create_composed_cockpit_app(**kwargs):
         require_editor_key=require_editor_key,
         require_hermes_key=require_hermes_key,
     )
-    install_project_change_variant_routes(
-        app,
-        with_connection=with_connection,
-        require_editor_key=require_editor_key,
-    )
-    install_knowledge_edit_variant_routes(
-        app,
-        with_connection=with_connection,
-        require_editor_key=require_editor_key,
-    )
+    install_project_change_variant_routes(app, with_connection=with_connection, require_editor_key=require_editor_key)
+    install_knowledge_edit_variant_routes(app, with_connection=with_connection, require_editor_key=require_editor_key)
     install_work_issue_scope_routes(
         app,
         with_connection=with_connection,
@@ -191,11 +179,7 @@ def create_composed_cockpit_app(**kwargs):
         require_editor_key=require_editor_key,
         require_human_actor=require_human_actor,
     )
-    install_decision_inbox_routes(
-        app,
-        with_connection=with_connection,
-        require_read_key=require_read_key,
-    )
+    install_decision_inbox_routes(app, with_connection=with_connection, require_read_key=require_read_key)
     install_entity_relation_routes(
         app,
         with_connection=with_connection,
@@ -209,11 +193,8 @@ def create_composed_cockpit_app(**kwargs):
         require_read_key=require_read_key,
         require_editor_key=require_editor_key,
     )
-    install_apu_cross_family_routes(
-        app,
-        with_connection=with_connection,
-        require_read_key=require_read_key,
-    )
+    install_apu_cross_family_routes(app, with_connection=with_connection, require_read_key=require_read_key)
+    install_project_anatomy_routes(app, with_connection=with_connection, require_read_key=require_read_key)
     return app
 
 
