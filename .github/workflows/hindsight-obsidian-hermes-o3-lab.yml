@@ -91,6 +91,14 @@ jobs:
       - name: Execute O3 shared-bank lab
         working-directory: pantheon-mvp
         run: bash tools/run_hindsight_obsidian_hermes_o3.sh
+      - name: Prove Obsidian is the only retain path
+        shell: bash
+        run: |
+          mkdir -p "${RUNNER_TEMP}/hindsight-obsidian-hermes-o3/artifacts"
+          docker logs pantheon-o3-hindsight > "${RUNNER_TEMP}/hindsight-obsidian-hermes-o3/artifacts/hindsight-retain-proof.log" 2>&1
+          RETAIN_BATCHES=$(grep -c 'Starting background batch retain for bank_id=pantheon-o3-shared-synthetic' "${RUNNER_TEMP}/hindsight-obsidian-hermes-o3/artifacts/hindsight-retain-proof.log" || true)
+          printf '%s\n' "$RETAIN_BATCHES" > "${RUNNER_TEMP}/hindsight-obsidian-hermes-o3/artifacts/observed-retain-batches.txt"
+          test "$RETAIN_BATCHES" = "3"
       - name: Capture upstream identities and logs
         if: always()
         shell: bash
