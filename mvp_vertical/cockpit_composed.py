@@ -40,6 +40,7 @@ from .document_structure_api import install_document_structure_routes
 from .entity_relation_api import install_entity_relation_routes
 from .execution_result_api import install_execution_result_routes
 from .knowledge_edit_variant_api import install_knowledge_edit_variant_routes
+from .project_anatomy_api import install_project_anatomy_routes
 from .project_change_variant_api import install_project_change_variant_routes
 from .work_issue_scope_api import install_work_issue_scope_routes
 
@@ -52,6 +53,8 @@ def initialize_composed_schema() -> None:
         conn.execute(agency_data.MIGRATION.read_text(encoding="utf-8"))
         # H1 creates the APU endpoint owner before WorkIssue/EntityRef resolvers use it.
         conn.execute(apu_owner.MIGRATION.read_text(encoding="utf-8"))
+        # H4c evolves that same owner to V0.2; it is not a parallel persistence owner.
+        conn.execute(apu_owner.V02_MIGRATION.read_text(encoding="utf-8"))
         conn.execute(source_intake.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(information_projection.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(work_issue_scopes.MIGRATION.read_text(encoding="utf-8"))
@@ -188,6 +191,11 @@ def create_composed_cockpit_app(**kwargs):
         require_editor_key=require_editor_key,
     )
     install_apu_cross_family_routes(
+        app,
+        with_connection=with_connection,
+        require_read_key=require_read_key,
+    )
+    install_project_anatomy_routes(
         app,
         with_connection=with_connection,
         require_read_key=require_read_key,
