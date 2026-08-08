@@ -165,10 +165,14 @@ assert all(x.get('document_id','').startswith('Vault-B/') for x in b), b
 assert any((x.get('metadata') or {}).get('path') == 'Projects/Alpha/note.md' for x in b), b
 assert not any('PANTHEON_O2_BETA_MARKER' in str(x.get('text','')) for x in beta), beta
 
-index_a=json.loads(Path(os.environ['INDEX_A']).read_text())
-index_b=json.loads(Path(os.environ['INDEX_B']).read_text())
-assert set(index_a) == {'Projects/Alpha/renamed.md'}, index_a
-assert set(index_b) == {'Projects/Alpha/note.md'}, index_b
+index_a_file=json.loads(Path(os.environ['INDEX_A']).read_text())
+index_b_file=json.loads(Path(os.environ['INDEX_B']).read_text())
+index_a=index_a_file.get('syncIndex', {})
+index_b=index_b_file.get('syncIndex', {})
+assert set(index_a) == {'Projects/Alpha/renamed.md'}, index_a_file
+assert set(index_b) == {'Projects/Alpha/note.md'}, index_b_file
+assert index_a_file.get('lastSyncAt'), index_a_file
+assert index_b_file.get('lastSyncAt'), index_b_file
 
 summary={
     'kind':'hindsight_obsidian_o2_acceptance',
@@ -184,6 +188,7 @@ summary={
     'folder_isolation_verified':True,
     'source_document_id_verified':True,
     'source_metadata_path_verified':True,
+    'separate_sync_indexes_verified':True,
     'conversation_retention':'not_used',
     'pantheon_state_mutated':False,
     'evidence_admitted':False,
