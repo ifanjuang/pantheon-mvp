@@ -67,6 +67,45 @@ CREATE INDEX IF NOT EXISTS human_resource_grant_lookup
         revoked_at, valid_from, valid_until
     );
 
+-- The uniqueness indexes deliberately treat an unrevoked row as occupying its
+-- identity even after valid_until. Before a new explicit binding/grant is
+-- inserted, close only an already-expired predecessor. This preserves the old
+-- row and never extends access implicitly.
+CREATE OR REPLACE FUNCTION retire_expired_human_oidc_binding_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE human_oidc_bindings
+       SET revoked_at = clock_timestamp()
+     WHERE issuer = NEW.issuer
+       AND subject = NEW.subject
+       AND revoked_at IS NULL
+       AND valid_until IS NOT NULL
+       AND valid_until <= CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION retire_expired_human_resource_grant_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE human_resource_grants
+       SET revoked_at = clock_timestamp()
+     WHERE principal_ref = NEW.principal_ref
+       AND project_id = NEW.project_id
+       AND resource_type = NEW.resource_type
+       AND resource_id = NEW.resource_id
+       AND action = NEW.action
+       AND revoked_at IS NULL
+       AND valid_until IS NOT NULL
+       AND valid_until <= CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION protect_human_principal_rows()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -160,6 +199,24 @@ BEGIN
         CREATE TRIGGER human_resource_grants_protect_history
         BEFORE UPDATE OR DELETE ON human_resource_grants
         FOR EACH ROW EXECUTE FUNCTION protect_human_resource_grant_rows();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'human_oidc_bindings_retire_expired'
+           AND tgrelid = 'human_oidc_bindings'::regclass
+    ) THEN
+        CREATE TRIGGER human_oidc_bindings_retire_expired
+        BEFORE INSERT ON human_oidc_bindings
+        FOR EACH ROW EXECUTE FUNCTION retire_expired_human_oidc_binding_before_insert();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'human_resource_grants_retire_expired'
+           AND tgrelid = 'human_resource_grants'::regclass
+    ) THEN
+        CREATE TRIGGER human_resource_grants_retire_expired
+        BEFORE INSERT ON human_resource_grants
+        FOR EACH ROW EXECUTE FUNCTION retire_expired_human_resource_grant_before_insert();
     END IF;
 END;
 $$;
