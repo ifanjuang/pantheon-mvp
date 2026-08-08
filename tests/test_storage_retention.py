@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import uuid
 from pathlib import Path
 
@@ -20,6 +19,7 @@ PROVIDER = "agency-retention-primary"
 def conn():
     try:
         connection = storage_retention.connect()
+        project_documents.ensure_schema(connection)
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"PostgreSQL unreachable: {exc}")
     connection.execute(
@@ -254,9 +254,10 @@ def test_publish_failure_leaves_no_verified_database_binding(conn, tmp_path: Pat
 
     assert _counts(conn) == (0, 0, 0)
     digest = _digest(data)
-    assert not (root / "sha256" / digest[:2] / digest).exists()
-    assert not list((root / "sha256" / digest[:2]).glob("*.tmp"))
-    assert not list((root / "sha256" / digest[:2]).glob("*.lock"))
+    parent = root / "sha256" / digest[:2]
+    assert not (parent / digest).exists()
+    assert not list(parent.glob("*.tmp"))
+    assert not list(parent.glob("*.lock"))
 
 
 def test_binding_and_storage_object_identity_are_sql_immutable(conn, tmp_path: Path) -> None:
@@ -284,9 +285,7 @@ def test_binding_and_storage_object_identity_are_sql_immutable(conn, tmp_path: P
     conn.rollback()
 
     with pytest.raises(psycopg.errors.RaiseException, match="immutable"):
-        conn.execute(
-            "UPDATE storage_objects SET byte_size = byte_size + 1"
-        )
+        conn.execute("UPDATE storage_objects SET byte_size = byte_size + 1")
     conn.rollback()
 
 
