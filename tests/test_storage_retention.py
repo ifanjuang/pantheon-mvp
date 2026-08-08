@@ -94,7 +94,7 @@ def test_vendored_storage_contract_has_exact_upstream_provenance() -> None:
     provenance = vendor_contracts.provenance("storage_object")
     assert provenance == {
         "source_repository": "ifanjuang/Pantheon-Next",
-        "source_commit": "680f684cd8fc054212836a4257b3e7d1ff1e5367",
+        "source_commit": "fc5aef13ace19e6ce97b2492e79dce2074dd2ade",
         "source_path": "schemas/storage_object.schema.yaml",
         "source_blob_sha": "af32cb47fb26bcb81e2e479d97f4de6ed31b5315",
         "authority_transfer": False,
