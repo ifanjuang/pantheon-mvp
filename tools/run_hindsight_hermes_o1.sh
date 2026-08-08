@@ -16,6 +16,7 @@ VENV="$LAB_ROOT/venv"
 PROVIDER_URL="http://127.0.0.1:9020"
 FIXTURE_PID=""
 
+export ARTIFACTS HERMES_HOME HINDSIGHT_API_URL HINDSIGHT_API_KEY="${HINDSIGHT_API_KEY:-}" HINDSIGHT_BANK_ID
 mkdir -p "$ARTIFACTS"
 cleanup() {
   set +e
@@ -29,7 +30,6 @@ python -m venv "$VENV"
 uv pip install --python "$VENV/bin/python" -e "$UPSTREAM_ROOT" "hindsight-client>=0.4.22" "aiohttp==3.14.1"
 uv pip install --python "$VENV/bin/python" -e "$MVP_ROOT"
 export PATH="$VENV/bin:$PATH"
-export HERMES_HOME
 
 hermes profile create assistant-personal --no-skills --no-alias
 hermes profile create pantheon-governed --no-skills --no-alias
@@ -41,7 +41,7 @@ for _ in $(seq 1 60); do curl -fsS "$PROVIDER_URL/health" >/dev/null && break; s
 python "$MVP_ROOT/tools/run_hindsight_hermes_o1.py" configure \
   --hermes-home "$HERMES_HOME" \
   --hindsight-api-url "$HINDSIGHT_API_URL" \
-  --hindsight-api-key "${HINDSIGHT_API_KEY:-}" \
+  --hindsight-api-key "$HINDSIGHT_API_KEY" \
   --provider-url "$PROVIDER_URL" \
   --bank-id "$HINDSIGHT_BANK_ID" \
   --output "$ARTIFACTS/configuration.json"
@@ -82,7 +82,6 @@ if marker not in json.dumps(last, default=str):
     raise SystemExit('synthetic marker was not recalled from Hindsight')
 PY
 
-export ARTIFACTS HINDSIGHT_API_URL HINDSIGHT_API_KEY="${HINDSIGHT_API_KEY:-}" HINDSIGHT_BANK_ID
 hermes -p assistant-personal chat -q "Use hindsight_recall to find the O1 synthetic memory marker, then answer only after the tool returns." > "$ARTIFACTS/hermes-output.txt"
 grep -F O1_HINDSIGHT_RECALL_COMPLETED "$ARTIFACTS/hermes-output.txt"
 curl -fsS "$PROVIDER_URL/_lab/state" > "$ARTIFACTS/provider-state.json"
