@@ -55,80 +55,42 @@ def test_composed_app_mounts_candidate_review_routes_without_startup_effects():
     assert "GET" in methods_by_path["/me/projects"]
     assert "GET" in methods_by_path["/me/projects/{project_id}"]
     assert "GET" in methods_by_path["/me/projects/{project_id}/documents"]
-    assert "GET" in methods_by_path[
-        "/me/projects/{project_id}/documents/{document_id}"
-    ]
-    assert "POST" in methods_by_path[
-        "/me/projects/{project_id}/documents/{document_id}/revisions"
-    ]
-    assert "POST" in methods_by_path[
-        "/me/projects/{project_id}/documents/{document_id}/revision-uploads"
-    ]
+    assert "GET" in methods_by_path["/me/projects/{project_id}/documents/{document_id}"]
+    assert "POST" in methods_by_path["/me/projects/{project_id}/documents/{document_id}/revisions"]
+    assert "POST" in methods_by_path["/me/projects/{project_id}/documents/{document_id}/revision-uploads"]
     assert "GET" in methods_by_path["/agency/information/{information_id}/projection"]
-    assert "GET" in methods_by_path[
-        "/agency/projects/{project_id}/information-projections"
-    ]
+    assert "GET" in methods_by_path["/agency/projects/{project_id}/information-projections"]
     assert "POST" in methods_by_path["/agency/entity-relations"]
     assert "GET" in methods_by_path["/agency/entity-relations/{relation_id}"]
-    assert "GET" in methods_by_path[
-        "/agency/projects/{project_id}/entity-relations"
-    ]
-    assert "GET" in methods_by_path[
-        "/agency/entities/{entity_type}/{entity_id}/relations"
-    ]
-    assert "POST" in methods_by_path[
-        "/agency/entity-relations/{relation_id}/retire"
-    ]
+    assert "GET" in methods_by_path["/agency/projects/{project_id}/entity-relations"]
+    assert "GET" in methods_by_path["/agency/entities/{entity_type}/{entity_id}/relations"]
+    assert "POST" in methods_by_path["/agency/entity-relations/{relation_id}/retire"]
     assert "POST" in methods_by_path["/execution-results"]
-    disposition_path = (
-        "/execution-results/{execution_result_id}/results/{result_ref}/dispositions"
-    )
-    claim_path = (
-        "/execution-results/{execution_result_id}/results/{result_ref}/project-claim"
-    )
-    project_change_candidate_path = (
-        "/execution-results/{execution_result_id}/results/{result_ref}/project-change-candidate"
-    )
+    disposition_path = "/execution-results/{execution_result_id}/results/{result_ref}/dispositions"
+    claim_path = "/execution-results/{execution_result_id}/results/{result_ref}/project-claim"
+    project_change_candidate_path = "/execution-results/{execution_result_id}/results/{result_ref}/project-change-candidate"
     assert "POST" in methods_by_path[disposition_path]
     assert "POST" in methods_by_path[claim_path]
     assert "POST" in methods_by_path[project_change_candidate_path]
-    assert "POST" in methods_by_path[
-        "/execution-results/{execution_result_id}/results/{result_ref}/project-knowledge-edit-variant"
-    ]
+    assert "POST" in methods_by_path["/execution-results/{execution_result_id}/results/{result_ref}/project-knowledge-edit-variant"]
     assert "POST" in methods_by_path["/knowledge/{knowledge_id}/variant-edit-requests"]
     assert "GET" in methods_by_path["/knowledge/{knowledge_id}/edit-reviews"]
     assert "POST" in methods_by_path["/edit-requests/{request_id}/select-variant"]
     assert "POST" in methods_by_path["/edit-requests/{request_id}/apply-selected"]
     assert "POST" in methods_by_path["/work/issues"]
     assert "GET" in methods_by_path["/work/issues/{issue_id}/scopes"]
-    assert "GET" in methods_by_path[
-        "/work/scopes/{entity_type}/{entity_id}/issues"
-    ]
+    assert "GET" in methods_by_path["/work/scopes/{entity_type}/{entity_id}/issues"]
     assert "POST" in methods_by_path["/work/issues/{issue_id}/scopes"]
-    assert "POST" in methods_by_path[
-        "/work/issues/{issue_id}/scopes/{scope_link_id}/retire"
-    ]
-    assert "POST" in methods_by_path[
-        "/work/issues/{issue_id}/scopes/{scope_link_id}/replace-primary"
-    ]
+    assert "POST" in methods_by_path["/work/issues/{issue_id}/scopes/{scope_link_id}/retire"]
+    assert "POST" in methods_by_path["/work/issues/{issue_id}/scopes/{scope_link_id}/replace-primary"]
     assert "POST" in methods_by_path["/decision-requests"]
     assert "GET" in methods_by_path["/decision-requests"]
     assert "GET" in methods_by_path["/decision-inbox"]
-    assert "GET" in methods_by_path[
-        "/agency/projects/{project_id}/decision-requests"
-    ]
-    assert "GET" in methods_by_path[
-        "/agency/apu-objects/{object_id}/decision-requests"
-    ]
-    assert "GET" in methods_by_path[
-        "/agency/apu-objects/{object_id}/project-claims"
-    ]
-    assert "GET" in methods_by_path[
-        "/work/issues/{issue_id}/blocking-decision-request"
-    ]
-    assert "POST" in methods_by_path[
-        "/decision-requests/{request_id}/resolve"
-    ]
+    assert "GET" in methods_by_path["/agency/projects/{project_id}/decision-requests"]
+    assert "GET" in methods_by_path["/agency/apu-objects/{object_id}/decision-requests"]
+    assert "GET" in methods_by_path["/agency/apu-objects/{object_id}/project-claims"]
+    assert "GET" in methods_by_path["/work/issues/{issue_id}/blocking-decision-request"]
+    assert "POST" in methods_by_path["/decision-requests/{request_id}/resolve"]
     assert "GET" in methods_by_path["/decisions/{decision_id}"]
     mapping_reviews_path = "/execution-results/{execution_result_id}/results/{result_ref}/mappings/{mapping_ref}/reviews"
     assert "POST" in methods_by_path[mapping_reviews_path]
@@ -139,6 +101,7 @@ def test_composed_app_mounts_candidate_review_routes_without_startup_effects():
     assert "POST" in methods_by_path["/apu-write-commands/{command_id}/authorizations"]
     assert "GET" in methods_by_path["/apu-write-commands/{command_id}/authorizations"]
     assert "POST" in methods_by_path["/apu-write-commands/{command_id}/apply"]
+    assert "GET" in methods_by_path["/agency/projects/{project_id}/project-anatomy"]
 
 
 def test_composed_initializer_replays_owner_and_review_migrations_in_dependency_order(monkeypatch):
@@ -147,32 +110,34 @@ def test_composed_initializer_replays_owner_and_review_migrations_in_dependency_
     cockpit_composed.initialize_composed_schema()
     assert connection.commits == 1
     assert connection.closed is True
-    assert len(connection.statements) == 22
+    assert len(connection.statements) == 23
     assert "CREATE TABLE IF NOT EXISTS agency_apu_objects" in connection.statements[2]
-    assert "CREATE TABLE IF NOT EXISTS agency_sources" in connection.statements[3]
-    assert "CREATE TABLE IF NOT EXISTS doc_documents" in connection.statements[4]
-    assert "CREATE TABLE IF NOT EXISTS doc_document_version_sources" in connection.statements[5]
-    assert "CREATE TABLE IF NOT EXISTS storage_objects" in connection.statements[6]
-    assert "CREATE TABLE IF NOT EXISTS human_principals" in connection.statements[7]
-    assert "CREATE TABLE IF NOT EXISTS agency_information_projection_metadata" in connection.statements[8]
-    assert "CREATE TABLE IF NOT EXISTS work_issue_scope_links" in connection.statements[9]
-    assert "CREATE TABLE IF NOT EXISTS agency_decision_requests" in connection.statements[10]
-    assert "CREATE TABLE IF NOT EXISTS agency_entity_relations" in connection.statements[11]
-    assert "CREATE TABLE IF NOT EXISTS execution_results" in connection.statements[14]
-    assert "project_change_variant" in connection.statements[15]
-    assert "candidate_execution_id" in connection.statements[16]
-    assert "agency_decision_request_scope_refs" in connection.statements[17]
-    assert "apu_object" in connection.statements[17]
-    assert "CREATE TABLE IF NOT EXISTS knowledge_edit_variants" in connection.statements[18]
-    assert "CREATE TABLE IF NOT EXISTS apu_mapping_review_events" in connection.statements[19]
-    assert "CREATE TABLE IF NOT EXISTS apu_write_command_candidates" in connection.statements[20]
-    assert "expected_owner_revision" in connection.statements[21]
-    assert "agency_apu_source_match_command_once" in connection.statements[21]
+    assert "agency_apu_source_representations" in connection.statements[3]
+    assert "CREATE TABLE IF NOT EXISTS agency_sources" in connection.statements[4]
+    assert "CREATE TABLE IF NOT EXISTS doc_documents" in connection.statements[5]
+    assert "CREATE TABLE IF NOT EXISTS doc_document_version_sources" in connection.statements[6]
+    assert "CREATE TABLE IF NOT EXISTS storage_objects" in connection.statements[7]
+    assert "CREATE TABLE IF NOT EXISTS human_principals" in connection.statements[8]
+    assert "CREATE TABLE IF NOT EXISTS agency_information_projection_metadata" in connection.statements[9]
+    assert "CREATE TABLE IF NOT EXISTS work_issue_scope_links" in connection.statements[10]
+    assert "CREATE TABLE IF NOT EXISTS agency_decision_requests" in connection.statements[11]
+    assert "CREATE TABLE IF NOT EXISTS agency_entity_relations" in connection.statements[12]
+    assert "CREATE TABLE IF NOT EXISTS execution_results" in connection.statements[15]
+    assert "project_change_variant" in connection.statements[16]
+    assert "candidate_execution_id" in connection.statements[17]
+    assert "agency_decision_request_scope_refs" in connection.statements[18]
+    assert "apu_object" in connection.statements[18]
+    assert "CREATE TABLE IF NOT EXISTS knowledge_edit_variants" in connection.statements[19]
+    assert "CREATE TABLE IF NOT EXISTS apu_mapping_review_events" in connection.statements[20]
+    assert "CREATE TABLE IF NOT EXISTS apu_write_command_candidates" in connection.statements[21]
+    assert "expected_owner_revision" in connection.statements[22]
+    assert "agency_apu_source_match_command_once" in connection.statements[22]
 
 
 def test_composed_migrations_are_packaged_under_sql_directory():
     for migration, expected_name in (
         (apu_owner.MIGRATION, "021_project_anatomy_owner.sql"),
+        (apu_owner.V02_MIGRATION, "024_project_anatomy_v02_owner.sql"),
         (source_intake.MIGRATION, "009_source_intake_admission.sql"),
         (project_documents.MIGRATION, "025_project_document_revisions.sql"),
         (project_document_admission.MIGRATION, "026_project_document_source_admission.sql"),
