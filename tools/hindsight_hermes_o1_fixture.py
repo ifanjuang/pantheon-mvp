@@ -3,7 +3,7 @@
 
 The fixture never impersonates Hindsight. It only makes the model side call the
 real `hindsight_recall` tool exposed by Hermes, then verifies that the returned
-tool content contains the expected marker.
+tool content contains the expected marker and no explicitly forbidden marker.
 """
 
 from __future__ import annotations
@@ -32,13 +32,15 @@ def _tool_name(item: Any) -> str:
 
 
 class State:
-    def __init__(self, journal: Path, marker: str) -> None:
+    def __init__(self, journal: Path, marker: str, forbidden_markers: list[str]) -> None:
         self.journal = journal
         self.marker = marker
+        self.forbidden_markers = forbidden_markers
         self.lock = threading.Lock()
         self.calls = 0
         self.recall_tool_seen = False
         self.marker_seen_in_tool_result = False
+        self.forbidden_marker_seen_in_tool_result = False
 
     def record(self, payload: dict[str, Any]) -> None:
         with self.lock:
@@ -52,11 +54,12 @@ class State:
                 "provider_calls": self.calls,
                 "recall_tool_seen": self.recall_tool_seen,
                 "marker_seen_in_tool_result": self.marker_seen_in_tool_result,
+                "forbidden_marker_seen_in_tool_result": self.forbidden_marker_seen_in_tool_result,
             }
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PantheonHindsightRecallFixture/2"
+    server_version = "PantheonHindsightRecallFixture/3"
 
     @property
     def state(self) -> State:
@@ -122,11 +125,19 @@ class Handler(BaseHTTPRequestHandler):
         names = sorted({name for name in map(_tool_name, tools) if name})
         messages = body.get("messages") if isinstance(body.get("messages"), list) else []
         tool_results = [m for m in messages if isinstance(m, dict) and m.get("role") == "tool"]
+        contents = [str(m.get("content") or "") for m in tool_results]
+        marker_seen = any(self.state.marker in content for content in contents)
+        forbidden_seen = any(
+            forbidden in content
+            for content in contents
+            for forbidden in self.state.forbidden_markers
+        )
         with self.state.lock:
             self.state.calls += 1
             self.state.recall_tool_seen = self.state.recall_tool_seen or "hindsight_recall" in names
-            self.state.marker_seen_in_tool_result = self.state.marker_seen_in_tool_result or any(
-                self.state.marker in str(m.get("content") or "") for m in tool_results
+            self.state.marker_seen_in_tool_result = self.state.marker_seen_in_tool_result or marker_seen
+            self.state.forbidden_marker_seen_in_tool_result = (
+                self.state.forbidden_marker_seen_in_tool_result or forbidden_seen
             )
         self.state.record({"path": "/v1/chat/completions", "tool_names": names, "tool_result_count": len(tool_results)})
 
@@ -136,8 +147,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             response = self._tool_call()
         else:
-            ok = any(self.state.marker in str(m.get("content") or "") for m in tool_results)
-            response = self._final(ok)
+            response = self._final(marker_seen and not forbidden_seen)
         self._emit(body, response)
 
     def _tool_call(self) -> dict[str, Any]:
@@ -193,12 +203,13 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=9020)
     parser.add_argument("--journal", type=Path, required=True)
     parser.add_argument("--marker", default=DEFAULT_MARKER)
+    parser.add_argument("--forbid-marker", action="append", default=[])
     parser.add_argument("--query", default=DEFAULT_QUERY)
     parser.add_argument("--success-token", default=DEFAULT_SUCCESS_TOKEN)
     parser.add_argument("--failure-token", default=DEFAULT_FAILURE_TOKEN)
     args = parser.parse_args()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    server.state = State(args.journal, args.marker)  # type: ignore[attr-defined]
+    server.state = State(args.journal, args.marker, args.forbid_marker)  # type: ignore[attr-defined]
     server.query = args.query  # type: ignore[attr-defined]
     server.success_token = args.success_token  # type: ignore[attr-defined]
     server.failure_token = args.failure_token  # type: ignore[attr-defined]
