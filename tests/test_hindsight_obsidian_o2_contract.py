@@ -38,14 +38,16 @@ def test_o2_live_lab_is_local_synthetic_and_no_llm() -> None:
 def test_o2_exercises_real_reconcile_lifecycle_and_scope() -> None:
     raw = SEQUENCE.read_text(encoding="utf-8")
     assert raw.startswith("#!/usr/bin/env bash\nset -euo pipefail")
-    assert "Vault-A/Projects/Alpha" in raw
-    assert "Vault-A/Projects/Beta" in raw
-    assert "Vault-B/Projects/Alpha" in raw
-    assert raw.count("node \"$CLI\" reconcile") == 1  # centralized helper, invoked repeatedly
+    assert 'VAULT_A="$LAB_ROOT/Vault-A"' in raw
+    assert 'VAULT_B="$LAB_ROOT/Vault-B"' in raw
+    assert '"$VAULT_A/Projects/Alpha"' in raw
+    assert '"$VAULT_A/Projects/Beta"' in raw
+    assert '"$VAULT_B/Projects/Alpha"' in raw
+    assert raw.count('node "$CLI" reconcile') == 1  # centralized helper, invoked repeatedly
     assert "=2 unchanged" in raw
     assert "~1 updated" in raw
     assert "-1 deleted" in raw
-    assert "mv \"$VAULT_A/Projects/Alpha/note.md\"" in raw
+    assert 'mv "$VAULT_A/Projects/Alpha/note.md"' in raw
     assert "tags_match': 'all_strict'" in raw
     assert "vault:Vault-A" in raw
     assert "vault:Vault-B" in raw
