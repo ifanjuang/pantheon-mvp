@@ -8,13 +8,17 @@ import uuid
 
 import pytest
 
-from mvp_vertical import project_document_comparison, project_documents
+from mvp_vertical import (
+    project_document_admission,
+    project_document_comparison,
+    project_documents,
+)
 
 
 @pytest.fixture
 def conn():
     try:
-        connection = project_documents.connect()
+        connection = project_document_admission.connect()
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"PostgreSQL unreachable: {exc}")
     connection.execute(
