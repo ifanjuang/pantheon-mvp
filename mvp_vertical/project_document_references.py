@@ -204,13 +204,25 @@ def record_issuer_reference(
             return replay
 
         observation_id = f"doc-reference-observation-{uuid.uuid4().hex}"
+        observed_at = conn.execute("SELECT clock_timestamp()").fetchone()[0]
+        snapshot = {
+            "observation_id": observation_id,
+            "document_version_id": document_version_id,
+            "reference_value": reference_value,
+            "basis_kind": basis_kind,
+            "basis_ref": basis_ref,
+            "observed_by": actor,
+            "actor_kind": actor_kind,
+            "observed_at": _jsonable(observed_at),
+            "authority": dict(AUTHORITY),
+        }
         conn.execute(
             """
             INSERT INTO doc_document_version_reference_observations (
                 observation_id, document_version_id, reference_value,
                 basis_kind, basis_ref, observed_by, actor_kind,
-                idempotency_key, payload_digest, result_snapshot
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, '{}'::jsonb)
+                idempotency_key, payload_digest, result_snapshot, observed_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 observation_id,
@@ -222,16 +234,9 @@ def record_issuer_reference(
                 actor_kind,
                 idempotency_key,
                 payload_digest,
+                Jsonb(snapshot),
+                observed_at,
             ),
-        )
-        snapshot = _observation_row(conn, observation_id)
-        conn.execute(
-            """
-            UPDATE doc_document_version_reference_observations
-               SET result_snapshot = %s
-             WHERE observation_id = %s
-            """,
-            (Jsonb(snapshot), observation_id),
         )
         return snapshot
 
