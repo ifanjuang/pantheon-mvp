@@ -123,6 +123,11 @@ def _contract_id(identity: str) -> str:
     return f"upload.{identity[:40]}"
 
 
+def _verify_exact(path: Path, *, digest: str, size: int) -> None:
+    if not path.is_file() or path.stat().st_size != size or file_digest(path) != digest:
+        raise RevisionUploadConflict("preserved upload bytes do not match their exact digest")
+
+
 def _publish_stream(
     stream: BinaryIO,
     *,
@@ -142,6 +147,8 @@ def _publish_stream(
     digest = hashlib.sha256()
     size = 0
     temp_path: Path | None = None
+    lock_path: Path | None = None
+    lock_fd: int | None = None
     try:
         fd, temp_name = tempfile.mkstemp(prefix="upload-", suffix=".tmp", dir=staging)
         temp_path = Path(temp_name)
@@ -161,7 +168,6 @@ def _publish_stream(
                 target.write(chunk)
             target.flush()
             os.fsync(target.fileno())
-
         if size == 0:
             raise RevisionUploadRejected("empty upload is not accepted")
 
@@ -173,22 +179,34 @@ def _publish_stream(
             raise RevisionUploadRejected("generated upload destination escaped source_root")
         destination.parent.mkdir(parents=True, exist_ok=True)
 
+        lock_path = destination.parent / f".{hexdigest}.upload.lock"
+        try:
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError as exc:
+            raise RevisionUploadConflict(
+                f"another upload publication is in progress for digest {hexdigest}"
+            ) from exc
+        finally:
+            if lock_fd is not None:
+                os.close(lock_fd)
+                lock_fd = None
+
         if destination.exists():
-            if destination.stat().st_size != size or file_digest(destination) != hexdigest:
-                raise RevisionUploadConflict(
-                    "existing preserved upload path conflicts with exact uploaded bytes"
-                )
+            _verify_exact(destination, digest=hexdigest, size=size)
         else:
             os.replace(temp_path, destination)
             temp_path = None
-
-        if destination.stat().st_size != size or file_digest(destination) != hexdigest:
-            raise RevisionUploadConflict("preserved upload verification failed")
+            _verify_exact(destination, digest=hexdigest, size=size)
         return destination, source_ref, hexdigest, size
     finally:
         if temp_path is not None:
             try:
                 temp_path.unlink()
+            except FileNotFoundError:
+                pass
+        if lock_path is not None:
+            try:
+                lock_path.unlink()
             except FileNotFoundError:
                 pass
 
@@ -294,6 +312,13 @@ def _technical_capture(
     }
 
 
+def _received_at_for_replay(conn: psycopg.Connection, source_id: str) -> str | datetime:
+    try:
+        return source_intake.get_source(conn, source_id)["received_at"]
+    except source_intake.SourceNotFound:
+        return datetime.now(timezone.utc)
+
+
 def upload_revision(
     conn: psycopg.Connection,
     *,
@@ -323,7 +348,6 @@ def upload_revision(
             "principal_ref, project_id, document_id and idempotency_key are required"
         )
 
-    # Fast, exact server-side authorization before persistent file publication.
     with conn.transaction():
         human_access.require_access(
             conn,
@@ -371,6 +395,7 @@ def upload_revision(
 
     source_id = _source_id(identity)
     with conn.transaction():
+        received_at = _received_at_for_replay(conn, source_id)
         source = source_intake.create_source(
             conn,
             source_id=source_id,
@@ -380,7 +405,7 @@ def upload_revision(
             origin_producer=principal_ref,
             received_by=principal_ref,
             raw_source_ref=source_ref,
-            received_at=datetime.now(timezone.utc),
+            received_at=received_at,
             actor=principal_ref,
             actor_kind="human",
             idempotency_key=f"{idempotency_key}:source",
@@ -426,11 +451,8 @@ def upload_revision(
             replace_dossier=False,
         )
     except DocumentConversionError as exc:
-        # store.ingest records the exact technical capture + failed extraction
-        # before raising. Analysis failure is not intake failure.
+        # The existing store records exact failed technical capture first.
         analysis_error = str(exc)
-    except OSError:
-        raise
 
     technical = _technical_capture(
         conn,
@@ -454,8 +476,8 @@ def upload_revision(
         conn.rollback()
         raise
 
-    # Re-check authorization immediately before professional admission. A grant
-    # revoked during a long conversion/retention step cannot authorize A2.
+    # Re-check after potentially long conversion/retention. Revoked access can
+    # stop professional admission without erasing already-truthful intake stages.
     with conn.transaction():
         human_access.require_access(
             conn,
