@@ -428,6 +428,7 @@ def test_binding_history_is_append_only(conn) -> None:
         actor_kind="human",
         idempotency_key=_id("admit"),
     )
+    conn.commit()
     with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
         conn.execute(
             "UPDATE doc_document_version_sources SET admitted_by = 'rewritten' WHERE source_id = %s",
