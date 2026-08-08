@@ -114,7 +114,7 @@ def _technical_version(
 
 
 def _object_id(digest: str) -> str:
-    # Content-addressed id is an implementation choice, not a governance rule.
+    # Content-addressed ids are this adapter's choice, not a governance rule.
     return f"storage-object-sha256-{digest}"
 
 
@@ -131,12 +131,20 @@ def _resolved_destination(root: Path, digest: str) -> tuple[Path, str, Path]:
     root = root.expanduser().resolve()
     if root.exists() and not root.is_dir():
         raise StorageRetentionError("retention_root must be a directory")
-    root.mkdir(parents=True, exist_ok=True)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise StorageRetentionError(f"cannot create retention_root: {root}") from exc
     locator = _locator(digest)
     destination = (root / Path(locator)).resolve(strict=False)
     if not destination.is_relative_to(root):
         raise StorageRetentionError("retained destination escaped retention_root")
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise StorageRetentionError(
+            f"cannot create retained content directory: {destination.parent}"
+        ) from exc
     return destination, locator, root
 
 
@@ -190,43 +198,81 @@ def _retain_exact_copy(
         )
         return destination, locator
 
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f".{expected_digest}.",
-        suffix=".tmp",
-        dir=destination.parent,
-    )
-    tmp_path = Path(tmp_name)
+    lock_path = destination.with_name(f".{expected_digest}.lock")
     try:
-        with os.fdopen(fd, "wb") as target, source_path.open("rb") as source:
-            shutil.copyfileobj(source, target, length=1024 * 1024)
-            target.flush()
-            os.fsync(target.fileno())
-        _verify_file(
-            tmp_path,
-            expected_digest=expected_digest,
-            expected_size=expected_size,
-        )
-        try:
-            # Atomic no-clobber publication. This hard-link is only from the
-            # already-copied temp inode; it never links the mutable source file.
-            os.link(tmp_path, destination)
-        except FileExistsError:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError as exc:
+        raise StorageRetentionError(
+            f"retention already in progress for digest {expected_digest}"
+        ) from exc
+    except OSError as exc:
+        raise StorageRetentionError(f"cannot acquire retention lock: {lock_path}") from exc
+    else:
+        os.close(lock_fd)
+
+    tmp_path: Path | None = None
+    try:
+        # Another cooperative process might have completed between the first
+        # existence check and our lock acquisition. Verify and reuse it.
+        if destination.exists():
             _verify_file(
                 destination,
                 expected_digest=expected_digest,
                 expected_size=expected_size,
             )
+            return destination, locator
+
+        try:
+            fd, tmp_name = tempfile.mkstemp(
+                prefix=f".{expected_digest}.",
+                suffix=".tmp",
+                dir=destination.parent,
+            )
+            tmp_path = Path(tmp_name)
+            with os.fdopen(fd, "wb") as target, source_path.open("rb") as source:
+                shutil.copyfileobj(source, target, length=1024 * 1024)
+                target.flush()
+                os.fsync(target.fileno())
+        except OSError as exc:
+            raise StorageRetentionError("failed to copy bytes into retention staging") from exc
+
+        _verify_file(
+            tmp_path,
+            expected_digest=expected_digest,
+            expected_size=expected_size,
+        )
+
+        # Do not overwrite any content that appeared while we staged. Under the
+        # adapter lock this should only be an external writer; verify/fail closed.
+        if destination.exists():
+            _verify_file(
+                destination,
+                expected_digest=expected_digest,
+                expected_size=expected_size,
+            )
+        else:
+            try:
+                os.replace(tmp_path, destination)
+            except OSError as exc:
+                raise StorageRetentionError("failed to atomically publish retained content") from exc
+            tmp_path = None
+
         _verify_file(
             destination,
             expected_digest=expected_digest,
             expected_size=expected_size,
         )
+        return destination, locator
     finally:
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
         try:
-            tmp_path.unlink()
+            lock_path.unlink()
         except FileNotFoundError:
             pass
-    return destination, locator
 
 
 def _storage_object_projection(conn: psycopg.Connection, storage_object_id: str) -> dict[str, Any]:
@@ -307,8 +353,8 @@ def retain_document_version(
         expected_digest=digest,
         expected_size=expected_size,
     )
-    storage_object_id = _object_id(digest)
-    location_id = _location_id(provider_ref, locator)
+    requested_object_id = _object_id(digest)
+    requested_location_id = _location_id(provider_ref, locator)
 
     with conn.transaction():
         with conn.cursor(row_factory=dict_row) as cur:
@@ -320,7 +366,10 @@ def retain_document_version(
                 (document_id, version),
             )
             existing_binding = cur.fetchone()
-        if existing_binding is not None and existing_binding["storage_object_id"] != storage_object_id:
+        if (
+            existing_binding is not None
+            and existing_binding["storage_object_id"] != requested_object_id
+        ):
             raise StorageBindingConflict(
                 "technical document version is already bound to another Storage Object"
             )
@@ -332,7 +381,7 @@ def retain_document_version(
             ) VALUES (%s, %s, %s, %s)
             ON CONFLICT (content_sha256) DO NOTHING
             """,
-            (storage_object_id, digest, expected_size, technical["media_type"]),
+            (requested_object_id, digest, expected_size, technical["media_type"]),
         )
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -349,6 +398,7 @@ def retain_document_version(
             raise StorageBindingConflict("existing Storage Object has incompatible byte size")
         storage_object_id = obj["storage_object_id"]
 
+        location_id = _location_id(provider_ref, locator)
         conn.execute(
             """
             INSERT INTO storage_object_locations (
@@ -376,7 +426,9 @@ def retain_document_version(
             or location["location_status"] != "verified"
             or location["verification_method"] != "full_sha256"
         ):
-            raise StorageBindingConflict("existing Storage Object location conflicts with verified binding")
+            raise StorageBindingConflict(
+                "existing Storage Object location conflicts with verified binding"
+            )
 
         conn.execute(
             """
@@ -397,7 +449,9 @@ def retain_document_version(
             )
             binding = cur.fetchone()
         if binding is None or binding["storage_object_id"] != storage_object_id:
-            raise StorageBindingConflict("technical document version binding conflicts with retained bytes")
+            raise StorageBindingConflict(
+                "technical document version binding conflicts with retained bytes"
+            )
 
         storage_object = _storage_object_projection(conn, storage_object_id)
 
@@ -447,7 +501,9 @@ def resolve_retained_version_path(
         raise StorageBindingConflict("verified retained location is missing or ambiguous")
     row = matching[0]
     if row["content_sha256"].lower() != str(technical["source_digest"]).lower():
-        raise StorageBindingConflict("Storage Object digest differs from technical version digest")
+        raise StorageBindingConflict(
+            "Storage Object digest differs from technical version digest"
+        )
 
     root = retention_root.expanduser().resolve()
     path = (root / Path(row["locator"])).resolve(strict=False)
