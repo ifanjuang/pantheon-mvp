@@ -5,6 +5,10 @@ technical source-history owner used by ingestion and extraction. This module
 adds a bounded professional grouping layer above exact technical versions.
 Persisting or linking a revision does not make it Evidence, approved,
 contractual, current for execution, or otherwise professionally authoritative.
+
+Opaque external issuer references belong to this same professional revision
+responsibility. They are retained as append-only observations so late or
+conflicting readings never rewrite revision history silently.
 """
 
 from __future__ import annotations
@@ -24,7 +28,13 @@ from . import store
 
 
 MIGRATION = Path(__file__).resolve().parent / "sql" / "025_project_document_revisions.sql"
+REFERENCE_MIGRATION = (
+    Path(__file__).resolve().parent
+    / "sql"
+    / "028_project_document_issuer_reference_observations.sql"
+)
 ACTOR_KINDS = {"human", "system", "hermes"}
+REFERENCE_BASIS_KINDS = {"human_declared", "source_observed", "import_metadata"}
 AUTHORITY = {
     "is_evidence": False,
     "is_decision": False,
@@ -34,6 +44,15 @@ AUTHORITY = {
     "is_execution_authority": False,
     "changes_project_truth": False,
     "changes_current_authority": False,
+}
+REFERENCE_AUTHORITY = {
+    "is_evidence": False,
+    "is_decision": False,
+    "is_approval": False,
+    "is_professional_validation": False,
+    "changes_revision_order": False,
+    "changes_current_authority": False,
+    "changes_project_truth": False,
 }
 
 
@@ -65,6 +84,10 @@ class IdempotencyConflict(ProjectDocumentError):
     pass
 
 
+class ReferenceIdempotencyConflict(ProjectDocumentError):
+    pass
+
+
 class GovernanceGateRequired(ProjectDocumentError):
     pass
 
@@ -73,12 +96,14 @@ def connect(dsn: str | None = None) -> psycopg.Connection:
     """Connect through the existing document store and add this owner schema."""
     conn = store.connect(dsn)
     conn.execute(MIGRATION.read_text(encoding="utf-8"))
+    conn.execute(REFERENCE_MIGRATION.read_text(encoding="utf-8"))
     conn.commit()
     return conn
 
 
 def ensure_schema(conn: psycopg.Connection) -> None:
     conn.execute(MIGRATION.read_text(encoding="utf-8"))
+    conn.execute(REFERENCE_MIGRATION.read_text(encoding="utf-8"))
     conn.commit()
 
 
@@ -108,6 +133,23 @@ def _optional(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
+    return text or None
+
+
+def _opaque_reference(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ProjectDocumentError("reference_value must be a string")
+    if not value.strip():
+        raise ProjectDocumentError("reference_value must be non-empty")
+    return value
+
+
+def _optional_strict_string(value: Any, field: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ProjectDocumentError(f"{field} must be a string when provided")
+    text = value.strip()
     return text or None
 
 
@@ -152,6 +194,31 @@ def _replayed_snapshot(
     if row["payload_digest"] != payload_digest:
         raise IdempotencyConflict(
             "idempotency key already belongs to another Project Document mutation"
+        )
+    return _jsonable(dict(row["result_snapshot"]))
+
+
+def _replayed_reference_snapshot(
+    conn: psycopg.Connection,
+    *,
+    idempotency_key: str,
+    payload_digest: str,
+) -> dict[str, Any] | None:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT payload_digest, result_snapshot
+              FROM doc_document_version_reference_observations
+             WHERE idempotency_key = %s
+            """,
+            (idempotency_key,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    if row["payload_digest"] != payload_digest:
+        raise ReferenceIdempotencyConflict(
+            "idempotency key already belongs to another issuer-reference observation"
         )
     return _jsonable(dict(row["result_snapshot"]))
 
@@ -539,4 +606,150 @@ def resolve_latest_received(
             "version_seq_tiebreaker": int(row["version_seq"]),
         },
         "authority": dict(AUTHORITY),
+    }
+
+
+def record_issuer_reference(
+    conn: psycopg.Connection,
+    *,
+    document_version_id: str,
+    reference_value: str,
+    basis_kind: str,
+    actor: str,
+    actor_kind: str,
+    idempotency_key: str,
+    basis_ref: str | None = None,
+) -> dict[str, Any]:
+    """Record one exact opaque issuer-reference observation for a revision."""
+    actor, actor_kind = _validate_actor(actor, actor_kind)
+    document_version_id = _required(document_version_id, "document_version_id")
+    reference_value = _opaque_reference(reference_value)
+    basis_kind = _required(basis_kind, "basis_kind")
+    if basis_kind not in REFERENCE_BASIS_KINDS:
+        raise ProjectDocumentError(f"unsupported basis_kind: {basis_kind}")
+    basis_ref = _optional_strict_string(basis_ref, "basis_ref")
+    idempotency_key = _required(idempotency_key, "idempotency_key")
+
+    get_revision(conn, document_version_id)
+    payload = {
+        "operation": "record_issuer_document_reference",
+        "document_version_id": document_version_id,
+        "reference_value": reference_value,
+        "basis_kind": basis_kind,
+        "basis_ref": basis_ref,
+        "actor": actor,
+        "actor_kind": actor_kind,
+    }
+    payload_digest = _payload_digest(payload)
+
+    with conn.transaction():
+        replay = _replayed_reference_snapshot(
+            conn,
+            idempotency_key=idempotency_key,
+            payload_digest=payload_digest,
+        )
+        if replay is not None:
+            return replay
+
+        observation_id = f"doc-reference-observation-{uuid.uuid4().hex}"
+        observed_at = conn.execute("SELECT clock_timestamp()").fetchone()[0]
+        snapshot = {
+            "observation_id": observation_id,
+            "document_version_id": document_version_id,
+            "reference_value": reference_value,
+            "basis_kind": basis_kind,
+            "basis_ref": basis_ref,
+            "observed_by": actor,
+            "actor_kind": actor_kind,
+            "observed_at": _jsonable(observed_at),
+            "authority": dict(REFERENCE_AUTHORITY),
+        }
+        conn.execute(
+            """
+            INSERT INTO doc_document_version_reference_observations (
+                observation_id, document_version_id, reference_value,
+                basis_kind, basis_ref, observed_by, actor_kind,
+                idempotency_key, payload_digest, result_snapshot, observed_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                observation_id,
+                document_version_id,
+                reference_value,
+                basis_kind,
+                basis_ref,
+                actor,
+                actor_kind,
+                idempotency_key,
+                payload_digest,
+                Jsonb(snapshot),
+                observed_at,
+            ),
+        )
+        return snapshot
+
+
+def list_issuer_reference_observations(
+    conn: psycopg.Connection,
+    document_version_id: str,
+) -> list[dict[str, Any]]:
+    get_revision(conn, document_version_id)
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT observation_id, document_version_id, reference_value,
+                   basis_kind, basis_ref, observed_by, actor_kind, observed_at
+              FROM doc_document_version_reference_observations
+             WHERE document_version_id = %s
+             ORDER BY observed_at, observation_id
+            """,
+            (document_version_id,),
+        )
+        rows = cur.fetchall()
+    observations: list[dict[str, Any]] = []
+    for row in rows:
+        item = _jsonable(dict(row))
+        item["authority"] = dict(REFERENCE_AUTHORITY)
+        observations.append(item)
+    return observations
+
+
+def resolve_issuer_document_reference(
+    conn: psycopg.Connection,
+    document_version_id: str,
+) -> dict[str, Any]:
+    """Calculate issuer-reference posture without choosing through conflict."""
+    revision = get_revision(conn, document_version_id)
+    observations = list_issuer_reference_observations(conn, document_version_id)
+
+    distinct: list[str] = []
+    for observation in observations:
+        value = observation["reference_value"]
+        if value not in distinct:
+            distinct.append(value)
+
+    if not distinct:
+        status = "unresolved"
+        selected = None
+    elif len(distinct) == 1:
+        status = "resolved"
+        selected = distinct[0]
+    else:
+        status = "conflicting"
+        selected = None
+
+    return {
+        "document_id": revision["document_id"],
+        "document_version_id": document_version_id,
+        "resolution_status": status,
+        "issuer_document_reference": selected,
+        "observed_values": distinct,
+        "observation_count": len(observations),
+        "observations": observations,
+        "limitations": [
+            "reference values are opaque and case/punctuation sensitive",
+            "observation chronology does not establish revision chronology or authority",
+            "conflicting observations are not resolved by newest-wins",
+        ],
+        "authority": dict(REFERENCE_AUTHORITY),
     }
