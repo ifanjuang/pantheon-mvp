@@ -172,8 +172,11 @@ def test_markdown_upload_composes_source_ingest_retention_and_professional_revis
     )
     assert retained.read_bytes() == b"# BET structure\n\nNouvel indice C.\n"
     serialized = json.dumps(result, ensure_ascii=False)
-    assert str(tmp_path) not in serialized
-    assert "sha256/" not in serialized  # physical locator is not exposed to the caller
+    assert str(_config(tmp_path).source_root.resolve()) not in serialized
+    assert str(_config(tmp_path).retention_root.resolve()) not in serialized
+    # `source_ref` is a server-relative provenance identifier, not a directly
+    # accessible NAS path. The physical storage roots remain undisclosed.
+    assert result["revision"]["source_ref"].startswith("human_uploads/sha256/")
 
 
 def test_same_idempotency_key_replays_and_different_payload_fails_closed(conn, tmp_path) -> None:
