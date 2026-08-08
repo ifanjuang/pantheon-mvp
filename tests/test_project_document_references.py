@@ -7,13 +7,13 @@ import uuid
 import psycopg
 import pytest
 
-from mvp_vertical import project_document_references, project_documents
+from mvp_vertical import project_documents
 
 
 @pytest.fixture
 def conn():
     try:
-        connection = project_document_references.connect()
+        connection = project_documents.connect()
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"PostgreSQL unreachable: {exc}")
     connection.execute(
@@ -76,7 +76,7 @@ def _revision(conn, *, project_id: str = "project-alpha", label: str = "B") -> d
 
 
 def _record(conn, version_id: str, value: str, *, basis: str = "human_declared") -> dict:
-    return project_document_references.record_issuer_reference(
+    return project_documents.record_issuer_reference(
         conn,
         document_version_id=version_id,
         reference_value=value,
@@ -95,7 +95,7 @@ def _record(conn, version_id: str, value: str, *, basis: str = "human_declared")
 def test_reference_formats_are_preserved_exactly(conn, value: str) -> None:
     revision = _revision(conn)
     observed = _record(conn, revision["version_id"], value)
-    resolved = project_document_references.resolve_issuer_document_reference(
+    resolved = project_documents.resolve_issuer_document_reference(
         conn, revision["version_id"]
     )
 
@@ -108,7 +108,7 @@ def test_reference_formats_are_preserved_exactly(conn, value: str) -> None:
 def test_reference_is_distinct_from_revision_label(conn) -> None:
     revision = _revision(conn, label="B2")
     _record(conn, revision["version_id"], "ST-204")
-    resolved = project_document_references.resolve_issuer_document_reference(
+    resolved = project_documents.resolve_issuer_document_reference(
         conn, revision["version_id"]
     )
 
@@ -118,11 +118,8 @@ def test_reference_is_distinct_from_revision_label(conn) -> None:
 
 def test_non_string_reference_is_refused_without_coercion(conn) -> None:
     revision = _revision(conn)
-    with pytest.raises(
-        project_document_references.ProjectDocumentReferenceError,
-        match="must be a string",
-    ):
-        project_document_references.record_issuer_reference(
+    with pytest.raises(project_documents.ProjectDocumentError, match="must be a string"):
+        project_documents.record_issuer_reference(
             conn,
             document_version_id=revision["version_id"],
             reference_value=123,  # type: ignore[arg-type]
@@ -137,7 +134,7 @@ def test_leading_zero_and_case_punctuation_remain_significant(conn) -> None:
     revision = _revision(conn)
     _record(conn, revision["version_id"], "001")
     _record(conn, revision["version_id"], "1", basis="source_observed")
-    resolved = project_document_references.resolve_issuer_document_reference(
+    resolved = project_documents.resolve_issuer_document_reference(
         conn, revision["version_id"]
     )
 
@@ -151,7 +148,7 @@ def test_same_exact_value_from_distinct_provenance_resolves_without_losing_histo
     _record(conn, revision["version_id"], "A-01", basis="human_declared")
     _record(conn, revision["version_id"], "A-01", basis="source_observed")
 
-    resolved = project_document_references.resolve_issuer_document_reference(
+    resolved = project_documents.resolve_issuer_document_reference(
         conn, revision["version_id"]
     )
     assert resolved["resolution_status"] == "resolved"
@@ -165,7 +162,7 @@ def test_distinct_reference_observations_fail_closed_as_conflicting(conn) -> Non
     _record(conn, revision["version_id"], "ST-204-A")
     _record(conn, revision["version_id"], "ST-204A", basis="source_observed")
 
-    resolved = project_document_references.resolve_issuer_document_reference(
+    resolved = project_documents.resolve_issuer_document_reference(
         conn, revision["version_id"]
     )
     assert resolved["resolution_status"] == "conflicting"
@@ -175,7 +172,7 @@ def test_distinct_reference_observations_fail_closed_as_conflicting(conn) -> Non
 
 def test_no_observation_is_explicitly_unresolved(conn) -> None:
     revision = _revision(conn)
-    resolved = project_document_references.resolve_issuer_document_reference(
+    resolved = project_documents.resolve_issuer_document_reference(
         conn, revision["version_id"]
     )
     assert resolved["resolution_status"] == "unresolved"
@@ -194,12 +191,12 @@ def test_idempotent_replay_is_exact_and_conflicting_key_reuse_is_refused(conn) -
         actor_kind="human",
         idempotency_key=key,
     )
-    first = project_document_references.record_issuer_reference(conn, **kwargs)
-    replay = project_document_references.record_issuer_reference(conn, **kwargs)
+    first = project_documents.record_issuer_reference(conn, **kwargs)
+    replay = project_documents.record_issuer_reference(conn, **kwargs)
     assert replay == first
 
-    with pytest.raises(project_document_references.ReferenceIdempotencyConflict):
-        project_document_references.record_issuer_reference(
+    with pytest.raises(project_documents.ReferenceIdempotencyConflict):
+        project_documents.record_issuer_reference(
             conn,
             **{**kwargs, "reference_value": "BET-43"},
         )
@@ -221,7 +218,7 @@ def test_reference_history_is_append_only(conn) -> None:
         )
     conn.rollback()
 
-    resolved = project_document_references.resolve_issuer_document_reference(
+    resolved = project_documents.resolve_issuer_document_reference(
         conn, revision["version_id"]
     )
     assert resolved["issuer_document_reference"] == "BET-42"
@@ -229,8 +226,8 @@ def test_reference_history_is_append_only(conn) -> None:
 
 def test_hermes_direct_reference_observation_is_refused(conn) -> None:
     revision = _revision(conn)
-    with pytest.raises(project_document_references.GovernanceGateRequired):
-        project_document_references.record_issuer_reference(
+    with pytest.raises(project_documents.GovernanceGateRequired):
+        project_documents.record_issuer_reference(
             conn,
             document_version_id=revision["version_id"],
             reference_value="A17",
