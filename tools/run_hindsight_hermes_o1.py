@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +55,9 @@ def configure(
     if not profile_home.is_dir() or not governed_home.is_dir():
         raise O1Error("assistant-personal and pantheon-governed profiles must exist")
 
+    # Do not set platform_toolsets.cli=[] here: that would remove the provider's
+    # explicit hindsight_* tools from the assistant CLI surface. The governed
+    # profile is qualified separately and keeps its CLI toolset empty.
     _write_yaml(
         profile_home / "config.yaml",
         {
@@ -70,7 +72,6 @@ def configure(
                 "memory_enabled": False,
                 "user_profile_enabled": False,
             },
-            "platform_toolsets": {"cli": []},
         },
     )
     _write_json(
@@ -98,7 +99,6 @@ def configure(
         },
     )
 
-    # O1 never rewrites the governed profile. Its posture is observed separately.
     return {
         "kind": "hindsight_hermes_o1_configuration",
         "assistant_profile": ASSISTANT_PROFILE,
@@ -109,6 +109,11 @@ def configure(
         "auto_retain": False,
         "auto_recall": False,
         "conversation_retention": "off",
+        "assistant_memory_tools_expected": [
+            "hindsight_retain",
+            "hindsight_recall",
+            "hindsight_reflect",
+        ],
         "pantheon_write_path": False,
         "evidence_admission": False,
         "production_activation": False,
@@ -121,6 +126,7 @@ def validate(artifacts: Path) -> dict[str, Any]:
     governed = json.loads((artifacts / "governed-memory-status.json").read_text(encoding="utf-8"))
     direct_recall = json.loads((artifacts / "direct-recall.json").read_text(encoding="utf-8"))
     hermes_output = (artifacts / "hermes-output.txt").read_text(encoding="utf-8")
+    provider_state = json.loads((artifacts / "provider-state.json").read_text(encoding="utf-8"))
     rollback = json.loads((artifacts / "rollback.json").read_text(encoding="utf-8"))
 
     if "hindsight" not in assistant_status.lower():
@@ -129,6 +135,10 @@ def validate(artifacts: Path) -> dict[str, Any]:
         raise O1Error("pantheon-governed memory posture is not still fully off")
     if MARKER not in json.dumps(direct_recall, ensure_ascii=False):
         raise O1Error("direct Hindsight recall did not return the synthetic marker")
+    if provider_state.get("recall_tool_seen") is not True:
+        raise O1Error("Hermes did not expose hindsight_recall to the model")
+    if provider_state.get("marker_seen_in_tool_result") is not True:
+        raise O1Error("Hermes tool result did not carry the real recalled marker")
     if "O1_HINDSIGHT_RECALL_COMPLETED" not in hermes_output:
         raise O1Error("Hermes did not complete a Hindsight recall tool cycle")
     if rollback.get("assistant_profile_removed") is not True:
@@ -141,6 +151,7 @@ def validate(artifacts: Path) -> dict[str, Any]:
         "governed_profile": GOVERNED_PROFILE,
         "hindsight_bank": DEFAULT_BANK,
         "direct_recall_verified": True,
+        "hermes_recall_tool_exposed": True,
         "hermes_recall_verified": True,
         "conversation_retention": "off",
         "governed_memory_posture": "qualified_off",
