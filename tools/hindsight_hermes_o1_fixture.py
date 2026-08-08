@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Deterministic OpenAI-compatible model fixture for the O1 memory lab.
+"""Deterministic OpenAI-compatible model fixture for Hindsight recall labs.
 
 The fixture never impersonates Hindsight. It only makes the model side call the
 real `hindsight_recall` tool exposed by Hermes, then verifies that the returned
-tool content contains the synthetic marker.
+tool content contains the expected marker.
 """
 
 from __future__ import annotations
@@ -18,7 +18,10 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
-MARKER = "PANTHEON_O1_SYNTHETIC_MEMORY_MARKER"
+DEFAULT_MARKER = "PANTHEON_O1_SYNTHETIC_MEMORY_MARKER"
+DEFAULT_QUERY = "O1 synthetic memory marker"
+DEFAULT_SUCCESS_TOKEN = "O1_HINDSIGHT_RECALL_COMPLETED"
+DEFAULT_FAILURE_TOKEN = "O1_HINDSIGHT_RECALL_MISSING_MARKER"
 
 
 def _tool_name(item: Any) -> str:
@@ -29,8 +32,9 @@ def _tool_name(item: Any) -> str:
 
 
 class State:
-    def __init__(self, journal: Path) -> None:
+    def __init__(self, journal: Path, marker: str) -> None:
         self.journal = journal
+        self.marker = marker
         self.lock = threading.Lock()
         self.calls = 0
         self.recall_tool_seen = False
@@ -52,11 +56,23 @@ class State:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PantheonO1Fixture/1"
+    server_version = "PantheonHindsightRecallFixture/2"
 
     @property
     def state(self) -> State:
         return self.server.state  # type: ignore[attr-defined]
+
+    @property
+    def query(self) -> str:
+        return self.server.query  # type: ignore[attr-defined]
+
+    @property
+    def success_token(self) -> str:
+        return self.server.success_token  # type: ignore[attr-defined]
+
+    @property
+    def failure_token(self) -> str:
+        return self.server.failure_token  # type: ignore[attr-defined]
 
     def log_message(self, fmt: str, *args: object) -> None:
         del fmt, args
@@ -110,7 +126,7 @@ class Handler(BaseHTTPRequestHandler):
             self.state.calls += 1
             self.state.recall_tool_seen = self.state.recall_tool_seen or "hindsight_recall" in names
             self.state.marker_seen_in_tool_result = self.state.marker_seen_in_tool_result or any(
-                MARKER in str(m.get("content") or "") for m in tool_results
+                self.state.marker in str(m.get("content") or "") for m in tool_results
             )
         self.state.record({"path": "/v1/chat/completions", "tool_names": names, "tool_result_count": len(tool_results)})
 
@@ -120,22 +136,22 @@ class Handler(BaseHTTPRequestHandler):
                 return
             response = self._tool_call()
         else:
-            ok = any(MARKER in str(m.get("content") or "") for m in tool_results)
+            ok = any(self.state.marker in str(m.get("content") or "") for m in tool_results)
             response = self._final(ok)
         self._emit(body, response)
 
     def _tool_call(self) -> dict[str, Any]:
         return {
-            "id": "chatcmpl-o1-tool",
+            "id": "chatcmpl-hindsight-tool",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": "o1-lab-model",
             "choices": [{
                 "index": 0,
                 "message": {"role": "assistant", "content": None, "tool_calls": [{
-                    "id": "call-o1-recall",
+                    "id": "call-hindsight-recall",
                     "type": "function",
-                    "function": {"name": "hindsight_recall", "arguments": json.dumps({"query": "O1 synthetic memory marker"})},
+                    "function": {"name": "hindsight_recall", "arguments": json.dumps({"query": self.query})},
                 }]},
                 "finish_reason": "tool_calls",
             }],
@@ -143,9 +159,9 @@ class Handler(BaseHTTPRequestHandler):
         }
 
     def _final(self, ok: bool) -> dict[str, Any]:
-        text = "O1_HINDSIGHT_RECALL_COMPLETED" if ok else "O1_HINDSIGHT_RECALL_MISSING_MARKER"
+        text = self.success_token if ok else self.failure_token
         return {
-            "id": "chatcmpl-o1-final",
+            "id": "chatcmpl-hindsight-final",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": "o1-lab-model",
@@ -176,9 +192,16 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9020)
     parser.add_argument("--journal", type=Path, required=True)
+    parser.add_argument("--marker", default=DEFAULT_MARKER)
+    parser.add_argument("--query", default=DEFAULT_QUERY)
+    parser.add_argument("--success-token", default=DEFAULT_SUCCESS_TOKEN)
+    parser.add_argument("--failure-token", default=DEFAULT_FAILURE_TOKEN)
     args = parser.parse_args()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    server.state = State(args.journal)  # type: ignore[attr-defined]
+    server.state = State(args.journal, args.marker)  # type: ignore[attr-defined]
+    server.query = args.query  # type: ignore[attr-defined]
+    server.success_token = args.success_token  # type: ignore[attr-defined]
+    server.failure_token = args.failure_token  # type: ignore[attr-defined]
     server.serve_forever()
     return 0
 
