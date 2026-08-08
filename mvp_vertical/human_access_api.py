@@ -212,45 +212,49 @@ def install_human_access_routes(
         principal: human_access.PrincipalContext = Depends(require_principal),
     ) -> dict:
         def operation(conn):
-            human_access.require_access(
-                conn,
-                principal_ref=principal.principal_ref,
-                project_id=project_id,
-                resource_type="project",
-                resource_id=project_id,
-                action="project.read",
-            )
-            human_access.require_access(
-                conn,
-                principal_ref=principal.principal_ref,
-                project_id=project_id,
-                resource_type="project_document",
-                resource_id=document_id,
-                action="document.read",
-            )
-            human_access.require_access(
-                conn,
-                principal_ref=principal.principal_ref,
-                project_id=project_id,
-                resource_type="project_document",
-                resource_id=document_id,
-                action="document.revision.submit",
-            )
-            document = project_documents.get_document(conn, document_id)
-            if document["parent_project_id"] != project_id:
-                raise human_access.AccessDenied("Project Document is outside the requested Project scope")
-            return project_document_admission.admit_source_as_revision(
-                conn,
-                source_id=body.source_id,
-                document_id=document_id,
-                source_document_id=body.source_document_id,
-                source_version=body.source_version,
-                revision_label=body.revision_label,
-                supersedes_version_id=body.supersedes_version_id,
-                actor=principal.principal_ref,
-                actor_kind="human",
-                idempotency_key=body.idempotency_key,
-            )
+            # Access checks are reads and therefore start a psycopg transaction.
+            # Own the outer transaction here so the nested A2 owner savepoints
+            # cannot be rolled back merely because with_connection closes later.
+            with conn.transaction():
+                human_access.require_access(
+                    conn,
+                    principal_ref=principal.principal_ref,
+                    project_id=project_id,
+                    resource_type="project",
+                    resource_id=project_id,
+                    action="project.read",
+                )
+                human_access.require_access(
+                    conn,
+                    principal_ref=principal.principal_ref,
+                    project_id=project_id,
+                    resource_type="project_document",
+                    resource_id=document_id,
+                    action="document.read",
+                )
+                human_access.require_access(
+                    conn,
+                    principal_ref=principal.principal_ref,
+                    project_id=project_id,
+                    resource_type="project_document",
+                    resource_id=document_id,
+                    action="document.revision.submit",
+                )
+                document = project_documents.get_document(conn, document_id)
+                if document["parent_project_id"] != project_id:
+                    raise human_access.AccessDenied("Project Document is outside the requested Project scope")
+                return project_document_admission.admit_source_as_revision(
+                    conn,
+                    source_id=body.source_id,
+                    document_id=document_id,
+                    source_document_id=body.source_document_id,
+                    source_version=body.source_version,
+                    revision_label=body.revision_label,
+                    supersedes_version_id=body.supersedes_version_id,
+                    actor=principal.principal_ref,
+                    actor_kind="human",
+                    idempotency_key=body.idempotency_key,
+                )
 
         result = scoped(operation)
         return {
