@@ -55,42 +55,80 @@ def test_composed_app_mounts_candidate_review_routes_without_startup_effects():
     assert "GET" in methods_by_path["/me/projects"]
     assert "GET" in methods_by_path["/me/projects/{project_id}"]
     assert "GET" in methods_by_path["/me/projects/{project_id}/documents"]
-    assert "GET" in methods_by_path["/me/projects/{project_id}/documents/{document_id}"]
-    assert "POST" in methods_by_path["/me/projects/{project_id}/documents/{document_id}/revisions"]
-    assert "POST" in methods_by_path["/me/projects/{project_id}/documents/{document_id}/revision-uploads"]
+    assert "GET" in methods_by_path[
+        "/me/projects/{project_id}/documents/{document_id}"
+    ]
+    assert "POST" in methods_by_path[
+        "/me/projects/{project_id}/documents/{document_id}/revisions"
+    ]
+    assert "POST" in methods_by_path[
+        "/me/projects/{project_id}/documents/{document_id}/revision-uploads"
+    ]
     assert "GET" in methods_by_path["/agency/information/{information_id}/projection"]
-    assert "GET" in methods_by_path["/agency/projects/{project_id}/information-projections"]
+    assert "GET" in methods_by_path[
+        "/agency/projects/{project_id}/information-projections"
+    ]
     assert "POST" in methods_by_path["/agency/entity-relations"]
     assert "GET" in methods_by_path["/agency/entity-relations/{relation_id}"]
-    assert "GET" in methods_by_path["/agency/projects/{project_id}/entity-relations"]
-    assert "GET" in methods_by_path["/agency/entities/{entity_type}/{entity_id}/relations"]
-    assert "POST" in methods_by_path["/agency/entity-relations/{relation_id}/retire"]
+    assert "GET" in methods_by_path[
+        "/agency/projects/{project_id}/entity-relations"
+    ]
+    assert "GET" in methods_by_path[
+        "/agency/entities/{entity_type}/{entity_id}/relations"
+    ]
+    assert "POST" in methods_by_path[
+        "/agency/entity-relations/{relation_id}/retire"
+    ]
     assert "POST" in methods_by_path["/execution-results"]
-    disposition_path = "/execution-results/{execution_result_id}/results/{result_ref}/dispositions"
-    claim_path = "/execution-results/{execution_result_id}/results/{result_ref}/project-claim"
-    project_change_candidate_path = "/execution-results/{execution_result_id}/results/{result_ref}/project-change-candidate"
+    disposition_path = (
+        "/execution-results/{execution_result_id}/results/{result_ref}/dispositions"
+    )
+    claim_path = (
+        "/execution-results/{execution_result_id}/results/{result_ref}/project-claim"
+    )
+    project_change_candidate_path = (
+        "/execution-results/{execution_result_id}/results/{result_ref}/project-change-candidate"
+    )
     assert "POST" in methods_by_path[disposition_path]
     assert "POST" in methods_by_path[claim_path]
     assert "POST" in methods_by_path[project_change_candidate_path]
-    assert "POST" in methods_by_path["/execution-results/{execution_result_id}/results/{result_ref}/project-knowledge-edit-variant"]
+    assert "POST" in methods_by_path[
+        "/execution-results/{execution_result_id}/results/{result_ref}/project-knowledge-edit-variant"
+    ]
     assert "POST" in methods_by_path["/knowledge/{knowledge_id}/variant-edit-requests"]
     assert "GET" in methods_by_path["/knowledge/{knowledge_id}/edit-reviews"]
     assert "POST" in methods_by_path["/edit-requests/{request_id}/select-variant"]
     assert "POST" in methods_by_path["/edit-requests/{request_id}/apply-selected"]
     assert "POST" in methods_by_path["/work/issues"]
     assert "GET" in methods_by_path["/work/issues/{issue_id}/scopes"]
-    assert "GET" in methods_by_path["/work/scopes/{entity_type}/{entity_id}/issues"]
+    assert "GET" in methods_by_path[
+        "/work/scopes/{entity_type}/{entity_id}/issues"
+    ]
     assert "POST" in methods_by_path["/work/issues/{issue_id}/scopes"]
-    assert "POST" in methods_by_path["/work/issues/{issue_id}/scopes/{scope_link_id}/retire"]
-    assert "POST" in methods_by_path["/work/issues/{issue_id}/scopes/{scope_link_id}/replace-primary"]
+    assert "POST" in methods_by_path[
+        "/work/issues/{issue_id}/scopes/{scope_link_id}/retire"
+    ]
+    assert "POST" in methods_by_path[
+        "/work/issues/{issue_id}/scopes/{scope_link_id}/replace-primary"
+    ]
     assert "POST" in methods_by_path["/decision-requests"]
     assert "GET" in methods_by_path["/decision-requests"]
     assert "GET" in methods_by_path["/decision-inbox"]
-    assert "GET" in methods_by_path["/agency/projects/{project_id}/decision-requests"]
-    assert "GET" in methods_by_path["/agency/apu-objects/{object_id}/decision-requests"]
-    assert "GET" in methods_by_path["/agency/apu-objects/{object_id}/project-claims"]
-    assert "GET" in methods_by_path["/work/issues/{issue_id}/blocking-decision-request"]
-    assert "POST" in methods_by_path["/decision-requests/{request_id}/resolve"]
+    assert "GET" in methods_by_path[
+        "/agency/projects/{project_id}/decision-requests"
+    ]
+    assert "GET" in methods_by_path[
+        "/agency/apu-objects/{object_id}/decision-requests"
+    ]
+    assert "GET" in methods_by_path[
+        "/agency/apu-objects/{object_id}/project-claims"
+    ]
+    assert "GET" in methods_by_path[
+        "/work/issues/{issue_id}/blocking-decision-request"
+    ]
+    assert "POST" in methods_by_path[
+        "/decision-requests/{request_id}/resolve"
+    ]
     assert "GET" in methods_by_path["/decisions/{decision_id}"]
     mapping_reviews_path = "/execution-results/{execution_result_id}/results/{result_ref}/mappings/{mapping_ref}/reviews"
     assert "POST" in methods_by_path[mapping_reviews_path]
@@ -101,7 +139,9 @@ def test_composed_app_mounts_candidate_review_routes_without_startup_effects():
     assert "POST" in methods_by_path["/apu-write-commands/{command_id}/authorizations"]
     assert "GET" in methods_by_path["/apu-write-commands/{command_id}/authorizations"]
     assert "POST" in methods_by_path["/apu-write-commands/{command_id}/apply"]
-    assert "GET" in methods_by_path["/agency/projects/{project_id}/project-anatomy"]
+    assert "GET" in methods_by_path[
+        "/agency/projects/{project_id}/project-anatomy"
+    ]
 
 
 def test_composed_initializer_replays_owner_and_review_migrations_in_dependency_order(monkeypatch):
