@@ -132,7 +132,7 @@ def test_vendored_vocabularies_are_exactly_pinned_to_a4a_head() -> None:
     assert version_source == {
         "source_repository": "ifanjuang/Pantheon-Next",
         "source_path": "schemas/architecture-proof-register/version_event.schema.yaml",
-        "source_commit": "190a7317442d773c9cebfce275f5e7c56f660bf7",
+        "source_commit": "fc5aef13ace19e6ce97b2492e79dce2074dd2ade",
         "source_blob_sha": "e8f0b15c23cea697493bc3b45b437ae5c86c30de",
         "posture": "vendored-reference",
         "authority_transfer": False,
