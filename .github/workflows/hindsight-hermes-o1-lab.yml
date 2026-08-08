@@ -54,7 +54,10 @@ jobs:
           docker run -d --rm \
             --name pantheon-o1-hindsight \
             -p 8888:8888 \
+            -e HINDSIGHT_API_WORKER_ID=pantheon-o1-hindsight \
             -e HINDSIGHT_API_RETAIN_EXTRACTION_MODE=chunks \
+            -e HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION=false \
+            -e HINDSIGHT_API_ENABLE_OBSERVATIONS=false \
             -e HINDSIGHT_API_LLM_PROVIDER=openai \
             -e HINDSIGHT_API_LLM_API_KEY=unused-o1-lab-key \
             "ghcr.io/vectorize-io/hindsight:${HINDSIGHT_VERSION}"
