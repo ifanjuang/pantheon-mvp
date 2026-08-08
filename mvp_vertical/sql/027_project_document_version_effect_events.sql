@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS doc_document_version_effect_events (
     event_id TEXT PRIMARY KEY,
     document_version_id TEXT NOT NULL
         REFERENCES doc_document_versions(version_id) ON DELETE RESTRICT,
+    event_seq INTEGER NOT NULL CHECK (event_seq > 0),
     event_type TEXT NOT NULL CHECK (event_type IN (
         'created', 'issued', 'approved', 'signed', 'superseded',
         'marked_obsolete', 'reopened', 'corrected',
@@ -67,12 +68,13 @@ CREATE TABLE IF NOT EXISTS doc_document_version_effect_events (
     idempotency_key TEXT NOT NULL UNIQUE,
     payload_digest TEXT NOT NULL CHECK (payload_digest ~ '^[a-f0-9]{64}$'),
     result_snapshot JSONB NOT NULL,
-    occurred_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    UNIQUE (document_version_id, event_seq)
 );
 
 CREATE INDEX IF NOT EXISTS doc_document_version_effect_events_revision_lookup
     ON doc_document_version_effect_events
-       (document_version_id, occurred_at, event_id);
+       (document_version_id, event_seq DESC, event_id);
 
 CREATE OR REPLACE FUNCTION reject_doc_document_version_effect_event_mutation()
 RETURNS trigger
