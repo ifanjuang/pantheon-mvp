@@ -38,6 +38,7 @@ def test_model_fixture_requires_real_hindsight_tool_result() -> None:
 def test_live_sequence_uses_real_hindsight_endpoint_and_rolls_back() -> None:
     raw = SEQUENCE.read_text(encoding="utf-8")
     assert raw.startswith("#!/usr/bin/env bash\nset -euo pipefail")
+    assert '"hindsight-client==0.8.5"' in raw
     assert "hindsight_client import Hindsight" in raw
     assert "client.retain" in raw
     assert "client.recall" in raw
@@ -50,7 +51,7 @@ def test_live_sequence_uses_real_hindsight_endpoint_and_rolls_back() -> None:
     assert "LangGraph" not in raw
 
 
-def test_workflow_keeps_live_acceptance_manual_and_contract_automatic() -> None:
+def test_workflow_runs_self_contained_real_hindsight_lab() -> None:
     raw = WORKFLOW.read_text(encoding="utf-8")
     workflow = yaml.safe_load(raw)
     assert workflow["name"] == "Hindsight Hermes O1 Sandbox"
@@ -58,9 +59,14 @@ def test_workflow_keeps_live_acceptance_manual_and_contract_automatic() -> None:
     assert "workflow_dispatch" in workflow[True]
     assert "contract" in workflow["jobs"]
     assert "live-lab" in workflow["jobs"]
-    assert workflow["jobs"]["live-lab"]["if"] == "github.event_name == 'workflow_dispatch'"
+    assert workflow["jobs"]["live-lab"].get("if") is None
     assert "HERMES_RELEASE_COMMIT" in raw
     assert "3c27eb6234bf91b8ceee9e9071591b31e9b148cb" in raw
-    assert "HINDSIGHT_API_URL" in raw
-    assert "secrets.HINDSIGHT_LAB_API_KEY" in raw
+    assert 'HINDSIGHT_VERSION: "0.8.5"' in raw
+    assert "ghcr.io/vectorize-io/hindsight:${HINDSIGHT_VERSION}" in raw
+    assert "HINDSIGHT_API_RETAIN_EXTRACTION_MODE=chunks" in raw
+    assert "HINDSIGHT_API_URL: http://127.0.0.1:8888" in raw
+    assert "secrets." not in raw
+    assert "docker stop pantheon-o1-hindsight" in raw
+    assert "hindsight-image-repodigests.json" in raw
     assert "production" not in raw.lower()
