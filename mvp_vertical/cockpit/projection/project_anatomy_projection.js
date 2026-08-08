@@ -17,9 +17,27 @@
   }
 
   function claimLine(item) {
+    const claimValue = item?.value;
+    const rawValue = claimValue && typeof claimValue === "object" ? claimValue.value : null;
+    let renderedValue = "";
+    if (rawValue !== null && rawValue !== undefined) {
+      renderedValue = typeof rawValue === "object" ? JSON.stringify(rawValue) : String(rawValue);
+      if (claimValue.unit) renderedValue += ` ${claimValue.unit}`;
+    }
+    const value = renderedValue ? ` : ${renderedValue}` : "";
     const certainty = item.certainty ? ` · ${item.certainty}` : "";
     const proof = item.proof_status ? ` · ${item.proof_status}` : "";
-    return `${item.attribute_key || item.claim_id || "Attribut"}${certainty}${proof}`;
+    return `${item.attribute_key || item.claim_id || "Attribut"}${value}${certainty}${proof}`;
+  }
+
+  function identifierLine(item) {
+    return [item.scheme, item.value].filter(Boolean).join(" : ");
+  }
+
+  function identityLine(item) {
+    const target = entityId(item.object_ref);
+    const proof = item.proof_status ? ` · ${item.proof_status}` : "";
+    return `${item.relation_type || "identity.represents"}${target ? ` → ${target}` : ""}${proof}`;
   }
 
   function sourceLine(item) {
@@ -111,7 +129,10 @@
 
   function unmappedSourceCard(item) {
     const limitations = Array.isArray(item.limitations) ? item.limitations : [];
+    const identifiers = Array.isArray(item.identifiers) ? item.identifiers : [];
     const locators = Array.isArray(item.locators) ? item.locators : [];
+    const attributes = Array.isArray(item.attribute_claims) ? item.attribute_claims : [];
+    const identityClaims = Array.isArray(item.identity_claims) ? item.identity_claims : [];
     return baseCard({
       entity_id: `apu-source:${item.representation_id}`,
       entity_type: "apu_source_representation",
@@ -134,7 +155,10 @@
         ["État de preuve source", text(item.proof_status)],
         ["Binding", text(item.binding_ref)],
         ["Adapter", text(item.adapter_version)],
+        ["Identifiants natifs", identifiers.length ? identifiers.map(identifierLine).join("\n") : "Non renseignés"],
         ["Localisateurs", locators.length ? locators.map(value => JSON.stringify(value)).join("\n") : "Non renseignés"],
+        ["Claims d’attribut", attributes.map(claimLine).join("\n") || "Aucun claim d’attribut porté par la source"],
+        ["Rapprochements d’identité", identityClaims.map(identityLine).join("\n") || "Aucun rapprochement d’identité déclaré"],
         ["Limites", limitations.join("\n") || "Aucune limite explicitement déclarée"],
       ],
       source_representation_id: item.representation_id,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from mvp_vertical.project_anatomy_projection import build_project_anatomy_projection
 
 
@@ -145,3 +147,62 @@ def test_rejected_identity_alignment_does_not_hide_unmapped_source_material() ->
     unmapped = {item["representation_id"] for item in projection["unmapped_material"]}
     assert unmapped == {"revit-1", "photo-1"}
     assert projection["authority"]["absence_inferred"] is False
+
+
+@pytest.mark.parametrize("proof_status", ["candidate", "requires_more_evidence"])
+def test_unresolved_identity_alignment_does_not_present_source_as_mapped(
+    proof_status: str,
+) -> None:
+    anatomy = _anatomy()
+    anatomy["relation_claims"][0]["proof_status"] = proof_status
+
+    projection = build_project_anatomy_projection(anatomy, model_doctrine_ref="doctrine@v02")
+
+    sources = {item["representation_id"]: item for item in projection["sources"]}
+    unmapped = {item["representation_id"] for item in projection["unmapped_material"]}
+    assert sources["revit-1"]["mapped_object_refs"] == []
+    assert sources["revit-1"]["identity_claims"][0]["proof_status"] == proof_status
+    assert unmapped == {"revit-1", "photo-1"}
+
+
+def test_source_identifiers_and_source_scoped_claims_are_preserved() -> None:
+    anatomy = _anatomy()
+    source_claim = {
+        "attribute_claim_id": "claim-photo-condition",
+        "subject_ref": {"entity_type": "source_representation", "entity_id": "photo-1"},
+        "attribute_key": "architecture.condition",
+        "value": {"value_type": "controlled_label", "value": "damaged"},
+        "assertion_mode": "observed",
+        "source_authority": "project_working_document",
+        "proof_status": "requires_more_evidence",
+        "certainty": "E1",
+        "source_representation_refs": ["photo-1"],
+    }
+    anatomy["attribute_claims"].append(source_claim)
+
+    projection = build_project_anatomy_projection(anatomy, model_doctrine_ref="doctrine@v02")
+
+    sources = {item["representation_id"]: item for item in projection["sources"]}
+    photo = sources["photo-1"]
+    assert photo["identifiers"] == [{"scheme": "file", "value": "site-photo.jpg"}]
+    assert photo["attribute_claims"] == [
+        {
+            "claim_type": "attribute_claim",
+            "claim_id": "claim-photo-condition",
+            "subject_ref": {
+                "entity_type": "source_representation",
+                "entity_id": "photo-1",
+            },
+            "proof_status": "requires_more_evidence",
+            "certainty": "E1",
+            "assertion_mode": "observed",
+            "source_authority": "project_working_document",
+            "source_representation_refs": ["photo-1"],
+            "phase_refs": [],
+            "attribute_key": "architecture.condition",
+            "value": {"value_type": "controlled_label", "value": "damaged"},
+        }
+    ]
+    unmapped = {item["representation_id"]: item for item in projection["unmapped_material"]}
+    assert unmapped["photo-1"]["identifiers"] == photo["identifiers"]
+    assert projection["attribute_claims"][-1] == photo["attribute_claims"][0]

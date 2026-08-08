@@ -24,12 +24,7 @@ ATTENTION_PROOF_STATUSES = {
     "authority_too_low",
     "requires_more_evidence",
 }
-INACTIVE_IDENTITY_STATUSES = {
-    "rejected",
-    "obsolete",
-    "superseded",
-    "source_superseded",
-}
+MAPPED_IDENTITY_PROOF_STATUSES = {"accepted_as_support"}
 
 
 def _entity_id(ref: Any, entity_type: str) -> str | None:
@@ -53,6 +48,7 @@ def _claim_summary(claim: dict[str, Any], *, claim_type: str) -> dict[str, Any]:
         "claim_id": claim.get(
             "attribute_claim_id" if claim_type == "attribute_claim" else "relation_claim_id"
         ),
+        "subject_ref": claim.get("subject_ref"),
         "proof_status": claim.get("proof_status"),
         "certainty": claim.get("certainty"),
         "assertion_mode": claim.get("assertion_mode"),
@@ -65,7 +61,6 @@ def _claim_summary(claim: dict[str, Any], *, claim_type: str) -> dict[str, Any]:
         summary["value"] = claim.get("value")
     else:
         summary["relation_type"] = claim.get("relation_type")
-        summary["subject_ref"] = claim.get("subject_ref")
         summary["object_ref"] = claim.get("object_ref")
     return summary
 
@@ -92,26 +87,32 @@ def build_project_anatomy_projection(
     for claim in relation_claims:
         if claim.get("relation_type") != "identity.represents":
             continue
-        if claim.get("proof_status") in INACTIVE_IDENTITY_STATUSES:
-            continue
         representation_id = _entity_id(claim.get("subject_ref"), "source_representation")
         object_id = _entity_id(claim.get("object_ref"), "stable_object")
         if not representation_id or not object_id:
+            continue
+        if claim.get("proof_status") not in MAPPED_IDENTITY_PROOF_STATUSES:
             continue
         mapped_objects_by_representation[representation_id].add(object_id)
         mapped_representations_by_object[object_id].add(representation_id)
 
     attributes_by_object: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    attributes_by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    identity_claims_by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
     relations_by_object: dict[str, list[dict[str, Any]]] = defaultdict(list)
     phases_by_object: dict[str, set[str]] = defaultdict(set)
     source_refs_by_object: dict[str, set[str]] = defaultdict(set)
     attention_by_object: dict[str, list[str]] = defaultdict(list)
 
     for claim in attribute_claims:
+        summarized = _claim_summary(claim, claim_type="attribute_claim")
         object_id = _entity_id(claim.get("subject_ref"), "stable_object")
+        source_id = _entity_id(claim.get("subject_ref"), "source_representation")
+        if source_id:
+            attributes_by_source[source_id].append(summarized)
         if not object_id:
             continue
-        attributes_by_object[object_id].append(_claim_summary(claim, claim_type="attribute_claim"))
+        attributes_by_object[object_id].append(summarized)
         phases_by_object[object_id].update(_claim_phase_refs(claim))
         source_refs_by_object[object_id].update(claim.get("source_representation_refs") or [])
         if claim.get("proof_status") in ATTENTION_PROOF_STATUSES:
@@ -121,6 +122,10 @@ def build_project_anatomy_projection(
         subject_object_id = _entity_id(claim.get("subject_ref"), "stable_object")
         target_object_id = _entity_id(claim.get("object_ref"), "stable_object")
         summarized = _claim_summary(claim, claim_type="relation_claim")
+        if claim.get("relation_type") == "identity.represents":
+            source_id = _entity_id(claim.get("subject_ref"), "source_representation")
+            if source_id:
+                identity_claims_by_source[source_id].append(summarized)
         for object_id in {subject_object_id, target_object_id} - {None}:
             relations_by_object[object_id].append(summarized)
             phases_by_object[object_id].update(_claim_phase_refs(claim))
@@ -170,9 +175,12 @@ def build_project_anatomy_projection(
             "proof_status": representation.get("proof_status"),
             "binding_ref": representation.get("binding_ref"),
             "adapter_version": representation.get("adapter_version"),
+            "identifiers": list(representation.get("identifiers") or []),
             "locators": list(representation.get("locators") or []),
             "limitations": limitations,
             "context": representation.get("context") or {},
+            "attribute_claims": attributes_by_source.get(representation_id, []),
+            "identity_claims": identity_claims_by_source.get(representation_id, []),
             "mapped_object_refs": sorted(mapped_objects_by_representation.get(representation_id, set())),
         }
         source_lens.append(item)
@@ -236,6 +244,12 @@ def build_project_anatomy_projection(
             },
         },
         "relations": relation_edges,
+        "attribute_claims": [
+            _claim_summary(claim, claim_type="attribute_claim") for claim in attribute_claims
+        ],
+        "relation_claims": [
+            _claim_summary(claim, claim_type="relation_claim") for claim in relation_claims
+        ],
         "sources": source_lens,
         "uncertainty": {
             "attention_proof_statuses": sorted(ATTENTION_PROOF_STATUSES),

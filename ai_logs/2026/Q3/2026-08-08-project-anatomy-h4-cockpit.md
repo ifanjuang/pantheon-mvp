@@ -67,3 +67,17 @@ No schema, canonical predicate, Evidence, Decision, WorkIssue, ProjectClaim or r
 H4 should be considered complete only after exact-head CI and review checks pass and the PR is merged.
 
 H5 remains separate: validate identity continuity, provenance, contradiction/correction behavior and index changes progressively on representative structured document, image/photo, IFC and Revit sources. Observation Bundle coverage persistence remains a separate contract/owner question and is not silently solved by H4.
+
+## Review hardening after `main` advanced
+
+The H4 head was brought onto `pantheon-mvp` `main` at `3b1f3b6ba5fccff4e4826161b07708e73d600208`, preserving the operational B4 collaboration migration and route assertions alongside the H1 → V0.2 order.
+
+The unresolved review findings were reproduced before correction. The bounded read projection now:
+
+- renders each structured attribute value and optional unit in Cockpit;
+- preserves source-scoped attribute claims on their source representation and in the complete projected claim collection;
+- preserves native source identifiers and renders them on unmapped-source cards;
+- treats only `accepted_as_support` identity claims as mapped, while unresolved claims remain visible on the source and do not hide unmapped material;
+- exposes complete projected attribute/relation claim collections without changing the canonical owner.
+
+Behavior tests cover `candidate` and `requires_more_evidence` identity states, source-scoped claims, native identifiers and Cockpit rendering. The full suite available in this environment passed with 1,178 successes and 337 service/platform skips; PostgreSQL-backed cases remain delegated to exact-head CI.
