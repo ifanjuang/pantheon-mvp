@@ -84,7 +84,11 @@ def configure(
             "auto_retain": False,
             "auto_recall": False,
             "retain_async": False,
-            "recall_budget": "low",
+            # Keep the provider default. The first real lab demonstrated that
+            # "low" narrows retrieval enough to miss a freshly retained world
+            # fact that direct/default recall returns. O1 tests integration,
+            # not an artificially constrained recall policy.
+            "recall_budget": "mid",
         },
     )
     _write_env(
@@ -106,6 +110,7 @@ def configure(
         "bank_id": bank_id,
         "memory_provider": "hindsight",
         "memory_mode": "tools",
+        "recall_budget": "mid",
         "auto_retain": False,
         "auto_recall": False,
         "conversation_retention": "off",
@@ -150,6 +155,7 @@ def validate(artifacts: Path) -> dict[str, Any]:
         "assistant_profile": ASSISTANT_PROFILE,
         "governed_profile": GOVERNED_PROFILE,
         "hindsight_bank": DEFAULT_BANK,
+        "recall_budget": "mid",
         "direct_recall_verified": True,
         "hermes_recall_tool_exposed": True,
         "hermes_recall_verified": True,
