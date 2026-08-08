@@ -27,7 +27,7 @@ trap cleanup EXIT
 
 python -m pip install --disable-pip-version-check --upgrade uv
 python -m venv "$VENV"
-uv pip install --python "$VENV/bin/python" -e "$UPSTREAM_ROOT" "hindsight-client>=0.4.22" "aiohttp==3.14.1"
+uv pip install --python "$VENV/bin/python" -e "$UPSTREAM_ROOT" "hindsight-client==0.8.5" "aiohttp==3.14.1"
 uv pip install --python "$VENV/bin/python" -e "$MVP_ROOT"
 export PATH="$VENV/bin:$PATH"
 
@@ -60,7 +60,8 @@ pantheon-hermes capture-memory-status --profile pantheon-governed --hermes-comma
 hermes -p assistant-personal memory status > "$ARTIFACTS/assistant-memory-status.txt"
 grep -i hindsight "$ARTIFACTS/assistant-memory-status.txt"
 
-# Seed and verify the real Hindsight endpoint. No client/agency data is used.
+# Seed and verify the real Hindsight endpoint. The O1 server runs with retain extraction mode=chunks,
+# so this path requires no LLM call and contains synthetic data only.
 python - <<'PY'
 import json, os, time
 from pathlib import Path
@@ -72,7 +73,7 @@ marker='PANTHEON_O1_SYNTHETIC_MEMORY_MARKER'
 client=Hindsight(base_url=base, api_key=key)
 client.retain(bank_id=bank, content=f'{marker}: synthetic sandbox fact only', context='Pantheon O1 synthetic lab')
 last=None
-for _ in range(60):
+for _ in range(90):
     last=client.recall(bank_id=bank, query='O1 synthetic memory marker')
     if marker in json.dumps(last, default=str):
         break
