@@ -19,6 +19,9 @@ function payloadFor(url) {
   if (url.includes("/knowledge")) return { knowledge: [] };
   if (url.includes("/work/scopes/project/")) return { work_issues: [] };
   if (url.includes("/change-candidates")) return { change_candidates: [] };
+  if (url.includes("/project-anatomy")) {
+    return { project_anatomy: { project_ref: "project-measurement", structure: { objects: [] } } };
+  }
   throw new Error(`Unexpected Cockpit request: ${url}`);
 }
 
@@ -28,6 +31,7 @@ global.window = {
     requests.push(normalized);
     return {
       ok: true,
+      status: 200,
       statusText: "OK",
       json: async () => payloadFor(normalized),
     };
@@ -69,6 +73,7 @@ require(path.resolve(loaderPath));
       || item.includes("/work/scopes/project/")
       || item.includes("/agency/projects/project-measurement/decision-requests")
       || item.includes("/change-candidates")
+      || item.includes("/project-anatomy")
     )).length,
     requests_by_path: requestsByPath,
   };
