@@ -54,10 +54,45 @@ run_sync() {
     | tee "$output"
 }
 
+# The official client intentionally submits retains with async=true. A completed
+# CLI reconcile therefore means the retain was accepted, not necessarily that
+# the background worker has materialized the document. Poll recall before any
+# dependent delete/rename assertion so the lab tests semantics rather than a
+# scheduler race.
+wait_for_marker() {
+  local marker="$1" vault_tag="$2" folder_tag="$3"
+  MARKER="$marker" VAULT_TAG="$vault_tag" FOLDER_TAG="$folder_tag" python - <<'PY'
+import json, os, time, urllib.error, urllib.request
+
+base=os.environ['HINDSIGHT_API_URL'].rstrip('/')
+bank=os.environ['HINDSIGHT_BANK_ID']
+marker=os.environ['MARKER']
+tags=[os.environ['VAULT_TAG'], os.environ['FOLDER_TAG']]
+url=f"{base}/v1/default/banks/{bank}/memories/recall"
+last=None
+for _ in range(120):
+    body={'query': marker, 'types':['world','experience'], 'tags':tags, 'tags_match':'all_strict'}
+    req=urllib.request.Request(url, data=json.dumps(body).encode(), headers={'Content-Type':'application/json'}, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            last=json.loads(resp.read().decode())
+        items=last.get('results', []) if isinstance(last, dict) else []
+        if any(marker in str(x.get('text','')) for x in items if isinstance(x, dict)):
+            raise SystemExit(0)
+    except urllib.error.HTTPError as exc:
+        last={'http_status': exc.code, 'body': exc.read().decode(errors='replace')[:500]}
+    time.sleep(0.25)
+raise SystemExit(f'async retain did not materialize marker {marker}: {last!r}')
+PY
+}
+
 run_sync "$VAULT_A" Vault-A "$INDEX_A" "$ARTIFACTS/initial-a.txt"
 run_sync "$VAULT_B" Vault-B "$INDEX_B" "$ARTIFACTS/initial-b.txt"
 grep -F 'reconcile: +2 added, ~0 updated, -0 deleted, =0 unchanged' "$ARTIFACTS/initial-a.txt"
 grep -F 'reconcile: +1 added, ~0 updated, -0 deleted, =0 unchanged' "$ARTIFACTS/initial-b.txt"
+wait_for_marker PANTHEON_O2_ALPHA_MARKER vault:Vault-A folder:Projects/Alpha
+wait_for_marker PANTHEON_O2_BETA_MARKER vault:Vault-A folder:Projects/Beta
+wait_for_marker PANTHEON_O2_VAULT_B_MARKER vault:Vault-B folder:Projects/Alpha
 
 # Unchanged reconcile must not re-ingest any note.
 run_sync "$VAULT_A" Vault-A "$INDEX_A" "$ARTIFACTS/unchanged-a.txt"
@@ -70,6 +105,7 @@ printf '\nPANTHEON_O2_ALPHA_UPDATED\n' >> "$VAULT_A/Projects/Alpha/note.md"
 sleep 0.02
 run_sync "$VAULT_A" Vault-A "$INDEX_A" "$ARTIFACTS/edit-a.txt"
 grep -F 'reconcile: +0 added, ~1 updated, -0 deleted, =1 unchanged' "$ARTIFACTS/edit-a.txt"
+wait_for_marker PANTHEON_O2_ALPHA_UPDATED vault:Vault-A folder:Projects/Alpha
 
 # Deletion is pruned from Hindsight using only this sync engine's local index.
 rm "$VAULT_A/Projects/Beta/note.md"
@@ -81,6 +117,7 @@ grep -F 'reconcile: +0 added, ~0 updated, -1 deleted, =1 unchanged' "$ARTIFACTS/
 mv "$VAULT_A/Projects/Alpha/note.md" "$VAULT_A/Projects/Alpha/renamed.md"
 run_sync "$VAULT_A" Vault-A "$INDEX_A" "$ARTIFACTS/rename-a.txt"
 grep -F 'reconcile: +1 added, ~0 updated, -1 deleted, =0 unchanged' "$ARTIFACTS/rename-a.txt"
+wait_for_marker PANTHEON_O2_ALPHA_MARKER vault:Vault-A folder:Projects/Alpha
 
 # Query the real bank with strict scope tags. We verify the source anchors that
 # Hindsight exposes to citations: document_id plus metadata.path.
@@ -137,6 +174,7 @@ summary={
     'kind':'hindsight_obsidian_o2_acceptance',
     'status':'passed',
     'official_sync_engine':True,
+    'async_retain_materialization_waited':True,
     'create_verified':True,
     'unchanged_dedup_verified':True,
     'edit_upsert_verified':True,
