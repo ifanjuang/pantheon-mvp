@@ -214,9 +214,6 @@ def create_comment(
     body = _body(body)
     anchor_ref = _anchor(anchor_ref)
 
-    # Existence only. Authorization is deliberately outside this persistence owner.
-    project_documents.get_revision(conn, document_version_id)
-
     payload = {
         "operation": "create_document_revision_comment",
         "document_version_id": document_version_id,
@@ -228,6 +225,8 @@ def create_comment(
     digest = _payload_digest(payload)
 
     with conn.transaction():
+        # Existence only. Authorization is deliberately outside this persistence owner.
+        project_documents.get_revision(conn, document_version_id)
         replay = _replayed_comment(
             conn,
             idempotency_key=idempotency_key,
