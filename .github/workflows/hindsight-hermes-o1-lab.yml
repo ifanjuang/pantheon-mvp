@@ -9,16 +9,6 @@ on:
       - "tools/hindsight_hermes_o1_fixture.py"
       - "tests/test_hindsight_hermes_o1_contract.py"
   workflow_dispatch:
-    inputs:
-      hindsight_api_url:
-        description: "Sandbox Hindsight API URL"
-        required: true
-        type: string
-      bank_id:
-        description: "Synthetic Hindsight bank"
-        required: false
-        default: "pantheon-o1-synthetic"
-        type: string
 
 permissions:
   contents: read
@@ -35,14 +25,13 @@ jobs:
       - run: pytest -q tests/test_hindsight_hermes_o1_contract.py
 
   live-lab:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       HERMES_RELEASE_COMMIT: 3c27eb6234bf91b8ceee9e9071591b31e9b148cb
-      HINDSIGHT_API_URL: ${{ inputs.hindsight_api_url }}
-      HINDSIGHT_API_KEY: ${{ secrets.HINDSIGHT_LAB_API_KEY }}
-      HINDSIGHT_BANK_ID: ${{ inputs.bank_id }}
+      HINDSIGHT_VERSION: "0.8.5"
+      HINDSIGHT_API_URL: http://127.0.0.1:8888
+      HINDSIGHT_BANK_ID: pantheon-o1-synthetic
     steps:
       - name: Checkout candidate
         uses: actions/checkout@v4
@@ -58,14 +47,47 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Start ephemeral Hindsight 0.8.5
+        shell: bash
+        run: |
+          docker pull "ghcr.io/vectorize-io/hindsight:${HINDSIGHT_VERSION}"
+          docker run -d --rm \
+            --name pantheon-o1-hindsight \
+            -p 8888:8888 \
+            -e HINDSIGHT_API_RETAIN_EXTRACTION_MODE=chunks \
+            -e HINDSIGHT_API_LLM_PROVIDER=openai \
+            -e HINDSIGHT_API_LLM_API_KEY=unused-o1-lab-key \
+            "ghcr.io/vectorize-io/hindsight:${HINDSIGHT_VERSION}"
+          for _ in $(seq 1 180); do
+            if curl -fsS http://127.0.0.1:8888/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs pantheon-o1-hindsight
+          exit 1
       - name: Execute O1 live sandbox
         working-directory: pantheon-mvp
         run: bash tools/run_hindsight_hermes_o1.sh
+      - name: Capture Hindsight image identity
+        if: always()
+        working-directory: pantheon-mvp
+        shell: bash
+        run: |
+          mkdir -p "${RUNNER_TEMP}/hindsight-hermes-o1/artifacts"
+          docker image inspect "ghcr.io/vectorize-io/hindsight:${HINDSIGHT_VERSION}" \
+            --format '{{json .RepoDigests}}' \
+            > "${RUNNER_TEMP}/hindsight-hermes-o1/artifacts/hindsight-image-repodigests.json" || true
+          docker logs pantheon-o1-hindsight \
+            > "${RUNNER_TEMP}/hindsight-hermes-o1/artifacts/hindsight.log" 2>&1 || true
+      - name: Stop ephemeral Hindsight
+        if: always()
+        run: docker stop pantheon-o1-hindsight || true
       - name: Upload bounded observations
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: hindsight-hermes-o1-${{ github.run_id }}
           path: ${{ runner.temp }}/hindsight-hermes-o1/artifacts/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
