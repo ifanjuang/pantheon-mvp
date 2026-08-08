@@ -84,11 +84,13 @@ def configure(
             "auto_retain": False,
             "auto_recall": False,
             "retain_async": False,
-            # Keep the provider default. The first real lab demonstrated that
-            # "low" narrows retrieval enough to miss a freshly retained world
-            # fact that direct/default recall returns. O1 tests integration,
-            # not an artificially constrained recall policy.
             "recall_budget": "mid",
+            # Hermes defaults Hindsight recall to observations. O1 intentionally
+            # disables Hindsight consolidation/LLM and uses extraction_mode=chunks,
+            # which produces a raw world fact. Include raw fact pathways explicitly
+            # so the laboratory tests the real provider/tool bridge without needing
+            # an unrelated observation-generation LLM.
+            "recall_types": ["world", "experience"],
         },
     )
     _write_env(
@@ -111,6 +113,7 @@ def configure(
         "memory_provider": "hindsight",
         "memory_mode": "tools",
         "recall_budget": "mid",
+        "recall_types": ["world", "experience"],
         "auto_retain": False,
         "auto_recall": False,
         "conversation_retention": "off",
@@ -156,6 +159,7 @@ def validate(artifacts: Path) -> dict[str, Any]:
         "governed_profile": GOVERNED_PROFILE,
         "hindsight_bank": DEFAULT_BANK,
         "recall_budget": "mid",
+        "recall_types": ["world", "experience"],
         "direct_recall_verified": True,
         "hermes_recall_tool_exposed": True,
         "hermes_recall_verified": True,
