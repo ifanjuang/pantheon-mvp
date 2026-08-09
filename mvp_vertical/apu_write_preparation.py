@@ -249,21 +249,65 @@ def _identity_relation_claim(
 
 def _mapping(
     execution: dict[str, Any], result_ref: str, mapping_ref: str
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any], str]:
     result = next(
         (item for item in execution.get("results", []) if item.get("result_id") == result_ref),
         None,
     )
-    if result is None or result.get("result_kind") != "apu_object_mapping":
+    if result is None:
         raise ApuWritePreparationNotFound("unknown APU mapping result")
     payload = result.get("payload") or {}
-    mapping = next(
-        (item for item in payload.get("mappings", []) if item.get("mapping_id") == mapping_ref),
+    if result.get("result_kind") == "apu_object_mapping":
+        mapping = next(
+            (item for item in payload.get("mappings", []) if item.get("mapping_id") == mapping_ref),
+            None,
+        )
+        if mapping is None:
+            raise ApuWritePreparationNotFound("unknown APU mapping candidate")
+        return payload, mapping, "apu_object_mapping"
+    if result.get("result_kind") != "observation_bundle":
+        raise ApuWritePreparationNotFound("unknown APU mapping result")
+    relation = next(
+        (
+            item
+            for item in payload.get("relation_claim_candidates", [])
+            if item.get("relation_claim_id") == mapping_ref
+        ),
         None,
     )
-    if mapping is None:
-        raise ApuWritePreparationNotFound("unknown APU mapping candidate")
-    return payload, mapping
+    if relation is None or relation.get("relation_type") != "identity.represents":
+        raise ApuWritePreparationNotFound("unknown Observation Bundle identity candidate")
+    subject_ref = relation.get("subject_ref") or {}
+    object_ref = relation.get("object_ref") or {}
+    representation_id = _required(subject_ref.get("entity_id"), "identity subject representation")
+    representation = next(
+        (
+            item
+            for item in payload.get("source_representations", [])
+            if item.get("representation_id") == representation_id
+        ),
+        None,
+    )
+    if representation is None:
+        raise ApuWritePreparationNotFound(
+            "Observation Bundle identity candidate references an unknown source representation"
+        )
+    mapping = {
+        "mapping_id": relation["relation_claim_id"],
+        "candidate_object_ref": representation_id,
+        "certainty": relation.get("certainty"),
+        "rationale": relation.get("notes") or "Observation Bundle identity candidate.",
+        "match_candidates": [
+            {
+                "stable_object_ref": _required(object_ref.get("entity_id"), "identity target object"),
+                "certainty": relation.get("certainty"),
+                "rationale": relation.get("notes") or "Observation Bundle identity candidate.",
+            }
+        ],
+        "source_representation": representation,
+        "identity_relation_claim": relation,
+    }
+    return payload, mapping, "observation_bundle"
 
 
 def _latest_selected_review(
@@ -340,7 +384,7 @@ def prepare_write_command(
     key = _required(idempotency_key, "idempotency_key")
     actor = _required(prepared_by, "prepared_by")
     execution = execution_results.get_execution_result(conn, execution_result_id)
-    payload, mapping = _mapping(execution, result_ref, mapping_ref)
+    payload, mapping, mapping_kind = _mapping(execution, result_ref, mapping_ref)
     project_ref = _required(payload.get("project_ref"), "mapping.project_ref")
     review = _latest_selected_review(
         conn,
@@ -392,26 +436,42 @@ def prepare_write_command(
         ],
         "authority": dict(COMMAND_AUTHORITY),
     }
-    representation = _document_fragment_source_representation(
-        conn,
-        project_ref=project_ref,
-        document_ref=_required(payload.get("document_ref"), "mapping.document_ref"),
-        structure_ref=_required(payload.get("structure_ref"), "mapping.structure_ref"),
-        fragment_ref=_required(mapping.get("fragment_ref"), "mapping.fragment_ref"),
-        representation_id=source_candidate_ref,
-    )
-    command_payload["source_representation"] = representation
-    command_payload["identity_relation_claim"] = _identity_relation_claim(
-        command_id=command_id,
-        source_execution_result_ref=execution_result_id,
-        source_mapping_result_ref=result_ref,
-        source_mapping_ref=mapping_ref,
-        source_review_ref=review["review_id"],
-        source_representation_ref=representation["representation_id"],
-        target_stable_object_ref=target,
-        certainty=mapping.get("certainty"),
-        rationale=_required(mapping.get("rationale"), "mapping.rationale"),
-    )
+    if mapping_kind == "observation_bundle":
+        representation = dict(mapping["source_representation"])
+        relation = dict(mapping["identity_relation_claim"])
+        if representation.get("project_ref") != project_ref:
+            raise ApuWritePreparationError("Observation Bundle source representation belongs to another Project")
+        if relation.get("object_ref") != {
+            "entity_type": "stable_object",
+            "entity_id": target,
+        }:
+            raise ApuWritePreparationError("reviewed identity target differs from Observation Bundle candidate")
+        command_payload["source_representation"] = representation
+        command_payload["identity_relation_claim"] = relation
+        command_payload["limitations"].append(
+            "La représentation et la relation appliquées proviennent exactement du Observation Bundle revu."
+        )
+    else:
+        representation = _document_fragment_source_representation(
+            conn,
+            project_ref=project_ref,
+            document_ref=_required(payload.get("document_ref"), "mapping.document_ref"),
+            structure_ref=_required(payload.get("structure_ref"), "mapping.structure_ref"),
+            fragment_ref=_required(mapping.get("fragment_ref"), "mapping.fragment_ref"),
+            representation_id=source_candidate_ref,
+        )
+        command_payload["source_representation"] = representation
+        command_payload["identity_relation_claim"] = _identity_relation_claim(
+            command_id=command_id,
+            source_execution_result_ref=execution_result_id,
+            source_mapping_result_ref=result_ref,
+            source_mapping_ref=mapping_ref,
+            source_review_ref=review["review_id"],
+            source_representation_ref=representation["representation_id"],
+            target_stable_object_ref=target,
+            certainty=mapping.get("certainty"),
+            rationale=_required(mapping.get("rationale"), "mapping.rationale"),
+        )
     command_payload["limitations"].append(
         "La relation appliquée reste candidate et ne valide pas professionnellement l'identité."
     )
@@ -430,33 +490,32 @@ def prepare_write_command(
             if replay is not None:
                 if replay["payload_digest"] != digest:
                     raise execution_results.ExecutionResultConflict(
-                        "write-command idempotency key belongs to different content"
+                        "APU write preparation idempotency key belongs to different content"
                     )
-                return _jsonable(dict(replay)) | {
-                    "command": replay["command_payload"],
-                    "authority": dict(COMMAND_AUTHORITY),
-                }
+                return get_write_command(conn, replay["command_id"])
         conn.execute(
-            """INSERT INTO apu_write_command_candidates (
-                command_id, execution_result_id, result_ref, mapping_ref, source_review_ref,
-                operation, project_ref, target_stable_object_ref, source_candidate_ref,
-                source_artifact_ref, certainty, rationale, command_payload, payload_digest,
-                expected_owner_revision, expected_object_revision,
-                prepared_by, idempotency_key
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            """
+            INSERT INTO apu_write_command_candidates (
+                command_id, operation, project_ref, source_execution_result_ref,
+                source_mapping_result_ref, source_mapping_ref, source_review_ref,
+                target_stable_object_ref, source_candidate_ref, source_artifact_ref,
+                certainty, rationale, command, payload_digest, expected_owner_revision,
+                expected_object_revision, prepared_by, idempotency_key
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
             (
                 command_id,
+                command_payload["operation"],
+                project_ref,
                 execution_result_id,
                 result_ref,
                 mapping_ref,
                 review["review_id"],
-                "add_match_to_existing_object",
-                project_ref,
                 target,
-                mapping["candidate_object_ref"],
-                payload.get("document_ref"),
-                mapping.get("certainty"),
-                mapping["rationale"],
+                source_candidate_ref,
+                command_payload["source_representation"].get("source_artifact_ref"),
+                command_payload.get("certainty"),
+                command_payload["rationale"],
                 Jsonb(command_payload),
                 digest,
                 owner["owner_revision"],
@@ -470,17 +529,22 @@ def prepare_write_command(
 
 def get_write_command(conn, command_id: str) -> dict[str, Any]:
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(
-            "SELECT * FROM apu_write_command_candidates WHERE command_id = %s",
-            (command_id,),
-        )
+        cur.execute("SELECT * FROM apu_write_command_candidates WHERE command_id = %s", (command_id,))
         row = cur.fetchone()
     if row is None:
         raise ApuWritePreparationNotFound(f"unknown APU write command: {command_id}")
-    return _jsonable(dict(row)) | {
-        "command": _jsonable(row["command_payload"]),
-        "authority": dict(COMMAND_AUTHORITY),
-    }
+    return _jsonable(dict(row)) | {"authority": dict(COMMAND_AUTHORITY)}
+
+
+def list_authorizations(conn, command_id: str) -> list[dict[str, Any]]:
+    get_write_command(conn, command_id)
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT * FROM apu_write_authorization_events WHERE command_id = %s ORDER BY occurred_at, authorization_id",
+            (command_id,),
+        )
+        rows = cur.fetchall()
+    return [_jsonable(dict(row)) for row in rows]
 
 
 def append_authorization(
@@ -488,23 +552,21 @@ def append_authorization(
     *,
     command_id: str,
     action: str,
-    note: str | None,
     authorized_by: str,
+    note: str | None,
     idempotency_key: str,
 ) -> dict[str, Any]:
     if action not in AUTHORIZATION_ACTIONS:
-        raise ApuWritePreparationError("unsupported authorization action")
-    key = _required(idempotency_key, "idempotency_key")
+        raise ApuWritePreparationError("unsupported APU write authorization action")
     actor = _required(authorized_by, "authorized_by")
+    key = _required(idempotency_key, "idempotency_key")
     command = get_write_command(conn, command_id)
-    _validate_command_payload(command["command"])
-    digest = command["payload_digest"]
     payload = {
-        "command_ref": command_id,
-        "command_payload_digest": digest,
+        "command_id": command_id,
+        "command_payload_digest": command["payload_digest"],
         "action": action,
-        "note": (note or "").strip() or None,
         "authorized_by": actor,
+        "note": (note or "").strip() or None,
     }
     payload_digest = _digest(payload)
     with conn.transaction():
@@ -517,81 +579,38 @@ def append_authorization(
             if replay is not None:
                 if replay["payload_digest"] != payload_digest:
                     raise execution_results.ExecutionResultConflict(
-                        "write-authorization idempotency key belongs to different content"
+                        "APU authorization idempotency key belongs to different content"
                     )
-                return _jsonable(dict(replay)) | {
-                    "authority": _authorization_authority(replay["action"])
-                }
-        authorization_id = _stable_id("apu-write-authorization", command_id, key)
+                return _jsonable(dict(replay))
+        authorization_id = f"apu-write-authorization.{hashlib.sha256(key.encode()).hexdigest()[:24]}"
         conn.execute(
-            """INSERT INTO apu_write_authorization_events (
-                authorization_id, command_ref, command_payload_digest, action, note,
-                authorized_by, idempotency_key, payload_digest
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            """
+            INSERT INTO apu_write_authorization_events (
+                authorization_id, command_id, command_payload_digest, action,
+                authorized_by, note, idempotency_key, payload_digest
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
             (
                 authorization_id,
                 command_id,
-                digest,
+                command["payload_digest"],
                 action,
-                payload["note"],
                 actor,
+                payload["note"],
                 key,
                 payload_digest,
             ),
         )
-    return get_authorization(conn, authorization_id)
-
-
-def _authorization_authority(action: str) -> dict[str, bool]:
-    return {
-        "authorizes_command_application": action == "authorize_application",
-        "applies_command": False,
-        "confirms_stable_identity": False,
-        "admits_evidence": False,
-        "promotes_memory": False,
-    }
-
-
-def get_authorization(conn, authorization_id: str) -> dict[str, Any]:
-    with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(
-            "SELECT * FROM apu_write_authorization_events WHERE authorization_id = %s",
-            (authorization_id,),
-        )
-        row = cur.fetchone()
-    if row is None:
-        raise ApuWritePreparationNotFound(
-            f"unknown APU write authorization: {authorization_id}"
-        )
-    return _jsonable(dict(row)) | {"authority": _authorization_authority(row["action"])}
-
-
-def list_authorizations(conn, command_id: str) -> list[dict[str, Any]]:
-    get_write_command(conn, command_id)
-    with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(
-            "SELECT * FROM apu_write_authorization_events WHERE command_ref = %s "
-            "ORDER BY authorized_at, authorization_id",
-            (command_id,),
-        )
-        rows = cur.fetchall()
-    return [
-        _jsonable(dict(row)) | {"authority": _authorization_authority(row["action"])}
-        for row in rows
-    ]
+    return list_authorizations(conn, command_id)[-1]
 
 
 def _latest_application_authorization(conn, command: dict[str, Any]) -> dict[str, Any]:
-    items = list_authorizations(conn, command["command_id"])
-    if not items or items[-1]["action"] != "authorize_application":
-        raise ApuWritePreparationError(
-            "latest write authorization must authorize_application"
-        )
-    authorization = items[-1]
-    if authorization["command_payload_digest"] != command["payload_digest"]:
-        raise ApuWriteApplicationConflict(
-            "latest authorization does not cover the exact command payload digest"
-        )
+    authorizations = list_authorizations(conn, command["command_id"])
+    if not authorizations or authorizations[-1].get("action") != "authorize_application":
+        raise ApuWritePreparationError("latest authorization must authorize_application")
+    authorization = authorizations[-1]
+    if authorization.get("command_payload_digest") != command.get("payload_digest"):
+        raise ApuWriteApplicationConflict("authorization belongs to another command payload")
     return authorization
 
 
@@ -602,86 +621,40 @@ def apply_authorized_write_command(
     applied_by: str,
     idempotency_key: str,
 ) -> dict[str, Any]:
-    """Verify the reviewed chain, then delegate the bounded mutation to APU owner."""
     actor = _required(applied_by, "applied_by")
-    key = _required(idempotency_key, "idempotency_key")
     command_row = get_write_command(conn, command_id)
-    command = dict(command_row["command"])
+    command = command_row.get("command") or {}
+    if not isinstance(command, dict):
+        raise ApuWritePreparationError("stored APU write command payload is invalid")
     _validate_command_payload(command)
-    representation = command["source_representation"]
-    relation = command["identity_relation_claim"]
-    source_candidate_ref = representation["representation_id"]
-    source_artifact_ref = representation["source_artifact_ref"]
-    target_stable_object_ref = relation["object_ref"]["entity_id"]
-    if (
-        command_row.get("source_candidate_ref") != source_candidate_ref
-        or command_row.get("source_artifact_ref") != source_artifact_ref
-        or command_row.get("target_stable_object_ref") != target_stable_object_ref
-    ):
-        raise ApuWriteApplicationConflict(
-            "stored command indexes differ from its exact embedded effect"
-        )
-    if command_row.get("expected_owner_revision") is None or command_row.get(
-        "expected_object_revision"
-    ) is None:
-        raise ApuWriteApplicationConflict(
-            "APU write command has no truthful target freshness and cannot be applied"
-        )
-    if command_row["expected_owner_revision"] != command["expected_owner_revision"] or command_row[
-        "expected_object_revision"
-    ] != command["expected_object_revision"]:
-        raise ApuWriteApplicationConflict(
-            "stored APU write command revisions differ from its immutable payload"
-        )
-
     execution = execution_results.get_execution_result(
-        conn, command["source_execution_result_ref"]
+        conn,
+        _required(command.get("source_execution_result_ref"), "source_execution_result_ref"),
     )
-    payload, mapping = _mapping(
+    payload, mapping, _mapping_kind = _mapping(
         execution,
-        command["source_mapping_result_ref"],
-        command["source_mapping_ref"],
+        _required(command.get("source_mapping_result_ref"), "source_mapping_result_ref"),
+        _required(command.get("source_mapping_ref"), "source_mapping_ref"),
     )
-    if payload.get("project_ref") != command["project_ref"]:
-        raise ApuWriteApplicationConflict(
-            "source mapping Project differs from the authorized command"
-        )
-    if mapping.get("candidate_object_ref") != source_candidate_ref:
-        raise ApuWriteApplicationConflict(
-            "source mapping candidate differs from the authorized command"
-        )
-    candidates = {item.get("stable_object_ref") for item in mapping.get("match_candidates", [])}
-    if target_stable_object_ref not in candidates:
-        raise ApuWriteApplicationConflict(
-            "authorized target is no longer a member of the source mapping candidates"
-        )
-    review = _latest_selected_review(
+    latest_review = _latest_selected_review(
         conn,
         execution_result_id=command["source_execution_result_ref"],
         result_ref=command["source_mapping_result_ref"],
         mapping_ref=command["source_mapping_ref"],
     )
-    if review["review_id"] != command["source_review_ref"]:
-        raise ApuWriteApplicationConflict(
-            "a newer mapping review supersedes the authorized command"
-        )
-    if review.get("selected_stable_object_ref") != target_stable_object_ref:
-        raise ApuWriteApplicationConflict(
-            "latest mapping review selects another stable object"
-        )
+    if latest_review.get("review_id") != command.get("source_review_ref"):
+        raise ApuWriteApplicationConflict("a newer mapping review supersedes this command")
+    target = _required(latest_review.get("selected_stable_object_ref"), "selected_stable_object_ref")
+    candidates = {item.get("stable_object_ref") for item in mapping.get("match_candidates", [])}
+    if target not in candidates:
+        raise ApuWriteApplicationConflict("reviewed mapping target is no longer a candidate")
+    if target != command["identity_relation_claim"]["object_ref"]["entity_id"]:
+        raise ApuWriteApplicationConflict("reviewed mapping target differs from prepared identity relation")
     authorization = _latest_application_authorization(conn, command)
-
-    try:
-        return apu_owner.apply_source_match(
-            conn,
-            command=command,
-            authorization_id=authorization["authorization_id"],
-            actor=actor,
-            idempotency_key=key,
-        )
-    except apu_owner.ApuOwnerNotFound as exc:
-        raise ApuWritePreparationNotFound(str(exc)) from exc
-    except apu_owner.ApuOwnerConflict as exc:
-        raise ApuWriteApplicationConflict(str(exc)) from exc
-    except apu_owner.ApuOwnerError as exc:
-        raise ApuWritePreparationError(str(exc)) from exc
+    return apu_owner.apply_source_match(
+        conn,
+        command=command,
+        authorization_id=authorization["authorization_id"],
+        actor=actor,
+        idempotency_key=_required(idempotency_key, "idempotency_key"),
+    )
