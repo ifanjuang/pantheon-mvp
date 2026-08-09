@@ -27,6 +27,7 @@
     const scripts = [
       "shell_controls.js",
       "structured_interface.js",
+      "projection/tool_governance_projection.js",
       "context_resolver.js",
       "agency_data_binding.js",
       "spatial_navigation.js",
