@@ -28,11 +28,18 @@ def test_tool_cards_keep_governance_axes_visibly_separate():
     renderer = PROJECTION.read_text(encoding="utf-8")
 
     for label in (
+        "Binding exact",
+        "Release immuable",
         "Installation",
         "État natif",
         "Santé observée",
         "Gouvernance",
-        "Activation scope",
+        "Activation",
+        "Scope d’activation",
+        "Compatibilité observée",
+        "Sécurité qualifiée",
+        "Fraîcheur observation",
+        "Source observation",
         "Mise à jour",
         "Permissions",
         "Evidence attendue",
@@ -44,6 +51,21 @@ def test_tool_cards_keep_governance_axes_visibly_separate():
     assert 'item.governance_state === "candidate"' in renderer
     assert 'item.health_state === "observed_ready"' in renderer
     assert "runtime non observé ≠ non installé" in renderer
+
+
+def test_exact_capability_projection_never_infers_authority():
+    renderer = PROJECTION.read_text(encoding="utf-8")
+
+    assert "item.binding_id" in renderer
+    assert "item.implementation_anchor" in renderer
+    assert "item.activation_scope" in renderer
+    assert "item.compatibility_status" in renderer
+    assert "item.safety_status" in renderer
+    assert "item.freshness_status" in renderer
+    assert '"not_observed"' in renderer
+    assert "binding sélectionné ≠ dépendance adoptée" in renderer
+    assert "compatible ≠ activé" in renderer
+    assert "UI projetée ≠ autorisation" in renderer
 
 
 def test_tool_catalog_failure_does_not_invent_runtime_absence():
