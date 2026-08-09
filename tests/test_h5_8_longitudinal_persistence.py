@@ -92,7 +92,7 @@ def _t0_dossier(project_id: str, object_id: str) -> tuple[dict, dict, dict]:
         "source_authority": "project_working_document",
         "proof_status": "accepted_as_support",
         "source_representation_refs": [representation["representation_id"]],
-        "validity": {"established_at_phase": "phase:initial_design"},
+        "validity": {"established_at_phase": "DIAG"},
     }
     identity = {
         "relation_claim_id": "identity.h58.t0.pdf.opening017",
@@ -106,7 +106,7 @@ def _t0_dossier(project_id: str, object_id: str) -> tuple[dict, dict, dict]:
         "source_authority": "project_working_document",
         "proof_status": "accepted_as_support",
         "source_representation_refs": [representation["representation_id"]],
-        "validity": {"established_at_phase": "phase:initial_design"},
+        "validity": {"established_at_phase": "DIAG"},
     }
     return stable, representation, {"width": width, "identity": identity}
 
@@ -139,7 +139,7 @@ def _t3_bundle(project_id: str, object_id: str, task_contract_ref: str) -> tuple
         "certainty": "E3",
         "source_representation_refs": [representation_id],
         "notes": "Revit occurrence may represent the previously reviewed opening.",
-        "validity": {"established_at_phase": "phase:exe"},
+        "validity": {"established_at_phase": "EXE"},
     }
     width = {
         "attribute_claim_id": "claim.h58.t3.revit.opening017.width",
@@ -151,7 +151,7 @@ def _t3_bundle(project_id: str, object_id: str, task_contract_ref: str) -> tuple
         "proof_status": "candidate",
         "certainty": "E3",
         "source_representation_refs": [representation_id],
-        "validity": {"established_at_phase": "phase:exe"},
+        "validity": {"established_at_phase": "EXE"},
     }
     payload = {
         "observation_bundle_id": "observation-bundle.h58.t3.revit",
