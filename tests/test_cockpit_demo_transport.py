@@ -36,7 +36,8 @@ def test_demo_bootstrap_does_not_duplicate_api_routes_or_replace_global_fetch() 
     assert "fetchImplFactory" in bootstrap
     assert "const ROUTES" in loader
     assert "options.fetchImplFactory?.(ROUTES)" in loader
-    assert "routes: ROUTES" in loader
+    assert 'loadOptionalCollection(ROUTES.toolCatalog(), "items")' in loader
+    assert "routes: ROUTES" not in loader
 
 
 def test_demo_fixture_transport_covers_the_current_live_loader_contract() -> None:
@@ -82,9 +83,19 @@ def test_demo_fixture_transport_covers_the_current_live_loader_contract() -> Non
         const executeDemo = new Function(`return (async () => {\n${demoSource}\n})();`);
         await executeDemo();
 
+        const originalFactory = window.PantheonCockpitDataLoaderOptions.fetchImplFactory;
+        let demoFetch = null;
+        window.PantheonCockpitDataLoaderOptions = Object.freeze({
+          fetchImplFactory: routes => {
+            demoFetch = originalFactory(routes);
+            return demoFetch;
+          },
+        });
+
         require("./mvp_vertical/cockpit/data/cockpit_data_loader.js");
         const api = window.PantheonCockpitDataLoader;
-        if (!api?.routes) throw new Error("loader routes were not exposed");
+        if (!api?.create) throw new Error("loader API was not exposed");
+        if ("routes" in api) throw new Error("loader route registry leaked into the public API");
 
         const loader = api.create();
         const tools = await loader.loadToolCatalog();
@@ -92,6 +103,7 @@ def test_demo_fixture_transport_covers_the_current_live_loader_contract() -> Non
         const schema = await loader.loadProjectSchema("demo-read-only");
         const bundle = await loader.loadProjectBundle("demo-vallons", "demo-read-only");
 
+        if (!demoFetch) throw new Error("demo transport factory was not used by the loader");
         if (!tools.length) throw new Error("tool catalogue fixture was not projected");
         if (projects.length !== 4) throw new Error(`unexpected project count: ${projects.length}`);
         if (schema?.schema_id !== "agency.project.v2-demo") throw new Error("project schema fixture missing");
@@ -109,7 +121,6 @@ def test_demo_fixture_transport_covers_the_current_live_loader_contract() -> Non
           throw new Error(`loader escaped fixture transport: ${nativeCalls.join(", ")}`);
         }
 
-        const demoFetch = window.PantheonCockpitDataLoaderOptions.fetchImplFactory(api.routes);
         const unknown = await demoFetch("../agency/projects/demo-vallons/unmodelled-surface");
         if (unknown.status !== 404) throw new Error("unknown loader route did not fail closed");
         if (nativeCalls.length !== 2) throw new Error("unknown route fell through to native fetch");
