@@ -144,7 +144,7 @@
 
     return Object.freeze({
       loadRegistry: (path, collectionKey) => loadOptionalCollection(path, collectionKey),
-      loadToolCatalog: () => loadOptionalCollection("tool_catalog.json", "items"),
+      loadToolCatalog: () => loadOptionalCollection(ROUTES.toolCatalog(), "items"),
       loadAgencyProjects,
       loadDecisionInbox,
       loadProjectSchema,
@@ -154,5 +154,5 @@
 
   window.PantheonGlobalDecisionRequests = Object.freeze([]);
   window.PantheonProjectDecisionRequests = Object.freeze([]);
-  window.PantheonCockpitDataLoader = Object.freeze({ create, routes: ROUTES });
+  window.PantheonCockpitDataLoader = Object.freeze({ create });
 })();
