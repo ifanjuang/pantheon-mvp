@@ -75,10 +75,10 @@ function createFetchImpl(routes) {
     register(routes.projectKnowledge(projectId), { knowledge: payload.knowledge || [] });
     register(routes.projectWorkIssues(projectId), { work_issues: payload.work_issues || [] });
     register(routes.projectDecisionRequests(projectId), { decision_requests: decisionRequests });
-    register(routes.projectPendingChangeCandidates(projectId), {
+    register(routes.projectPendingCandidates(projectId), {
       change_candidates: changeCandidates.filter(item => item?.status === "pending_review"),
     });
-    register(routes.projectRevisionChangeCandidates(projectId), {
+    register(routes.projectRevisionCandidates(projectId), {
       change_candidates: changeCandidates.filter(item => item?.status === "revision_requested"),
     });
 
