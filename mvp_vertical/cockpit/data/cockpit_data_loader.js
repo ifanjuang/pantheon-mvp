@@ -6,13 +6,38 @@
     decisionInbox: () => "../decision-inbox?status=pending&limit=200",
     agencyProjects: () => "../agency/projects?limit=200",
     projectSchema: () => "../agency/schema/project",
-    projectInformation: projectId => `../agency/projects/${encodeURIComponent(projectId)}/information`,
-    projectDocuments: projectId => `../projects/${encodeURIComponent(projectId)}/documents`,
-    projectKnowledge: projectId => `../projects/${encodeURIComponent(projectId)}/knowledge`,
-    projectWorkIssues: projectId => `../work/scopes/project/${encodeURIComponent(projectId)}/issues`,
-    projectDecisionRequests: projectId => `../agency/projects/${encodeURIComponent(projectId)}/decision-requests?status=pending&limit=100`,
-    projectChangeCandidates: (projectId, status) => `../agency/projects/${encodeURIComponent(projectId)}/change-candidates?status=${encodeURIComponent(status)}&limit=100`,
-    projectAnatomy: projectId => `../agency/projects/${encodeURIComponent(projectId)}/project-anatomy`,
+    projectInformation(projectId) {
+      const encoded = encodeURIComponent(projectId);
+      return `../agency/projects/${encoded}/information`;
+    },
+    projectDocuments(projectId) {
+      const encoded = encodeURIComponent(projectId);
+      return `../projects/${encoded}/documents`;
+    },
+    projectKnowledge(projectId) {
+      const encoded = encodeURIComponent(projectId);
+      return `../projects/${encoded}/knowledge`;
+    },
+    projectWorkIssues(projectId) {
+      const encoded = encodeURIComponent(projectId);
+      return `../work/scopes/project/${encoded}/issues`;
+    },
+    projectDecisionRequests(projectId) {
+      const encoded = encodeURIComponent(projectId);
+      return `../agency/projects/${encoded}/decision-requests?status=pending&limit=100`;
+    },
+    projectPendingChangeCandidates(projectId) {
+      const encoded = encodeURIComponent(projectId);
+      return `../agency/projects/${encoded}/change-candidates?status=pending_review&limit=100`;
+    },
+    projectRevisionChangeCandidates(projectId) {
+      const encoded = encodeURIComponent(projectId);
+      return `../agency/projects/${encoded}/change-candidates?status=revision_requested&limit=100`;
+    },
+    projectAnatomy(projectId) {
+      const encoded = encodeURIComponent(projectId);
+      return `../agency/projects/${encoded}/project-anatomy`;
+    },
   });
 
   function create(options = window.PantheonCockpitDataLoaderOptions || {}) {
@@ -95,8 +120,8 @@
         authorizedJson(ROUTES.projectKnowledge(projectId), token),
         authorizedJson(ROUTES.projectWorkIssues(projectId), token),
         authorizedJson(ROUTES.projectDecisionRequests(projectId), token),
-        authorizedJson(ROUTES.projectChangeCandidates(projectId, "pending_review"), token),
-        authorizedJson(ROUTES.projectChangeCandidates(projectId, "revision_requested"), token),
+        authorizedJson(ROUTES.projectPendingChangeCandidates(projectId), token),
+        authorizedJson(ROUTES.projectRevisionChangeCandidates(projectId), token),
         authorizedOptionalJson(ROUTES.projectAnatomy(projectId), token, [404, 409]),
       ]);
       const projectDecisionRequests = Array.isArray(decisionRequests.decision_requests)
@@ -119,7 +144,7 @@
 
     return Object.freeze({
       loadRegistry: (path, collectionKey) => loadOptionalCollection(path, collectionKey),
-      loadToolCatalog: () => loadOptionalCollection(ROUTES.toolCatalog(), "items"),
+      loadToolCatalog: () => loadOptionalCollection("tool_catalog.json", "items"),
       loadAgencyProjects,
       loadDecisionInbox,
       loadProjectSchema,
