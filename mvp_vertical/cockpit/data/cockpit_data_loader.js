@@ -26,11 +26,11 @@
       const encoded = encodeURIComponent(projectId);
       return `../agency/projects/${encoded}/decision-requests?status=pending&limit=100`;
     },
-    projectPendingChangeCandidates(projectId) {
+    projectPendingCandidates(projectId) {
       const encoded = encodeURIComponent(projectId);
       return `../agency/projects/${encoded}/change-candidates?status=pending_review&limit=100`;
     },
-    projectRevisionChangeCandidates(projectId) {
+    projectRevisionCandidates(projectId) {
       const encoded = encodeURIComponent(projectId);
       return `../agency/projects/${encoded}/change-candidates?status=revision_requested&limit=100`;
     },
@@ -120,8 +120,8 @@
         authorizedJson(ROUTES.projectKnowledge(projectId), token),
         authorizedJson(ROUTES.projectWorkIssues(projectId), token),
         authorizedJson(ROUTES.projectDecisionRequests(projectId), token),
-        authorizedJson(ROUTES.projectPendingChangeCandidates(projectId), token),
-        authorizedJson(ROUTES.projectRevisionChangeCandidates(projectId), token),
+        authorizedJson(ROUTES.projectPendingCandidates(projectId), token),
+        authorizedJson(ROUTES.projectRevisionCandidates(projectId), token),
         authorizedOptionalJson(ROUTES.projectAnatomy(projectId), token, [404, 409]),
       ]);
       const projectDecisionRequests = Array.isArray(decisionRequests.decision_requests)
