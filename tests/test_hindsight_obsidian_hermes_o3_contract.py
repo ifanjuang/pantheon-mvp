@@ -28,7 +28,7 @@ def test_o3_reuses_exact_historical_upstreams_and_existing_harnesses() -> None:
     assert "pull_request" in workflow[True]
     assert "workflow_dispatch" in workflow[True]
     assert "Historical O3 regression fixture" in raw
-    assert "not the current deployed/qualified baseline" in raw
+    assert "Current Windows + Synology qualification" in raw
     assert "b627aa6fa02f8516d4af402ebceca4a5beed3ec9" in raw
     assert "3c27eb6234bf91b8ceee9e9071591b31e9b148cb" in raw
     assert 'HINDSIGHT_VERSION: "0.8.5"' in raw
