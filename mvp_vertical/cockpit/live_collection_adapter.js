@@ -145,9 +145,14 @@ if (stage && typeof window.Swiper === "function") {
   }
 
   function loadSnapshot(models, activeIndex) {
-    const snapshot = provider.toSnapshot(projectSnapshotInput(models), activeIndex);
-    if (currentKey && currentKey !== snapshot.collection_id) expandedEntityId = null;
-    currentKey = snapshot.collection_id;
+    const snapshot = provider.toSnapshot({
+      key: currentKey,
+      siblings: projectSnapshotInput(models),
+      index: activeIndex,
+    });
+    const nextKey = snapshot.collection?.id ?? null;
+    if (currentKey && currentKey !== nextKey) expandedEntityId = null;
+    currentKey = nextKey;
     controller.load(snapshot);
     renderExpandedChildren();
   }
