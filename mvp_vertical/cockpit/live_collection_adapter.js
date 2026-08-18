@@ -22,9 +22,6 @@ if (stage && typeof window.Swiper === "function") {
   let currentKey = null;
   let activeModel = null;
   let notifyActive = null;
-  let notifyPrepareChildren = null;
-  let navigateAscend = null;
-  let navigateDescend = null;
   let primaryHost = null;
   let childHost = null;
   let levelHost = null;
@@ -34,6 +31,7 @@ if (stage && typeof window.Swiper === "function") {
   let childCacheGraph = null;
   let childPreviewParentId = null;
   let levelCommandInFlight = false;
+  let pendingAutoDescendParentId = null;
 
   function graph() {
     return window.PantheonCockpitGraph || null;
@@ -286,29 +284,51 @@ if (stage && typeof window.Swiper === "function") {
     });
   }
 
-  async function handleLevelSettled(index) {
+  function dispatchLevelControl(controlId) {
+    const control = document.getElementById(controlId);
+    if (!control || control.disabled) return false;
+    control.click();
+    return true;
+  }
+
+  function handleLevelSettled(index) {
     if (index === 1 || levelCommandInFlight) return;
     const relation = childRelationFor(activeModel);
+    const activeEntityId = activeModel?.entity_id || activeModel?.id || null;
     const canAscend = Boolean(parentModelForCollection(currentKey));
     const canDescend = relation.state === "loaded" || relation.state === "available";
-    const action = index < 1 ? navigateAscend : navigateDescend;
-    const allowed = index < 1 ? canAscend : canDescend;
 
-    if (!allowed || typeof action !== "function") {
+    if ((index < 1 && !canAscend) || (index > 1 && !canDescend)) {
       levelDeck?.goTo(1);
       return;
     }
 
     levelCommandInFlight = true;
-    try {
-      await action();
-    } catch (error) {
-      console.error("Navigation verticale refusée", error);
-    } finally {
-      levelCommandInFlight = false;
-      if (levelDeck?.index !== 1) levelDeck?.goTo(1, { animate: false });
-      refreshCompactDeck();
+    if (index > 1 && relation.state === "available") {
+      pendingAutoDescendParentId = activeEntityId;
     }
+    const dispatched = dispatchLevelControl(index < 1 ? "v2-ascend" : "v2-descend");
+    if (!dispatched && pendingAutoDescendParentId === activeEntityId) pendingAutoDescendParentId = null;
+    levelCommandInFlight = false;
+    if (levelDeck?.index !== 1) levelDeck?.goTo(1, { animate: false });
+    refreshCompactDeck();
+  }
+
+  function scheduleLoadedAutoDescend() {
+    const entityId = activeModel?.entity_id || activeModel?.id || null;
+    if (!pendingAutoDescendParentId || entityId !== pendingAutoDescendParentId) return;
+    const relation = childRelationFor(activeModel);
+    if (relation.state === "empty" || relation.state === "none") {
+      pendingAutoDescendParentId = null;
+      return;
+    }
+    if (relation.state !== "loaded") return;
+
+    pendingAutoDescendParentId = null;
+    Promise.resolve().then(() => {
+      if (presentation !== "compact") return;
+      dispatchLevelControl("v2-descend");
+    });
   }
 
   function ensureLevelDeck() {
@@ -326,7 +346,7 @@ if (stage && typeof window.Swiper === "function") {
     levelDeck = createDeckMotion({
       mount: levelHost,
       label: "Navigation verticale entre niveaux",
-      onSettled: index => void handleLevelSettled(index),
+      onSettled: handleLevelSettled,
       onMoveState: moving => setMoving("vertical", moving),
     });
     levelDeck.hostAt(1)?.append(primaryHost);
@@ -406,8 +426,12 @@ if (stage && typeof window.Swiper === "function") {
     if (previousKey !== currentKey && levelDeck?.index !== 1) {
       levelDeck.goTo(1, { animate: false });
     }
-    if (presentation === "compact") refreshCompactDeck();
-    else renderExpandedChildren();
+    if (presentation === "compact") {
+      refreshCompactDeck();
+      scheduleLoadedAutoDescend();
+    } else {
+      renderExpandedChildren();
+    }
   }
 
   function ensureHosts() {
@@ -440,22 +464,12 @@ if (stage && typeof window.Swiper === "function") {
       renderEmpty,
       onActiveChange(model, index, meta = {}) {
         activeModel = model || null;
+        if (pendingAutoDescendParentId && model?.entity_id !== pendingAutoDescendParentId) {
+          pendingAutoDescendParentId = null;
+        }
         if (meta.presentation === "compact") expandedEntityId = null;
         if (index >= 0 && model) notifyActive?.(model, index);
         if (expandedEntityId && model?.entity_id !== expandedEntityId) expandedEntityId = null;
-
-        const relation = childRelationFor(model);
-        if (relation.state === "available" && model) {
-          try {
-            const pending = notifyPrepareChildren?.(model);
-            if (pending && typeof pending.catch === "function") {
-              pending.catch(error => console.warn("Préchargement des sous-cartes indisponible", error));
-            }
-          } catch (error) {
-            console.warn("Préchargement des sous-cartes indisponible", error);
-          }
-        }
-
         if (presentation === "compact") refreshCompactDeck();
         else renderExpandedChildren();
       },
@@ -487,19 +501,8 @@ if (stage && typeof window.Swiper === "function") {
   });
 
   window.PANTHEON_COCKPIT_SWIPER = {
-    mount({
-      key = null,
-      models,
-      activeIndex = 0,
-      onActiveChange,
-      onPrepareChildren,
-      onAscend,
-      onDescend,
-    }) {
+    mount({ key = null, models, activeIndex = 0, onActiveChange }) {
       notifyActive = onActiveChange;
-      notifyPrepareChildren = onPrepareChildren;
-      navigateAscend = onAscend;
-      navigateDescend = onDescend;
       ensureController();
       loadSnapshot(key, models, activeIndex);
     },
@@ -523,9 +526,6 @@ if (stage && typeof window.Swiper === "function") {
       currentKey = null;
       activeModel = null;
       notifyActive = null;
-      notifyPrepareChildren = null;
-      navigateAscend = null;
-      navigateDescend = null;
       primaryHost = null;
       childHost = null;
       levelHost = null;
@@ -535,6 +535,7 @@ if (stage && typeof window.Swiper === "function") {
       childCollectionCache.clear();
       childPreviewParentId = null;
       levelCommandInFlight = false;
+      pendingAutoDescendParentId = null;
       movingSources.clear();
       delete stage.dataset.collectionPresentation;
       delete stage.dataset.collectionExpanded;
