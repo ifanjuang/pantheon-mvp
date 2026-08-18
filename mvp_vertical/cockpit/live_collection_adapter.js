@@ -5,22 +5,94 @@
 // only coordinates presentation state around that renderer.
 
 import { createCollectionController } from "./collection/collection_controller.js";
-import { canExpandCollection } from "./collection/motion_adapter.js";
+import { canExpandCollection, createDeckMotion } from "./collection/motion_adapter.js";
 import { createLiveProvider } from "./providers/live_provider.js";
 import { renderCanonicalCard } from "./rendering/card_renderer.js";
 
 const stage = document.getElementById("v2-stage");
+const CHILD_COLLECTION_PREFIX = "children:";
 
 if (stage && typeof window.Swiper === "function") {
   const provider = createLiveProvider();
   const flippedByEntity = new Map();
+  const childCollectionCache = new Map();
+  const movingSources = new Set();
+
   let controller = null;
   let currentKey = null;
+  let activeModel = null;
   let notifyActive = null;
+  let notifyPrepareChildren = null;
+  let navigateAscend = null;
+  let navigateDescend = null;
   let primaryHost = null;
   let childHost = null;
+  let levelHost = null;
+  let levelDeck = null;
   let presentation = "compact";
   let expandedEntityId = null;
+  let childCacheGraph = null;
+  let childPreviewParentId = null;
+  let levelCommandInFlight = false;
+
+  function graph() {
+    return window.PantheonCockpitGraph || null;
+  }
+
+  function syncChildCache() {
+    const nextGraph = graph();
+    if (nextGraph !== childCacheGraph) {
+      childCacheGraph = nextGraph;
+      childCollectionCache.clear();
+      childPreviewParentId = null;
+    }
+    return nextGraph;
+  }
+
+  function parentIdForCollection(collectionId) {
+    const value = String(collectionId || "");
+    return value.startsWith(CHILD_COLLECTION_PREFIX)
+      ? value.slice(CHILD_COLLECTION_PREFIX.length)
+      : null;
+  }
+
+  function parentModelForCollection(collectionId) {
+    const parentId = parentIdForCollection(collectionId);
+    return parentId ? graph()?.cards?.get?.(parentId) || null : null;
+  }
+
+  function childModelsFor(entityId) {
+    if (!entityId) return null;
+    const currentGraph = syncChildCache();
+    if (!currentGraph?.children?.has?.(entityId) || !currentGraph?.cards?.get) return null;
+    if (childCollectionCache.has(entityId)) return childCollectionCache.get(entityId);
+    const models = (currentGraph.children.get(entityId) || [])
+      .map(id => currentGraph.cards.get(id))
+      .filter(Boolean)
+      .map(projectModelViewState);
+    childCollectionCache.set(entityId, models);
+    return models;
+  }
+
+  function childRelationFor(model) {
+    const entityId = model?.entity_id || model?.id;
+    if (!entityId) return { state: "none", models: [] };
+    const loaded = childModelsFor(entityId);
+    if (loaded !== null) {
+      return loaded.length
+        ? { state: "loaded", models: loaded }
+        : { state: "empty", models: [] };
+    }
+    if (model?.entity_type === "project" && model?.source_project_id) {
+      return { state: "available", models: [] };
+    }
+    return { state: "none", models: [] };
+  }
+
+  function canCreateForCollection(collectionId) {
+    const parent = parentModelForCollection(collectionId);
+    return parent?.entity_type === "project" && Boolean(parent.source_project_id);
+  }
 
   function projectModelViewState(model) {
     if (!model || typeof model !== "object") return model;
@@ -48,6 +120,13 @@ if (stage && typeof window.Swiper === "function") {
     return input;
   }
 
+  function projectChildState(node, model) {
+    const relation = childRelationFor(model);
+    node.dataset.childState = relation.state;
+    node.classList.toggle("has-children", relation.state === "loaded" || relation.state === "available");
+    return node;
+  }
+
   function toPreview(node) {
     node.classList.remove("card");
     node.classList.add("card-preview");
@@ -65,7 +144,8 @@ if (stage && typeof window.Swiper === "function") {
   }
 
   function renderProjectedCard(model) {
-    return renderCanonicalCard(model, { flipped: model?.view_state?.flipped === true });
+    const node = renderCanonicalCard(model, { flipped: model?.view_state?.flipped === true });
+    return projectChildState(node, model);
   }
 
   function renderPlaceholder() {
@@ -86,14 +166,35 @@ if (stage && typeof window.Swiper === "function") {
     return empty;
   }
 
-  function childModelsFor(entityId) {
-    if (!entityId) return [];
-    const graph = window.PantheonCockpitGraph;
-    if (!graph?.children?.get || !graph?.cards?.get) return [];
-    return (graph.children.get(entityId) || [])
-      .map(id => graph.cards.get(id))
-      .filter(Boolean)
-      .map(projectModelViewState);
+  function renderNew(collection) {
+    const parent = parentModelForCollection(collection?.id);
+    const projectId = parent?.source_project_id || null;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "v2-information-create-card v3-create-card";
+    button.dataset.synthetic = "create";
+    button.dataset.collectionId = String(collection?.id || "");
+
+    const mark = document.createElement("span");
+    mark.className = "v2-information-create-mark";
+    mark.textContent = "+";
+    const copy = document.createElement("span");
+    const title = document.createElement("strong");
+    title.textContent = "Nouvelle information";
+    const detail = document.createElement("small");
+    detail.textContent = "Ajouter une carte à cette affaire";
+    copy.append(title, detail);
+    button.append(mark, copy);
+
+    button.addEventListener("click", () => {
+      if (!projectId || !window.PantheonInformationCreate?.open) return;
+      try {
+        window.PantheonInformationCreate.open(projectId);
+      } catch (error) {
+        window.alert(error?.message || String(error));
+      }
+    });
+    return button;
   }
 
   function stageWidth() {
@@ -101,16 +202,21 @@ if (stage && typeof window.Swiper === "function") {
   }
 
   function contextualChildrenFor(entityId) {
-    const children = childModelsFor(entityId);
+    const children = childModelsFor(entityId) || [];
     if (children.length === 1) return children;
     return canExpandCollection({ width: stageWidth(), count: children.length }) ? children : [];
   }
 
-  function dispatchVerticalNavigation(delta) {
-    const controlId = delta < 0 ? "v2-ascend" : "v2-descend";
-    const control = document.getElementById(controlId);
-    if (!control || control.disabled) return;
-    control.click();
+  function setMoving(source, moving) {
+    if (moving) movingSources.add(source);
+    else movingSources.delete(source);
+    if (movingSources.size) {
+      stage.dataset.swiperMoving = "true";
+      stage.dataset.swiperNavigation = "true";
+    } else {
+      delete stage.dataset.swiperMoving;
+      delete stage.dataset.swiperNavigation;
+    }
   }
 
   function syncPresentationAttributes() {
@@ -120,6 +226,121 @@ if (stage && typeof window.Swiper === "function") {
     } else {
       delete stage.dataset.collectionExpanded;
     }
+  }
+
+  function createLevelPreview(model) {
+    const preview = document.createElement("div");
+    preview.className = "v3-level-preview level-preview";
+    preview.setAttribute("aria-hidden", "true");
+    preview.inert = true;
+    if (model) preview.append(toPreview(renderProjectedCard(model)));
+    return preview;
+  }
+
+  function renderParentPreview() {
+    const host = levelDeck?.hostAt(0);
+    if (!host) return;
+    host.replaceChildren();
+    const parent = parentModelForCollection(currentKey);
+    if (parent) host.append(createLevelPreview(projectModelViewState(parent)));
+  }
+
+  function renderChildPreview(model) {
+    const host = levelDeck?.hostAt(2);
+    if (!host) return { state: "none", models: [] };
+    const entityId = model?.entity_id || model?.id || null;
+    const relation = childRelationFor(model);
+
+    if (entityId !== childPreviewParentId) {
+      host.replaceChildren();
+      childPreviewParentId = entityId;
+    }
+
+    if (!entityId || relation.state === "none" || relation.state === "empty") {
+      host.replaceChildren();
+      return relation;
+    }
+
+    if (!host.childElementCount) {
+      if (relation.state === "loaded" && relation.models[0]) {
+        host.append(createLevelPreview(relation.models[0]));
+      } else {
+        const preview = document.createElement("div");
+        preview.className = "v3-level-preview level-preview";
+        preview.setAttribute("aria-hidden", "true");
+        preview.inert = true;
+        preview.append(renderPlaceholder());
+        host.append(preview);
+      }
+    }
+    return relation;
+  }
+
+  function refreshCompactDeck() {
+    if (!levelDeck || presentation !== "compact") return;
+    renderParentPreview();
+    const relation = renderChildPreview(activeModel);
+    levelDeck.setBounds({
+      previous: Boolean(parentModelForCollection(currentKey)),
+      next: relation.state === "loaded" || relation.state === "available",
+    });
+  }
+
+  async function handleLevelSettled(index) {
+    if (index === 1 || levelCommandInFlight) return;
+    const relation = childRelationFor(activeModel);
+    const canAscend = Boolean(parentModelForCollection(currentKey));
+    const canDescend = relation.state === "loaded" || relation.state === "available";
+    const action = index < 1 ? navigateAscend : navigateDescend;
+    const allowed = index < 1 ? canAscend : canDescend;
+
+    if (!allowed || typeof action !== "function") {
+      levelDeck?.goTo(1);
+      return;
+    }
+
+    levelCommandInFlight = true;
+    try {
+      await action();
+    } catch (error) {
+      console.error("Navigation verticale refusée", error);
+    } finally {
+      levelCommandInFlight = false;
+      if (levelDeck?.index !== 1) levelDeck?.goTo(1, { animate: false });
+      refreshCompactDeck();
+    }
+  }
+
+  function ensureLevelDeck() {
+    if (levelDeck) {
+      const currentSlot = levelDeck.hostAt(1);
+      if (primaryHost && primaryHost.parentNode !== currentSlot) currentSlot?.append(primaryHost);
+      refreshCompactDeck();
+      return;
+    }
+
+    stage.replaceChildren();
+    levelHost = document.createElement("div");
+    levelHost.className = "v3-level-host";
+    stage.append(levelHost);
+    levelDeck = createDeckMotion({
+      mount: levelHost,
+      label: "Navigation verticale entre niveaux",
+      onSettled: index => void handleLevelSettled(index),
+      onMoveState: moving => setMoving("vertical", moving),
+    });
+    levelDeck.hostAt(1)?.append(primaryHost);
+    refreshCompactDeck();
+  }
+
+  function disposeLevelDeck() {
+    if (!levelDeck) return;
+    if (primaryHost) stage.append(primaryHost);
+    levelDeck.dispose();
+    levelDeck = null;
+    levelHost = null;
+    childPreviewParentId = null;
+    setMoving("vertical", false);
   }
 
   function renderExpandedChildren() {
@@ -134,11 +355,17 @@ if (stage && typeof window.Swiper === "function") {
 
     const section = document.createElement("section");
     section.className = "v3-expanded-children";
-    const parent = window.PantheonCockpitGraph?.cards?.get?.(expandedEntityId);
+    const parent = graph()?.cards?.get?.(expandedEntityId);
     section.setAttribute("aria-label", parent?.title ? `Sous-cartes de ${parent.title}` : "Sous-cartes");
 
     const grid = document.createElement("div");
     grid.className = "v3-expanded-child-grid";
+    if (parent?.entity_type === "project" && parent.source_project_id) {
+      const cell = document.createElement("div");
+      cell.className = "v3-expanded-child-cell";
+      cell.append(renderNew({ id: `${CHILD_COLLECTION_PREFIX}${parent.entity_id}` }));
+      grid.append(cell);
+    }
     for (const model of children) {
       const cell = document.createElement("div");
       cell.className = "v3-expanded-child-cell";
@@ -151,17 +378,36 @@ if (stage && typeof window.Swiper === "function") {
     syncPresentationAttributes();
   }
 
+  function applyPresentationLayout(nextPresentation) {
+    presentation = nextPresentation;
+    if (presentation === "compact") {
+      expandedEntityId = null;
+      childHost.hidden = true;
+      ensureLevelDeck();
+    } else {
+      disposeLevelDeck();
+      stage.replaceChildren(primaryHost, childHost);
+      renderExpandedChildren();
+    }
+    syncPresentationAttributes();
+  }
+
   function loadSnapshot(key, models, activeIndex) {
+    const previousKey = currentKey;
+    currentKey = key ?? null;
     const snapshot = provider.toSnapshot({
-      key,
+      key: currentKey,
       siblings: projectSnapshotInput(models),
       index: activeIndex,
+      canCreate: canCreateForCollection(currentKey),
     });
-    const nextKey = snapshot.collection?.id ?? null;
-    if (currentKey && currentKey !== nextKey) expandedEntityId = null;
-    currentKey = nextKey;
+    if (previousKey && previousKey !== currentKey) expandedEntityId = null;
     controller.load(snapshot);
-    renderExpandedChildren();
+    if (previousKey !== currentKey && levelDeck?.index !== 1) {
+      levelDeck.goTo(1, { animate: false });
+    }
+    if (presentation === "compact") refreshCompactDeck();
+    else renderExpandedChildren();
   }
 
   function ensureHosts() {
@@ -181,6 +427,7 @@ if (stage && typeof window.Swiper === "function") {
     controller = createCollectionController({
       mount: primaryHost,
       label: "Cartes sœurs",
+      renderNew,
       renderItem: (model, { active, presentation: itemPresentation }) => {
         const node = renderProjectedCard(model);
         if (itemPresentation === "expanded") {
@@ -192,10 +439,25 @@ if (stage && typeof window.Swiper === "function") {
       renderPlaceholder,
       renderEmpty,
       onActiveChange(model, index, meta = {}) {
+        activeModel = model || null;
         if (meta.presentation === "compact") expandedEntityId = null;
         if (index >= 0 && model) notifyActive?.(model, index);
         if (expandedEntityId && model?.entity_id !== expandedEntityId) expandedEntityId = null;
-        renderExpandedChildren();
+
+        const relation = childRelationFor(model);
+        if (relation.state === "available" && model) {
+          try {
+            const pending = notifyPrepareChildren?.(model);
+            if (pending && typeof pending.catch === "function") {
+              pending.catch(error => console.warn("Préchargement des sous-cartes indisponible", error));
+            }
+          } catch (error) {
+            console.warn("Préchargement des sous-cartes indisponible", error);
+          }
+        }
+
+        if (presentation === "compact") refreshCompactDeck();
+        else renderExpandedChildren();
       },
       onItemActivate(model, _index, meta = {}) {
         if (meta.presentation !== "expanded" || !model?.entity_id) return;
@@ -209,24 +471,11 @@ if (stage && typeof window.Swiper === "function") {
         }
         renderExpandedChildren();
       },
-      onCrossAxisMove(delta, meta = {}) {
-        if (meta.presentation !== "compact") return;
-        dispatchVerticalNavigation(delta);
-      },
       onPresentationChange(nextPresentation) {
-        presentation = nextPresentation;
-        if (presentation !== "expanded") expandedEntityId = null;
-        syncPresentationAttributes();
-        renderExpandedChildren();
+        applyPresentationLayout(nextPresentation);
       },
       onMoveState(moving) {
-        if (moving) {
-          stage.dataset.swiperMoving = "true";
-          stage.dataset.swiperNavigation = "true";
-        } else {
-          delete stage.dataset.swiperMoving;
-          delete stage.dataset.swiperNavigation;
-        }
+        setMoving("horizontal", moving);
       },
     });
   }
@@ -238,8 +487,19 @@ if (stage && typeof window.Swiper === "function") {
   });
 
   window.PANTHEON_COCKPIT_SWIPER = {
-    mount({ key = null, models, activeIndex = 0, onActiveChange }) {
+    mount({
+      key = null,
+      models,
+      activeIndex = 0,
+      onActiveChange,
+      onPrepareChildren,
+      onAscend,
+      onDescend,
+    }) {
       notifyActive = onActiveChange;
+      notifyPrepareChildren = onPrepareChildren;
+      navigateAscend = onAscend;
+      navigateDescend = onDescend;
       ensureController();
       loadSnapshot(key, models, activeIndex);
     },
@@ -257,16 +517,29 @@ if (stage && typeof window.Swiper === "function") {
       return controller?.activeElement?.() || null;
     },
     destroy() {
+      disposeLevelDeck();
       controller?.dispose();
       controller = null;
       currentKey = null;
+      activeModel = null;
       notifyActive = null;
+      notifyPrepareChildren = null;
+      navigateAscend = null;
+      navigateDescend = null;
       primaryHost = null;
       childHost = null;
+      levelHost = null;
       presentation = "compact";
       expandedEntityId = null;
+      childCacheGraph = null;
+      childCollectionCache.clear();
+      childPreviewParentId = null;
+      levelCommandInFlight = false;
+      movingSources.clear();
       delete stage.dataset.collectionPresentation;
       delete stage.dataset.collectionExpanded;
+      delete stage.dataset.swiperMoving;
+      delete stage.dataset.swiperNavigation;
       flippedByEntity.clear();
     },
   };
