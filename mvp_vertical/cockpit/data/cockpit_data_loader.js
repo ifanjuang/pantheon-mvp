@@ -46,6 +46,25 @@
       || window.fetch.bind(window);
     let projectSchemaToken = null;
     let projectSchemaRequest = null;
+    const projectBundleCache = new Map();
+
+    function projectBundleKey(projectId, token) {
+      return `${String(token || "")}\u0000${String(projectId || "")}`;
+    }
+
+    function clearProjectBundleCache() {
+      projectBundleCache.clear();
+    }
+
+    // Explicit user/application reloads remain the freshness boundary. Internal
+    // vertical navigation can therefore reuse an already loaded bundle without
+    // silently pinning data forever after a requested refresh.
+    if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+      document.addEventListener("click", event => {
+        const target = event.target;
+        if (target?.id === "v2-load" || target?.closest?.("#v2-load")) clearProjectBundleCache();
+      }, true);
+    }
 
     async function readJson(path, requestOptions = {}) {
       const response = await fetchImpl(path, requestOptions);
@@ -113,7 +132,7 @@
       return projectSchemaRequest;
     }
 
-    async function loadProjectBundle(projectId, token) {
+    async function fetchProjectBundle(projectId, token) {
       const [information, documents, knowledge, workIssues, decisionRequests, pendingCandidates, revisionCandidates, anatomyPayload] = await Promise.all([
         authorizedJson(ROUTES.projectInformation(projectId), token),
         authorizedJson(ROUTES.projectDocuments(projectId), token),
@@ -127,7 +146,6 @@
       const projectDecisionRequests = Array.isArray(decisionRequests.decision_requests)
         ? decisionRequests.decision_requests
         : [];
-      window.PantheonProjectDecisionRequests = Object.freeze(projectDecisionRequests.slice());
       return {
         information: Array.isArray(information.information) ? information.information : [],
         legacyDocuments: Array.isArray(documents.documents) ? documents.documents : [],
@@ -140,6 +158,23 @@
         ],
         projectAnatomy: anatomyPayload?.project_anatomy || null,
       };
+    }
+
+    async function loadProjectBundle(projectId, token) {
+      const key = projectBundleKey(projectId, token);
+      let pending = projectBundleCache.get(key);
+      if (!pending) {
+        pending = fetchProjectBundle(projectId, token).catch(error => {
+          if (projectBundleCache.get(key) === pending) projectBundleCache.delete(key);
+          throw error;
+        });
+        projectBundleCache.set(key, pending);
+      }
+      const bundle = await pending;
+      // This legacy exposure follows the bundle currently selected by the
+      // projection even on a cache hit; cached != active until this call occurs.
+      window.PantheonProjectDecisionRequests = Object.freeze((bundle.decisionRequests || []).slice());
+      return bundle;
     }
 
     return Object.freeze({
