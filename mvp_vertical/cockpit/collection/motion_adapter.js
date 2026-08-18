@@ -331,10 +331,10 @@ export function createResponsiveMotion({
     if (delegate) index = delegate.index;
     delegate?.dispose();
     presentation = nextPresentation;
-    const common = { mount, renderAt, onIndexChange, onMoveState, label };
+    const common = { mount, renderAt, onIndexChange, onCrossAxisMove, onMoveState, label };
     delegate = presentation === "expanded"
       ? createExpandedMotion({ ...common, onActivate })
-      : createWindowedMotion({ ...common, onCrossAxisMove });
+      : createWindowedMotion(common);
     delegate.mount(count, index);
     if (locked) delegate.lock();
     onPresentationChange(presentation);
