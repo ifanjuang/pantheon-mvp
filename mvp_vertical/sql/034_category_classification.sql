@@ -1,0 +1,282 @@
+-- Hierarchical Agency Data classification.
+--
+-- Category is a logical classification/navigation record. CategoryAssignment is
+-- an explicit N:N membership link. Neither table is a semantic EntityRelation,
+-- Project ownership, lifecycle status, authorization, Evidence, or a source
+-- storage hierarchy.
+
+CREATE TABLE IF NOT EXISTS agency_categories (
+    category_id TEXT PRIMARY KEY CHECK (btrim(category_id) <> ''),
+    title TEXT NOT NULL CHECK (btrim(title) <> ''),
+    description TEXT NOT NULL DEFAULT '',
+    parent_category_id TEXT REFERENCES agency_categories(category_id) ON DELETE RESTRICT,
+    applies_to JSONB NOT NULL CHECK (
+        jsonb_typeof(applies_to) = 'array'
+        AND jsonb_array_length(applies_to) > 0
+        AND applies_to <@ '["project", "information", "document", "knowledge", "work_issue"]'::jsonb
+    ),
+    sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    created_by TEXT NOT NULL CHECK (btrim(created_by) <> ''),
+    updated_by TEXT NOT NULL CHECK (btrim(updated_by) <> ''),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    archived_at TIMESTAMPTZ,
+    CHECK (parent_category_id IS NULL OR parent_category_id <> category_id)
+);
+
+CREATE INDEX IF NOT EXISTS agency_categories_parent_lookup
+    ON agency_categories (parent_category_id, sort_order, lower(title), category_id);
+CREATE INDEX IF NOT EXISTS agency_categories_active_lookup
+    ON agency_categories (sort_order, lower(title), category_id)
+    WHERE archived_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS agency_category_assignments (
+    assignment_id TEXT PRIMARY KEY CHECK (btrim(assignment_id) <> ''),
+    category_id TEXT NOT NULL REFERENCES agency_categories(category_id) ON DELETE RESTRICT,
+    entity_type TEXT NOT NULL CHECK (
+        entity_type IN ('project', 'information', 'document', 'knowledge', 'work_issue')
+    ),
+    entity_id TEXT NOT NULL CHECK (btrim(entity_id) <> ''),
+    assigned_by TEXT NOT NULL CHECK (btrim(assigned_by) <> ''),
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    rationale TEXT,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    retired_at TIMESTAMPTZ,
+    retired_by TEXT,
+    CHECK (
+        (retired_at IS NULL AND retired_by IS NULL)
+        OR (retired_at IS NOT NULL AND retired_by IS NOT NULL AND btrim(retired_by) <> '')
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS agency_category_assignments_active_unique
+    ON agency_category_assignments (category_id, entity_type, entity_id)
+    WHERE retired_at IS NULL;
+CREATE INDEX IF NOT EXISTS agency_category_assignments_category_lookup
+    ON agency_category_assignments (category_id, retired_at, assigned_at, assignment_id);
+CREATE INDEX IF NOT EXISTS agency_category_assignments_entity_lookup
+    ON agency_category_assignments (entity_type, entity_id, retired_at, assigned_at, assignment_id);
+
+CREATE OR REPLACE FUNCTION agency_category_parent_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    cycle_found boolean := false;
+    parent_archived_at TIMESTAMPTZ;
+BEGIN
+    IF NEW.parent_category_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT archived_at
+      INTO parent_archived_at
+      FROM agency_categories
+     WHERE category_id = NEW.parent_category_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unknown parent Category: %', NEW.parent_category_id;
+    END IF;
+    IF parent_archived_at IS NOT NULL THEN
+        RAISE EXCEPTION 'archived Category cannot be used as parent: %', NEW.parent_category_id;
+    END IF;
+
+    WITH RECURSIVE descendants(category_id) AS (
+        SELECT category_id
+          FROM agency_categories
+         WHERE parent_category_id = NEW.category_id
+        UNION ALL
+        SELECT child.category_id
+          FROM agency_categories child
+          JOIN descendants d ON child.parent_category_id = d.category_id
+    )
+    SELECT EXISTS (
+        SELECT 1 FROM descendants WHERE category_id = NEW.parent_category_id
+    ) INTO cycle_found;
+
+    IF cycle_found THEN
+        RAISE EXCEPTION 'Category hierarchy cycle is forbidden';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION agency_category_update_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF OLD.category_id <> NEW.category_id
+       OR OLD.created_by <> NEW.created_by
+       OR OLD.created_at <> NEW.created_at THEN
+        RAISE EXCEPTION 'Category identity and creation provenance are immutable';
+    END IF;
+    IF OLD.archived_at IS NOT NULL THEN
+        RAISE EXCEPTION 'archived Category is immutable';
+    END IF;
+    IF NEW.revision <> OLD.revision + 1 THEN
+        RAISE EXCEPTION 'Category update must advance revision by one';
+    END IF;
+    IF NEW.updated_at <= OLD.updated_at THEN
+        RAISE EXCEPTION 'Category update must advance updated_at';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION agency_category_assignment_entity_exists(
+    candidate_type TEXT,
+    candidate_id TEXT
+) RETURNS boolean
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    found boolean := false;
+BEGIN
+    CASE candidate_type
+        WHEN 'project' THEN
+            SELECT EXISTS(
+                SELECT 1 FROM agency_projects WHERE project_id = candidate_id
+            ) INTO found;
+        WHEN 'information' THEN
+            SELECT EXISTS(
+                SELECT 1 FROM agency_information_cards WHERE information_id = candidate_id
+            ) INTO found;
+        WHEN 'document' THEN
+            SELECT EXISTS(
+                SELECT 1 FROM doc_documents WHERE document_id = candidate_id
+            ) INTO found;
+        WHEN 'knowledge' THEN
+            SELECT EXISTS(
+                SELECT 1 FROM knowledge_items WHERE knowledge_id = candidate_id
+            ) INTO found;
+        WHEN 'work_issue' THEN
+            SELECT EXISTS(
+                SELECT 1 FROM work_issues WHERE issue_id = candidate_id
+            ) INTO found;
+        ELSE
+            found := false;
+    END CASE;
+    RETURN found;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION validate_agency_category_assignment()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    category_applies_to JSONB;
+    category_archived_at TIMESTAMPTZ;
+BEGIN
+    SELECT applies_to, archived_at
+      INTO category_applies_to, category_archived_at
+      FROM agency_categories
+     WHERE category_id = NEW.category_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unknown Category: %', NEW.category_id;
+    END IF;
+    IF category_archived_at IS NOT NULL THEN
+        RAISE EXCEPTION 'cannot assign an archived Category: %', NEW.category_id;
+    END IF;
+    IF NOT (category_applies_to ? NEW.entity_type) THEN
+        RAISE EXCEPTION 'Category % does not apply to entity type %',
+            NEW.category_id, NEW.entity_type;
+    END IF;
+    IF NOT agency_category_assignment_entity_exists(NEW.entity_type, NEW.entity_id) THEN
+        RAISE EXCEPTION 'unknown CategoryAssignment endpoint: %:%',
+            NEW.entity_type, NEW.entity_id;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION guard_agency_category_assignment_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'CategoryAssignment links are retained; retire instead of deleting';
+    END IF;
+
+    IF OLD.assignment_id <> NEW.assignment_id
+       OR OLD.category_id <> NEW.category_id
+       OR OLD.entity_type <> NEW.entity_type
+       OR OLD.entity_id <> NEW.entity_id
+       OR OLD.assigned_by <> NEW.assigned_by
+       OR OLD.assigned_at <> NEW.assigned_at
+       OR OLD.rationale IS DISTINCT FROM NEW.rationale THEN
+        RAISE EXCEPTION 'CategoryAssignment identity and meaning are immutable';
+    END IF;
+    IF OLD.retired_at IS NOT NULL THEN
+        RAISE EXCEPTION 'retired CategoryAssignment is immutable';
+    END IF;
+    IF NEW.revision <> OLD.revision + 1 THEN
+        RAISE EXCEPTION 'CategoryAssignment retirement must advance revision by one';
+    END IF;
+    IF NEW.retired_at IS NULL OR NEW.retired_by IS NULL OR btrim(NEW.retired_by) = '' THEN
+        RAISE EXCEPTION 'CategoryAssignment update may only retire the link';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'agency_categories_parent_guard'
+           AND tgrelid = 'agency_categories'::regclass
+    ) THEN
+        CREATE TRIGGER agency_categories_parent_guard
+        BEFORE INSERT OR UPDATE OF parent_category_id ON agency_categories
+        FOR EACH ROW EXECUTE FUNCTION agency_category_parent_guard();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'agency_categories_update_guard'
+           AND tgrelid = 'agency_categories'::regclass
+    ) THEN
+        CREATE TRIGGER agency_categories_update_guard
+        BEFORE UPDATE ON agency_categories
+        FOR EACH ROW EXECUTE FUNCTION agency_category_update_guard();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'agency_category_assignment_insert_guard'
+           AND tgrelid = 'agency_category_assignments'::regclass
+    ) THEN
+        CREATE TRIGGER agency_category_assignment_insert_guard
+        BEFORE INSERT ON agency_category_assignments
+        FOR EACH ROW EXECUTE FUNCTION validate_agency_category_assignment();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'agency_category_assignments_retire_only'
+           AND tgrelid = 'agency_category_assignments'::regclass
+    ) THEN
+        CREATE TRIGGER agency_category_assignments_retire_only
+        BEFORE UPDATE ON agency_category_assignments
+        FOR EACH ROW EXECUTE FUNCTION guard_agency_category_assignment_mutation();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'agency_category_assignments_no_delete'
+           AND tgrelid = 'agency_category_assignments'::regclass
+    ) THEN
+        CREATE TRIGGER agency_category_assignments_no_delete
+        BEFORE DELETE ON agency_category_assignments
+        FOR EACH ROW EXECUTE FUNCTION guard_agency_category_assignment_mutation();
+    END IF;
+END;
+$$;
+
+COMMENT ON TABLE agency_categories IS
+    'Hierarchical Agency Data classification records; Category is not a physical folder, lifecycle status, authorization or Project ownership.';
+COMMENT ON TABLE agency_category_assignments IS
+    'Explicit N:N Category memberships; assignment does not transfer entity ownership, establish Evidence or authorize an action.';
