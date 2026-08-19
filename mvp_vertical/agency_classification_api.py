@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hmac
 from typing import Any, Callable
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from . import agency_classification
@@ -44,6 +45,12 @@ class CategoryAssignmentRetireBody(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+def _bearer_token(authorization: str | None) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        return ""
+    return authorization.removeprefix("Bearer ").strip()
+
+
 def install_agency_classification_routes(
     app: FastAPI,
     *,
@@ -52,6 +59,29 @@ def install_agency_classification_routes(
     require_editor_key: Callable,
     require_human_actor: Callable,
 ) -> None:
+    def require_classification_editor(
+        authorization: str | None = Header(default=None),
+    ) -> None:
+        supplied = _bearer_token(authorization)
+        editor = getattr(app.state, "editor_api_key", "")
+        hermes = getattr(app.state, "hermes_api_key", "")
+        editor_match = bool(editor and supplied and hmac.compare_digest(supplied, editor))
+        hermes_match = bool(hermes and supplied and hmac.compare_digest(supplied, hermes))
+        if editor_match and hermes_match:
+            raise HTTPException(
+                status_code=503,
+                detail="editor and Hermes Category writer keys must be distinct",
+            )
+        if hermes_match:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Hermes direct Category persistence is disabled; "
+                    "suggest classification through a bounded task instead"
+                ),
+            )
+        require_editor_key(authorization)
+
     def operation(fn):
         try:
             return with_connection(fn)
@@ -159,7 +189,7 @@ def install_agency_classification_routes(
     @app.post("/agency/categories", status_code=201)
     def create_category(
         body: CategoryCreateBody,
-        _authorized: None = Depends(require_editor_key),
+        _authorized: None = Depends(require_classification_editor),
         actor: str = Depends(require_human_actor),
     ) -> dict:
         category = operation(
@@ -176,7 +206,7 @@ def install_agency_classification_routes(
     def update_category(
         category_id: str,
         body: CategoryUpdateBody,
-        _authorized: None = Depends(require_editor_key),
+        _authorized: None = Depends(require_classification_editor),
         actor: str = Depends(require_human_actor),
     ) -> dict:
         supplied = body.model_dump(exclude_unset=True)
@@ -197,7 +227,7 @@ def install_agency_classification_routes(
     def archive_category(
         category_id: str,
         body: CategoryArchiveBody,
-        _authorized: None = Depends(require_editor_key),
+        _authorized: None = Depends(require_classification_editor),
         actor: str = Depends(require_human_actor),
     ) -> dict:
         category = operation(
@@ -215,7 +245,7 @@ def install_agency_classification_routes(
     def assign_category(
         category_id: str,
         body: CategoryAssignmentCreateBody,
-        _authorized: None = Depends(require_editor_key),
+        _authorized: None = Depends(require_classification_editor),
         actor: str = Depends(require_human_actor),
     ) -> dict:
         assignment = operation(
@@ -233,7 +263,7 @@ def install_agency_classification_routes(
     def retire_category_assignment(
         assignment_id: str,
         body: CategoryAssignmentRetireBody,
-        _authorized: None = Depends(require_editor_key),
+        _authorized: None = Depends(require_classification_editor),
         actor: str = Depends(require_human_actor),
     ) -> dict:
         assignment = operation(
