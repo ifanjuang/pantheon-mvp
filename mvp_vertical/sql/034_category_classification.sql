@@ -120,6 +120,36 @@ BEGIN
     IF NEW.updated_at <= OLD.updated_at THEN
         RAISE EXCEPTION 'Category update must advance updated_at';
     END IF;
+
+    IF NEW.applies_to IS DISTINCT FROM OLD.applies_to
+       AND EXISTS (
+            SELECT 1
+              FROM agency_category_assignments a
+             WHERE a.category_id = OLD.category_id
+               AND a.retired_at IS NULL
+               AND NOT (NEW.applies_to ? a.entity_type)
+       ) THEN
+        RAISE EXCEPTION 'Category applies_to cannot exclude an active assignment type';
+    END IF;
+
+    IF OLD.archived_at IS NULL AND NEW.archived_at IS NOT NULL THEN
+        IF EXISTS (
+            SELECT 1
+              FROM agency_categories child
+             WHERE child.parent_category_id = OLD.category_id
+               AND child.archived_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Category with active child Categories cannot be archived';
+        END IF;
+        IF EXISTS (
+            SELECT 1
+              FROM agency_category_assignments a
+             WHERE a.category_id = OLD.category_id
+               AND a.retired_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Category with active assignments cannot be archived';
+        END IF;
+    END IF;
     RETURN NEW;
 END;
 $$;
