@@ -14,6 +14,7 @@ from fastapi import Header, HTTPException
 from . import (
     agency_change_candidate_review,
     agency_claims,
+    agency_classification,
     agency_data,
     apu_cross_family,
     apu_mapping_reviews,
@@ -63,6 +64,8 @@ def initialize_composed_schema() -> None:
         conn.execute(source_intake.MIGRATION.read_text(encoding="utf-8"))
         # A owns the professional document/revision seam consumed by B.
         conn.execute(project_documents.MIGRATION.read_text(encoding="utf-8"))
+        # CategoryAssignment resolves only already-existing owner identities.
+        conn.execute(agency_classification.MIGRATION.read_text(encoding="utf-8"))
         conn.execute(project_document_admission.MIGRATION.read_text(encoding="utf-8"))
         # B4 read projections consume the already-merged A4 currentness owner.
         conn.execute(project_document_currentness.MIGRATION.read_text(encoding="utf-8"))
