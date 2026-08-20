@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import agency_classification
 
@@ -28,6 +28,13 @@ class CategoryUpdateBody(BaseModel):
     parent_category_id: str | None = Field(default=None, max_length=200)
     applies_to: list[str] | None = Field(default=None, min_length=1, max_length=10)
     sort_order: int | None = Field(default=None, ge=0)
+
+    @field_validator("sort_order")
+    @classmethod
+    def reject_explicit_null_sort_order(cls, value: int | None) -> int:
+        if value is None:
+            raise ValueError("sort_order cannot be null")
+        return value
 
 
 class CategoryArchiveBody(BaseModel):
