@@ -86,10 +86,14 @@ BEGIN
         RETURN NEW;
     END IF;
 
+    -- A parent relation and parent archival are one hierarchy invariant. Hold a
+    -- shared row lock until this mutation commits so an archive cannot validate
+    -- against the pre-relation state and commit an archived active parent.
     SELECT archived_at
       INTO parent_archived_at
       FROM agency_categories
-     WHERE category_id = NEW.parent_category_id;
+     WHERE category_id = NEW.parent_category_id
+     FOR SHARE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'unknown parent Category: %', NEW.parent_category_id;
     END IF;
