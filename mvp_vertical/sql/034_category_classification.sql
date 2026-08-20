@@ -170,40 +170,37 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION agency_category_assignment_entity_exists(
+-- CategoryAssignment is polymorphic, so one FK cannot express its owner target.
+-- Admission therefore locks the concrete owner row FOR KEY SHARE. This both
+-- proves existence and serializes with owner DELETE until the assignment insert
+-- commits or aborts.
+CREATE OR REPLACE FUNCTION lock_agency_category_assignment_entity(
     candidate_type TEXT,
     candidate_id TEXT
 ) RETURNS boolean
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    found boolean := false;
 BEGIN
     CASE candidate_type
         WHEN 'project' THEN
-            SELECT EXISTS(
-                SELECT 1 FROM agency_projects WHERE project_id = candidate_id
-            ) INTO found;
+            PERFORM 1 FROM agency_projects
+             WHERE project_id = candidate_id FOR KEY SHARE;
         WHEN 'information' THEN
-            SELECT EXISTS(
-                SELECT 1 FROM agency_information_cards WHERE information_id = candidate_id
-            ) INTO found;
+            PERFORM 1 FROM agency_information_cards
+             WHERE information_id = candidate_id FOR KEY SHARE;
         WHEN 'document' THEN
-            SELECT EXISTS(
-                SELECT 1 FROM doc_documents WHERE document_id = candidate_id
-            ) INTO found;
+            PERFORM 1 FROM doc_documents
+             WHERE document_id = candidate_id FOR KEY SHARE;
         WHEN 'knowledge' THEN
-            SELECT EXISTS(
-                SELECT 1 FROM knowledge_items WHERE knowledge_id = candidate_id
-            ) INTO found;
+            PERFORM 1 FROM knowledge_items
+             WHERE knowledge_id = candidate_id FOR KEY SHARE;
         WHEN 'work_issue' THEN
-            SELECT EXISTS(
-                SELECT 1 FROM work_issues WHERE issue_id = candidate_id
-            ) INTO found;
+            PERFORM 1 FROM work_issues
+             WHERE issue_id = candidate_id FOR KEY SHARE;
         ELSE
-            found := false;
+            RETURN false;
     END CASE;
-    RETURN found;
+    RETURN FOUND;
 END;
 $$;
 
@@ -232,7 +229,7 @@ BEGIN
         RAISE EXCEPTION 'Category % does not apply to entity type %',
             NEW.category_id, NEW.entity_type;
     END IF;
-    IF NOT agency_category_assignment_entity_exists(NEW.entity_type, NEW.entity_id) THEN
+    IF NOT lock_agency_category_assignment_entity(NEW.entity_type, NEW.entity_id) THEN
         RAISE EXCEPTION 'unknown CategoryAssignment endpoint: %:%',
             NEW.entity_type, NEW.entity_id;
     END IF;
