@@ -1,4 +1,4 @@
-"""Read-only HTTP surface for resolved Category collections."""
+"""Read-only Cockpit HTTP surface for projected Category Card collections."""
 
 from __future__ import annotations
 
@@ -39,13 +39,13 @@ def install_category_collection_read_routes(
         ) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    @app.get("/agency/categories/{category_id}/resolved-collection")
-    def get_resolved_category_collection(
+    @app.get("/cockpit/category-collections/{category_id}")
+    def get_category_card_collection(
         category_id: str,
         _authorized: None = Depends(require_read_key),
     ) -> dict:
         return operation(
-            lambda conn: category_collection_read.get_resolved_category_collection(
+            lambda conn: category_collection_read.get_category_card_collection(
                 conn,
                 category_id,
             )
