@@ -1,8 +1,8 @@
-"""Read-only owner resolution for persisted Category collection inputs.
+"""Read-only Card collection composition for persisted Categories.
 
 Category and CategoryAssignment remain owned by ``agency_classification``. This
-adapter only composes existing bounded owner reads so the Cockpit can fetch one
-heterogeneous Category collection without becoming an entity-type router.
+adapter composes existing bounded owner reads and projects them through the
+Cockpit Card projection seam so clients receive one homogeneous Collection.
 It creates no Card record, changes no owner, infers no authorization and does
 not qualify Evidence.
 """
@@ -16,12 +16,14 @@ import psycopg
 from . import (
     agency_classification,
     agency_data,
+    cockpit_card_projection,
     information_projection,
     knowledge,
     project_documents,
     work_issue_read,
     work_issues,
 )
+from .entity_ref import EntityRef, EntityRefError
 
 
 class CategoryCollectionReadError(ValueError):
@@ -29,7 +31,7 @@ class CategoryCollectionReadError(ValueError):
 
 
 class CategoryCollectionIntegrityError(CategoryCollectionReadError):
-    """An active CategoryAssignment no longer resolves to its declared owner."""
+    """A persisted assignment no longer resolves to its declared owner."""
 
 
 OwnerReader = Callable[[psycopg.Connection, str], dict[str, Any]]
@@ -60,60 +62,80 @@ _OWNER_NOT_FOUND = (
 )
 
 
-def _resolve_assignment(
+def _resolve_assignment_card(
     conn: psycopg.Connection,
     assignment: dict[str, Any],
 ) -> dict[str, Any]:
-    entity_type = str(assignment.get("entity_type") or "").strip()
-    entity_id = str(assignment.get("entity_id") or "").strip()
-    reader = _OWNER_READERS.get(entity_type)
+    try:
+        ref = EntityRef.from_mapping(assignment, label="CategoryAssignment")
+    except EntityRefError as exc:
+        raise CategoryCollectionReadError(str(exc)) from exc
+
+    reader = _OWNER_READERS.get(ref.entity_type)
     if reader is None:
         raise CategoryCollectionReadError(
-            f"unsupported CategoryAssignment entity type: {entity_type or '<empty>'}"
+            f"unsupported CategoryAssignment entity type: {ref.entity_type}"
         )
-    if not entity_id:
-        raise CategoryCollectionReadError("CategoryAssignment entity_id is required")
+
     try:
-        read_model = reader(conn, entity_id)
+        read_model = reader(conn, ref.entity_id)
     except _OWNER_NOT_FOUND as exc:
         raise CategoryCollectionIntegrityError(
-            f"active CategoryAssignment references missing owner: {entity_type}:{entity_id}"
+            f"active CategoryAssignment references missing owner: {ref.entity_type}:{ref.entity_id}"
         ) from exc
+
+    try:
+        card = cockpit_card_projection.project_owner_card(ref.entity_type, read_model)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CategoryCollectionIntegrityError(
+            f"owner read model cannot be projected as a Card: {ref.entity_type}:{ref.entity_id}"
+        ) from exc
+
+    if card.get("source_entity_ref") != ref.as_dict():
+        raise CategoryCollectionIntegrityError(
+            f"Card projection changed owner identity: {ref.entity_type}:{ref.entity_id}"
+        )
+
     return {
-        "entity_ref": {"entity_type": entity_type, "entity_id": entity_id},
-        "assignment": assignment,
-        "read_model": read_model,
+        **card,
+        "collection_membership": {
+            "kind": "category_assignment",
+            "assignment": assignment,
+        },
     }
 
 
-def get_resolved_category_collection(
+def get_category_card_collection(
     conn: psycopg.Connection,
     category_id: str,
 ) -> dict[str, Any]:
-    """Resolve one Category Collection through existing owner read boundaries.
+    """Project one Category's direct children into a homogeneous Card Collection.
 
-    Child Categories remain Category records. Directly assigned entities are
-    resolved through their existing owner read adapters and retain the exact
-    CategoryAssignment that caused them to appear here.
+    Child Categories are projected as container Cards. Direct assignments are
+    resolved through existing owner readers and then projected as Cards. The
+    same owner may therefore appear in several Collections with one stable Card
+    identity and different contextual membership provenance.
     """
 
     source = agency_classification.get_category_collection(conn, category_id)
-    child_categories = list(source["child_categories"])
-    members = [
-        _resolve_assignment(conn, assignment)
+    child_cards = [
+        cockpit_card_projection.project_category(category)
+        for category in source["child_categories"]
+    ]
+    member_cards = [
+        _resolve_assignment_card(conn, assignment)
         for assignment in source["assignments"]
     ]
-    state = "loaded" if child_categories or members else "empty"
+    items = [*child_cards, *member_cards]
     return {
-        "category": source["category"],
         "collection": {
             "collection_id": f"children:category:{category_id}",
             "parent_entity_id": f"category:{category_id}",
-            "state": state,
-            "child_categories": child_categories,
-            "members": members,
+            "state": "loaded" if items else "empty",
+            "items": items,
+            "can_add": False,
         },
-        "collection_is_projection_input": True,
+        "cards_are_projections": True,
         "classification_is_not_authorization": True,
         "authorization_inferred": False,
     }
