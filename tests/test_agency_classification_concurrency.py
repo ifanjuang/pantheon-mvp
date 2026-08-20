@@ -239,6 +239,76 @@ def test_opposite_parent_moves_serialize_before_cycle_validation(conn) -> None:
         second.close()
 
 
+def test_parent_relation_serializes_with_parent_archive(conn) -> None:
+    _category(conn, "category-parent")
+    _category(conn, "category-child")
+    first = _new_connection()
+    second = _new_connection()
+    error: list[BaseException] = []
+    started = threading.Event()
+
+    try:
+        first.execute(
+            """
+            UPDATE agency_categories
+               SET parent_category_id = 'category-parent',
+                   updated_by = 'human:first',
+                   updated_at = clock_timestamp(),
+                   revision = revision + 1
+             WHERE category_id = 'category-child'
+            """
+        )
+
+        def archive_parent() -> None:
+            started.set()
+            try:
+                second.execute(
+                    """
+                    UPDATE agency_categories
+                       SET archived_at = clock_timestamp(),
+                           updated_by = 'human:second',
+                           updated_at = clock_timestamp(),
+                           revision = revision + 1
+                     WHERE category_id = 'category-parent'
+                    """
+                )
+                second.commit()
+            except BaseException as exc:  # captured for assertion in the test thread
+                error.append(exc)
+                second.rollback()
+
+        worker = threading.Thread(target=archive_parent)
+        worker.start()
+        assert started.wait(timeout=1.0)
+        assert _waits_on_lock(conn, second.info.backend_pid), (
+            "parent archive must wait while a child relation holds the parent row"
+        )
+        first.commit()
+        worker.join(timeout=5.0)
+        assert not worker.is_alive()
+        assert len(error) == 1
+        assert isinstance(error[0], psycopg.errors.RaiseException)
+        assert "active child Categories cannot be archived" in str(error[0])
+
+        rows = conn.execute(
+            """
+            SELECT category_id, parent_category_id, archived_at
+              FROM agency_categories
+             ORDER BY category_id
+            """
+        ).fetchall()
+        conn.commit()
+        assert rows == [
+            ("category-child", "category-parent", None),
+            ("category-parent", None, None),
+        ]
+    finally:
+        first.rollback()
+        second.rollback()
+        first.close()
+        second.close()
+
+
 def test_assignment_admission_serializes_with_category_archive(conn) -> None:
     project_id = _project(conn)
     _category(conn, "category-locked", applies_to=["project"])
