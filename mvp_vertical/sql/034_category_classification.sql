@@ -58,6 +58,22 @@ CREATE INDEX IF NOT EXISTS agency_category_assignments_category_lookup
 CREATE INDEX IF NOT EXISTS agency_category_assignments_entity_lookup
     ON agency_category_assignments (entity_type, entity_id, retired_at, assigned_at, assignment_id);
 
+-- The row-level cycle guard alone is insufficient when two transactions move
+-- different Categories under each other concurrently. Acquire one transaction
+-- advisory lock before UPDATE takes any target row lock, then let the row trigger
+-- validate against a hierarchy that cannot change concurrently.
+CREATE OR REPLACE FUNCTION serialize_agency_category_hierarchy_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(
+        hashtextextended('pantheon.agency_categories.hierarchy', 0)
+    );
+    RETURN NULL;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION agency_category_parent_guard()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -199,10 +215,13 @@ DECLARE
     category_applies_to JSONB;
     category_archived_at TIMESTAMPTZ;
 BEGIN
+    -- Serialize assignment admission with Category archive/applies_to updates.
+    -- Whichever mutation locks the Category first becomes visible to the other.
     SELECT applies_to, archived_at
       INTO category_applies_to, category_archived_at
       FROM agency_categories
-     WHERE category_id = NEW.category_id;
+     WHERE category_id = NEW.category_id
+     FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'unknown Category: %', NEW.category_id;
     END IF;
@@ -252,8 +271,48 @@ BEGIN
 END;
 $$;
 
+-- Polymorphic CategoryAssignment endpoints cannot use one SQL foreign key. Keep
+-- the owner identity valid while an active assignment references it; callers can
+-- retire the classification first, without turning CategoryAssignment into owner
+-- lifecycle or authorization.
+CREATE OR REPLACE FUNCTION reject_active_category_assignment_owner_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    owner_type TEXT := TG_ARGV[0];
+    owner_id TEXT := to_jsonb(OLD) ->> TG_ARGV[1];
+BEGIN
+    IF owner_id IS NULL OR btrim(owner_id) = '' THEN
+        RAISE EXCEPTION 'classified owner delete guard cannot resolve owner identity';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM agency_category_assignments
+         WHERE entity_type = owner_type
+           AND entity_id = owner_id
+           AND retired_at IS NULL
+    ) THEN
+        RAISE EXCEPTION
+            'active CategoryAssignment must be retired before deleting %:%',
+            owner_type, owner_id;
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
 DO $$
 BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'agency_categories_hierarchy_serialize'
+           AND tgrelid = 'agency_categories'::regclass
+    ) THEN
+        CREATE TRIGGER agency_categories_hierarchy_serialize
+        BEFORE UPDATE OF parent_category_id ON agency_categories
+        FOR EACH STATEMENT EXECUTE FUNCTION serialize_agency_category_hierarchy_mutation();
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1 FROM pg_trigger
          WHERE tgname = 'agency_categories_parent_guard'
@@ -302,6 +361,66 @@ BEGIN
         CREATE TRIGGER agency_category_assignments_no_delete
         BEFORE DELETE ON agency_category_assignments
         FOR EACH ROW EXECUTE FUNCTION guard_agency_category_assignment_mutation();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'agency_projects_category_assignment_delete_guard'
+           AND tgrelid = 'agency_projects'::regclass
+    ) THEN
+        CREATE TRIGGER agency_projects_category_assignment_delete_guard
+        BEFORE DELETE ON agency_projects
+        FOR EACH ROW EXECUTE FUNCTION reject_active_category_assignment_owner_delete(
+            'project', 'project_id'
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'agency_information_category_assignment_delete_guard'
+           AND tgrelid = 'agency_information_cards'::regclass
+    ) THEN
+        CREATE TRIGGER agency_information_category_assignment_delete_guard
+        BEFORE DELETE ON agency_information_cards
+        FOR EACH ROW EXECUTE FUNCTION reject_active_category_assignment_owner_delete(
+            'information', 'information_id'
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'doc_documents_category_assignment_delete_guard'
+           AND tgrelid = 'doc_documents'::regclass
+    ) THEN
+        CREATE TRIGGER doc_documents_category_assignment_delete_guard
+        BEFORE DELETE ON doc_documents
+        FOR EACH ROW EXECUTE FUNCTION reject_active_category_assignment_owner_delete(
+            'document', 'document_id'
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'knowledge_items_category_assignment_delete_guard'
+           AND tgrelid = 'knowledge_items'::regclass
+    ) THEN
+        CREATE TRIGGER knowledge_items_category_assignment_delete_guard
+        BEFORE DELETE ON knowledge_items
+        FOR EACH ROW EXECUTE FUNCTION reject_active_category_assignment_owner_delete(
+            'knowledge', 'knowledge_id'
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'work_issues_category_assignment_delete_guard'
+           AND tgrelid = 'work_issues'::regclass
+    ) THEN
+        CREATE TRIGGER work_issues_category_assignment_delete_guard
+        BEFORE DELETE ON work_issues
+        FOR EACH ROW EXECUTE FUNCTION reject_active_category_assignment_owner_delete(
+            'work_issue', 'issue_id'
+        );
     END IF;
 END;
 $$;
