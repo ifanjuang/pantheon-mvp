@@ -202,3 +202,25 @@ def test_stale_category_update_maps_to_conflict(monkeypatch) -> None:
     )
     assert response.status_code == 409
     assert "stale Category revision" in response.json()["detail"]
+
+
+def test_explicit_null_sort_order_is_rejected_before_adapter(monkeypatch) -> None:
+    called = False
+
+    def update_category(_conn, **_values):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(agency_classification, "update_category", update_category)
+    client = _client(editor_api_key="editor-key")
+    response = client.patch(
+        "/agency/categories/urbanisme",
+        headers={
+            "Authorization": "Bearer editor-key",
+            "X-Pantheon-Human-Actor": "ifan",
+        },
+        json={"expected_revision": 1, "sort_order": None},
+    )
+    assert response.status_code == 422
+    assert called is False
