@@ -129,7 +129,7 @@ def _knowledge(conn, project_id: str, knowledge_id: str = "knowledge-concurrency
             knowledge_id, document_id, source_version, source_digest, extraction_id,
             title, family, markdown, markdown_digest, source_chunk_refs,
             review_status, version, created_by
-        ) VALUES (%s, %s, 1, %s, %s, 'Knowledge', 'reference',
+        ) VALUES (%s, %s, 1, %s, %s, 'Knowledge', 'reglementations',
                   '# Knowledge', 'markdown-digest', '[]'::jsonb,
                   'reviewed', 1, 'human:test')
         """,
@@ -301,6 +301,72 @@ def test_assignment_admission_serializes_with_category_archive(conn) -> None:
         ).fetchone()[0]
         conn.commit()
         assert category == (None,)
+        assert assignment_count == 1
+    finally:
+        first.rollback()
+        second.rollback()
+        first.close()
+        second.close()
+
+
+def test_assignment_admission_serializes_with_owner_delete(conn) -> None:
+    project_id = _project(conn, "project-delete-race")
+    _category(conn, "category-delete-race", applies_to=["project"])
+    first = _new_connection()
+    second = _new_connection()
+    error: list[BaseException] = []
+    started = threading.Event()
+
+    try:
+        first.execute(
+            """
+            INSERT INTO agency_category_assignments (
+                assignment_id, category_id, entity_type, entity_id, assigned_by
+            ) VALUES (
+                'assignment-delete-race', 'category-delete-race', 'project', %s, 'human:first'
+            )
+            """,
+            (project_id,),
+        )
+
+        def delete_owner() -> None:
+            started.set()
+            try:
+                second.execute(
+                    "DELETE FROM agency_projects WHERE project_id = %s",
+                    (project_id,),
+                )
+                second.commit()
+            except BaseException as exc:  # captured for assertion in the test thread
+                error.append(exc)
+                second.rollback()
+
+        worker = threading.Thread(target=delete_owner)
+        worker.start()
+        assert started.wait(timeout=1.0)
+        assert _waits_on_lock(conn, second.info.backend_pid), (
+            "owner deletion must wait while assignment admission holds the owner identity"
+        )
+        first.commit()
+        worker.join(timeout=5.0)
+        assert not worker.is_alive()
+        assert len(error) == 1
+        assert isinstance(error[0], psycopg.errors.RaiseException)
+        assert "active CategoryAssignment must be retired before deleting" in str(error[0])
+
+        owner_count = conn.execute(
+            "SELECT count(*) FROM agency_projects WHERE project_id = %s",
+            (project_id,),
+        ).fetchone()[0]
+        assignment_count = conn.execute(
+            """
+            SELECT count(*) FROM agency_category_assignments
+             WHERE entity_type = 'project' AND entity_id = %s AND retired_at IS NULL
+            """,
+            (project_id,),
+        ).fetchone()[0]
+        conn.commit()
+        assert owner_count == 1
         assert assignment_count == 1
     finally:
         first.rollback()
