@@ -1,8 +1,7 @@
-"""Acceptance tests for read-only resolved Category collections."""
+"""Acceptance tests for read-only Category Card collections."""
 
 from __future__ import annotations
 
-import psycopg
 import pytest
 
 from mvp_vertical import (
@@ -50,8 +49,8 @@ def _project(conn, project_id: str = "project-category-read") -> str:
     conn.execute(
         """
         INSERT INTO agency_projects (
-            project_id, code, display_name, created_by, updated_by
-        ) VALUES (%s, %s, %s, 'human:test', 'human:test')
+            project_id, code, display_name, phase, location, created_by, updated_by
+        ) VALUES (%s, %s, %s, 'PRO', 'Rouen', 'human:test', 'human:test')
         """,
         (project_id, project_id.upper(), "Projet Category Read"),
     )
@@ -157,7 +156,7 @@ def _category(
     )
 
 
-def test_resolved_collection_composes_existing_owner_reads_without_changing_identity(conn) -> None:
+def test_category_collection_returns_only_homogeneous_cards_with_owner_identity(conn) -> None:
     project_id = _project(conn)
     information_id = _information(conn, project_id)
     document_id = _document(conn, project_id)
@@ -188,40 +187,89 @@ def test_resolved_collection_composes_existing_owner_reads_without_changing_iden
             actor="human:test",
         )
 
-    projection = category_collection_read.get_resolved_category_collection(
+    projection = category_collection_read.get_category_card_collection(
         conn,
         "reglementations",
     )
 
-    assert projection["collection_is_projection_input"] is True
+    assert projection["cards_are_projections"] is True
     assert projection["classification_is_not_authorization"] is True
     assert projection["authorization_inferred"] is False
-    assert projection["collection"]["collection_id"] == "children:category:reglementations"
-    assert projection["collection"]["parent_entity_id"] == "category:reglementations"
-    assert projection["collection"]["state"] == "loaded"
-    assert [
-        category["category_id"] for category in projection["collection"]["child_categories"]
-    ] == ["urbanisme"]
+    collection = projection["collection"]
+    assert collection["collection_id"] == "children:category:reglementations"
+    assert collection["parent_entity_id"] == "category:reglementations"
+    assert collection["state"] == "loaded"
+    assert collection["can_add"] is False
+    assert "members" not in collection
+    assert "child_categories" not in collection
+
+    items = collection["items"]
+    child = items[0]
+    assert child["entity_id"] == "category:urbanisme"
+    assert child["entity_type"] == "category"
+    assert child["role"] == "container"
+    assert child["child_collection"] == {
+        "state": "available",
+        "collection_id": "children:category:urbanisme",
+        "load_action": {
+            "kind": "collection_read",
+            "href": "/cockpit/category-collections/urbanisme",
+        },
+        "can_add": False,
+        "create_action": None,
+    }
 
     members = {
-        item["entity_ref"]["entity_type"]: item
-        for item in projection["collection"]["members"]
+        item["source_entity_ref"]["entity_type"]: item
+        for item in items[1:]
     }
     assert set(members) == set(endpoints)
-    assert members["project"]["read_model"]["project_id"] == project_id
-    assert members["information"]["read_model"]["information"]["information_id"] == information_id
-    assert members["document"]["read_model"]["document_id"] == document_id
-    assert members["knowledge"]["read_model"]["knowledge_id"] == knowledge_id
-    assert members["work_issue"]["read_model"]["issue_id"] == issue_id
+    assert members["project"]["entity_id"] == f"project:{project_id}"
+    assert members["information"]["entity_id"] == f"information:{information_id}"
+    assert members["document"]["entity_id"] == f"document:{document_id}"
+    assert members["knowledge"]["entity_id"] == f"knowledge:{knowledge_id}"
+    assert members["work_issue"]["entity_id"] == f"work:{issue_id}"
+
     for entity_type, entity_id in endpoints.items():
-        member = members[entity_type]
-        assert member["entity_ref"] == {"entity_type": entity_type, "entity_id": entity_id}
-        assert member["assignment"]["category_id"] == "reglementations"
+        card = members[entity_type]
+        assert card["source_entity_ref"] == {
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+        }
+        assert card["collection_membership"]["kind"] == "category_assignment"
+        assert card["collection_membership"]["assignment"]["category_id"] == "reglementations"
+        assert card["available_actions"] == []
+        assert "read_model" not in card
+
+    assert members["project"]["child_collection"]["load_action"] == {
+        "kind": "project_bundle",
+        "context_id": project_id,
+    }
 
 
-def test_same_owner_identity_resolves_in_multiple_category_collections_without_duplication(conn) -> None:
+def test_recursive_category_cards_keep_the_same_collection_contract_at_arbitrary_depth(conn) -> None:
+    _category(conn, "reglementations")
+    _category(conn, "urbanisme", parent_category_id="reglementations")
+    _category(conn, "plu-plui", parent_category_id="urbanisme")
+
+    root = category_collection_read.get_category_card_collection(conn, "reglementations")
+    child = root["collection"]["items"][0]
+    assert child["entity_id"] == "category:urbanisme"
+    assert child["child_collection"]["collection_id"] == "children:category:urbanisme"
+
+    second = category_collection_read.get_category_card_collection(conn, "urbanisme")
+    grandchild = second["collection"]["items"][0]
+    assert grandchild["entity_id"] == "category:plu-plui"
+    assert grandchild["child_collection"]["collection_id"] == "children:category:plu-plui"
+
+    third = category_collection_read.get_category_card_collection(conn, "plu-plui")
+    assert third["collection"]["state"] == "empty"
+    assert third["collection"]["items"] == []
+
+
+def test_same_owner_card_identity_appears_in_multiple_categories_without_duplication(conn) -> None:
     project_id = _project(conn, "project-multi-category")
-    document_id = _document(conn, project_id, "document:plui-metropole")
+    document_id = _document(conn, project_id, "plui-metropole")
     _category(conn, "urbanisme")
     _category(conn, "referentiels")
 
@@ -235,35 +283,36 @@ def test_same_owner_identity_resolves_in_multiple_category_collections_without_d
             actor="human:test",
         )
 
-    first = category_collection_read.get_resolved_category_collection(conn, "urbanisme")
-    second = category_collection_read.get_resolved_category_collection(conn, "referentiels")
-    first_member = first["collection"]["members"][0]
-    second_member = second["collection"]["members"][0]
+    first = category_collection_read.get_category_card_collection(conn, "urbanisme")
+    second = category_collection_read.get_category_card_collection(conn, "referentiels")
+    first_card = first["collection"]["items"][0]
+    second_card = second["collection"]["items"][0]
 
-    assert first_member["entity_ref"] == second_member["entity_ref"] == {
+    assert first_card["entity_id"] == second_card["entity_id"] == "document:plui-metropole"
+    assert first_card["source_entity_ref"] == second_card["source_entity_ref"] == {
         "entity_type": "document",
         "entity_id": document_id,
     }
-    assert first_member["read_model"]["document_id"] == document_id
-    assert second_member["read_model"]["document_id"] == document_id
+    assert first_card["collection_membership"]["assignment"]["category_id"] == "urbanisme"
+    assert second_card["collection_membership"]["assignment"]["category_id"] == "referentiels"
     assert conn.execute(
         "SELECT count(*) FROM doc_documents WHERE document_id = %s",
         (document_id,),
     ).fetchone()[0] == 1
 
 
-def test_empty_category_projects_an_explicit_empty_collection(conn) -> None:
+def test_empty_category_projects_an_explicit_empty_card_collection(conn) -> None:
     _category(conn, "empty-category")
-    projection = category_collection_read.get_resolved_category_collection(
+    projection = category_collection_read.get_category_card_collection(
         conn,
         "empty-category",
     )
     assert projection["collection"]["state"] == "empty"
-    assert projection["collection"]["child_categories"] == []
-    assert projection["collection"]["members"] == []
+    assert projection["collection"]["items"] == []
+    assert projection["collection"]["can_add"] is False
 
 
-def test_resolved_category_collection_route_is_mounted_in_composed_cockpit() -> None:
+def test_category_card_collection_route_is_mounted_on_cockpit_surface() -> None:
     app = cockpit_composed.create_composed_cockpit_app(
         connect_fn=lambda: None,
         initialize_fn=None,
@@ -277,5 +326,6 @@ def test_resolved_category_collection_route_is_mounted_in_composed_cockpit() -> 
             methods_by_path.setdefault(route.path, set()).update(route.methods or set())
 
     assert "GET" in methods_by_path[
-        "/agency/categories/{category_id}/resolved-collection"
+        "/cockpit/category-collections/{category_id}"
     ]
+    assert "/agency/categories/{category_id}/resolved-collection" not in methods_by_path
